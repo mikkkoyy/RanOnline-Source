@@ -552,6 +552,13 @@ if(MSVC)
         $<$<CONFIG:Debug>:/Od>
         $<$<CONFIG:Release>:/W0>
         $<$<CONFIG:Release>:/O2>
+        $<$<CONFIG:Release>:/Gy->
+        $<$<CONFIG:Release>:/Oi->
+        $<$<CONFIG:Release>:/Ob1>
+        $<$<CONFIG:Release>:/Oy>
+        $<$<CONFIG:Release>:/GF>
+        $<$<CONFIG:Release>:/Gm->
+        $<$<CONFIG:Release>:/GS->
         /MP
     )
 
