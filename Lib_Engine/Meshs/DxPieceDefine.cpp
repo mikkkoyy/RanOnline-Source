@@ -1,0 +1,134 @@
+#include "stdafx.h"
+#include "DxPieceDefine.h"
+
+#ifdef _DEBUG
+#define new DEBUG_NEW
+#endif
+
+
+EMPIECECHAR PIECE_0113_TO_PIECE( EMPIECECHAR_0113 emPieceVal )
+{
+	EMPIECECHAR emPiece = PIECE_SIZE;
+
+	switch( emPieceVal )
+	{
+	case PIECECHAR_0113_HEAD:		emPiece = PIECE_HEAD;		break;
+	case PIECECHAR_0113_UPBODY:		emPiece = PIECE_UPBODY;		break;
+	case PIECECHAR_0113_LOBODY:		emPiece = PIECE_LOBODY;		break;
+	case PIECECHAR_0113_GLOVE:		emPiece = PIECE_GLOVE;		break;
+	case PIECECHAR_0113_RHAND:		emPiece = PIECE_RHAND;		break;
+	case PIECECHAR_0113_LHAND:		emPiece = PIECE_LHAND;		break;
+	case PIECECHAR_0113_FOOT:		emPiece = PIECE_FOOT;		break;
+	case PIECECHAR_0113_HAIR:		emPiece = PIECE_HAIR;		break;
+	case PIECECHAR_0113_HEADGEAR:	emPiece = PIECE_HEADGEAR;	break;
+	case PIECECHAR_0113_VEHICLE:	emPiece = PIECE_VEHICLE;	break;
+	case PIECECHAR_0113_ENCHANT_UPBODY:	emPiece = PIECE_ENCHANT_UPBODY;	break;
+	case PIECECHAR_0113_ENCHANT_LOBODY:	emPiece = PIECE_ENCHANT_LOBODY;	break;
+	case PIECECHAR_0113_ENCHANT_GLOVE:	emPiece = PIECE_ENCHANT_GLOVE;	break;
+	case PIECECHAR_0113_ENCHANT_FOOT:	emPiece = PIECE_ENCHANT_FOOT;	break;
+	case PIECECHAR_0113_SHIFT_RWEAPON:	emPiece = PIECE_SHIFT_RWEAPON;	break;
+	case PIECECHAR_0113_SHIFT_LWEAPON:	emPiece = PIECE_SHIFT_LWEAPON;	break;
+	case PIECECHAR_0113_REV01:		emPiece = PIECE_REV01;		break;
+	case PIECECHAR_0113_REV02:		emPiece = PIECE_REV02;		break;
+	case PIECECHAR_0113_REV03:		emPiece = PIECE_REV03;		break;
+	case PIECECHAR_0113_SIZE:		emPiece = PIECE_SIZE;		break;
+	};
+
+	return emPiece;
+};
+
+EMPIECECHAR_0113 PIECE_TO_PIECE_0113( EMPIECECHAR emPieceVal )
+{
+	EMPIECECHAR_0113 emPiece = PIECECHAR_0113_SIZE;
+
+	switch( emPieceVal )
+	{
+	case PIECE_HEAD:	emPiece = PIECECHAR_0113_HEAD;		break;
+	case PIECE_UPBODY:	emPiece = PIECECHAR_0113_UPBODY;	break;
+	case PIECE_LOBODY:	emPiece = PIECECHAR_0113_LOBODY;	break;
+	case PIECE_GLOVE:	emPiece = PIECECHAR_0113_GLOVE;		break;
+	case PIECE_RHAND:	emPiece = PIECECHAR_0113_RHAND;		break;
+	case PIECE_LHAND:	emPiece = PIECECHAR_0113_LHAND;		break;
+	case PIECE_FOOT:	emPiece = PIECECHAR_0113_FOOT;		break;
+	case PIECE_HAIR:	emPiece = PIECECHAR_0113_HAIR;		break;
+	case PIECE_HEADGEAR:	emPiece = PIECECHAR_0113_HEADGEAR;	break;
+	case PIECE_VEHICLE:		emPiece = PIECECHAR_0113_VEHICLE;	break;
+	case PIECE_ENCHANT_UPBODY:	emPiece = PIECECHAR_0113_ENCHANT_UPBODY;	break;
+	case PIECE_ENCHANT_LOBODY:	emPiece = PIECECHAR_0113_ENCHANT_LOBODY;	break;
+	case PIECE_ENCHANT_GLOVE:	emPiece = PIECECHAR_0113_ENCHANT_GLOVE;	break;
+	case PIECE_ENCHANT_FOOT:	emPiece = PIECECHAR_0113_ENCHANT_FOOT;	break;
+	case PIECE_SHIFT_RWEAPON:	emPiece = PIECECHAR_0113_SHIFT_RWEAPON;	break;
+	case PIECE_SHIFT_LWEAPON:	emPiece = PIECECHAR_0113_SHIFT_LWEAPON;	break;
+	case PIECE_REV01:	emPiece = PIECECHAR_0113_REV01;		break;
+	case PIECE_REV02:	emPiece = PIECECHAR_0113_REV02;		break;
+	case PIECE_REV03:	emPiece = PIECECHAR_0113_REV03;		break;
+	case PIECE_SIZE:	emPiece = PIECECHAR_0113_SIZE;		break;
+	};
+
+	return emPiece;
+};
+
+
+EMPIECECHAR PIECE_0116_TO_PIECE( EMPIECECHAR_0116 emPieceVal )
+{
+	EMPIECECHAR emPiece = PIECE_SIZE;
+
+	switch( emPieceVal )
+	{
+	case PIECECHAR_0116_HEAD:		emPiece = PIECE_HEAD;		break;
+	case PIECECHAR_0116_UPBODY:		emPiece = PIECE_UPBODY;		break;
+	case PIECECHAR_0116_LOBODY:		emPiece = PIECE_LOBODY;		break;
+	case PIECECHAR_0116_GLOVE:		emPiece = PIECE_GLOVE;		break;
+	case PIECECHAR_0116_RHAND:		emPiece = PIECE_RHAND;		break;
+	case PIECECHAR_0116_LHAND:		emPiece = PIECE_LHAND;		break;
+	case PIECECHAR_0116_FOOT:		emPiece = PIECE_FOOT;		break;
+	case PIECECHAR_0116_HAIR:		emPiece = PIECE_HAIR;		break;
+	case PIECECHAR_0116_HEADGEAR:	emPiece = PIECE_HEADGEAR;	break;
+	case PIECECHAR_0116_VEHICLE:	emPiece = PIECE_VEHICLE;	break;
+	case PIECECHAR_0116_CAPE:		emPiece = PIECE_BELT;		break;
+	case PIECECHAR_0116_ENCHANT_UPBODY:	emPiece = PIECE_ENCHANT_UPBODY;	break;
+	case PIECECHAR_0116_ENCHANT_LOBODY:	emPiece = PIECE_ENCHANT_LOBODY;	break;
+	case PIECECHAR_0116_ENCHANT_GLOVE:	emPiece = PIECE_ENCHANT_GLOVE;	break;
+	case PIECECHAR_0116_ENCHANT_FOOT:	emPiece = PIECE_ENCHANT_FOOT;	break;
+	case PIECECHAR_0116_SHIFT_RWEAPON:	emPiece = PIECE_SHIFT_RWEAPON;	break;
+	case PIECECHAR_0116_SHIFT_LWEAPON:	emPiece = PIECE_SHIFT_LWEAPON;	break;
+	case PIECECHAR_0116_REV01:		emPiece = PIECE_REV01;		break;
+	case PIECECHAR_0116_REV02:		emPiece = PIECE_REV02;		break;
+	case PIECECHAR_0116_REV03:		emPiece = PIECE_REV03;		break;
+	case PIECECHAR_0116_SIZE:		emPiece = PIECE_SIZE;		break;
+	};
+
+	return emPiece;
+};
+
+EMPIECECHAR_0116 PIECE_TO_PIECE_0116( EMPIECECHAR emPieceVal )
+{
+	EMPIECECHAR_0116 emPiece = PIECECHAR_0116_SIZE;
+
+	switch( emPieceVal )
+	{
+	case PIECE_HEAD:	emPiece = PIECECHAR_0116_HEAD;		break;
+	case PIECE_UPBODY:	emPiece = PIECECHAR_0116_UPBODY;	break;
+	case PIECE_LOBODY:	emPiece = PIECECHAR_0116_LOBODY;	break;
+	case PIECE_GLOVE:	emPiece = PIECECHAR_0116_GLOVE;		break;
+	case PIECE_RHAND:	emPiece = PIECECHAR_0116_RHAND;		break;
+	case PIECE_LHAND:	emPiece = PIECECHAR_0116_LHAND;		break;
+	case PIECE_FOOT:	emPiece = PIECECHAR_0116_FOOT;		break;
+	case PIECE_HAIR:	emPiece = PIECECHAR_0116_HAIR;		break;
+	case PIECE_HEADGEAR:	emPiece = PIECECHAR_0116_HEADGEAR;	break;
+	case PIECE_VEHICLE:		emPiece = PIECECHAR_0116_VEHICLE;	break;
+	case PIECE_BELT:		emPiece = PIECECHAR_0116_CAPE;		break;
+	case PIECE_ENCHANT_UPBODY:	emPiece = PIECECHAR_0116_ENCHANT_UPBODY;	break;
+	case PIECE_ENCHANT_LOBODY:	emPiece = PIECECHAR_0116_ENCHANT_LOBODY;	break;
+	case PIECE_ENCHANT_GLOVE:	emPiece = PIECECHAR_0116_ENCHANT_GLOVE;	break;
+	case PIECE_ENCHANT_FOOT:	emPiece = PIECECHAR_0116_ENCHANT_FOOT;	break;
+	case PIECE_SHIFT_RWEAPON:	emPiece = PIECECHAR_0116_SHIFT_RWEAPON;	break;
+	case PIECE_SHIFT_LWEAPON:	emPiece = PIECECHAR_0116_SHIFT_LWEAPON;	break;
+	case PIECE_REV01:	emPiece = PIECECHAR_0116_REV01;		break;
+	case PIECE_REV02:	emPiece = PIECECHAR_0116_REV02;		break;
+	case PIECE_REV03:	emPiece = PIECECHAR_0116_REV03;		break;
+	case PIECE_SIZE:	emPiece = PIECECHAR_0116_SIZE;		break;
+	};
+
+	return emPiece;
+};

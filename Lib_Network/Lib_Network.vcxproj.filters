@@ -1,0 +1,556 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Client">
+      <UniqueIdentifier>{d1c1152d-4836-40e6-a832-4f1d6bca4470}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Database">
+      <UniqueIdentifier>{65899144-28df-408d-b4b7-1f2df23222ba}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Database\COdbc">
+      <UniqueIdentifier>{895639eb-f09a-4c99-8b11-ac73d063f796}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Database\DB_Action">
+      <UniqueIdentifier>{0bc66083-2bf5-4618-91ac-bf39ef6adf2b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="DaumCrypt">
+      <UniqueIdentifier>{b8e9deae-56c2-4765-9268-82c806f2dc9a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Network">
+      <UniqueIdentifier>{ea880b08-0cd6-419d-b4db-f5f376bb1ad9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="nProtect">
+      <UniqueIdentifier>{c0fa9167-0611-4625-8d1c-4102249144f2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Server">
+      <UniqueIdentifier>{6a88a330-f012-4e38-8612-1f16b02ece4d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Server\IPFilter">
+      <UniqueIdentifier>{3ed26d77-3efd-49c3-b466-a487e6427ae1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Util">
+      <UniqueIdentifier>{e5ffb469-6e37-45ce-9391-2e91422eb33c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Util\PCID">
+      <UniqueIdentifier>{0a3f2f0d-2434-492a-ad5d-3f535632db43}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="s_CClientAgent.cpp">
+      <Filter>Client</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CClientAgentNProtect.cpp">
+      <Filter>Client</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CClientField.cpp">
+      <Filter>Client</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CClientLogin.cpp">
+      <Filter>Client</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CClientManager.cpp">
+      <Filter>Client</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CClientSession.cpp">
+      <Filter>Client</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CNetUser.cpp">
+      <Filter>Client</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CNetUserNProtect.cpp">
+      <Filter>Client</Filter>
+    </ClCompile>
+    <ClCompile Include="s_NetClientMsgRegister.cpp">
+      <Filter>Client</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcEnv.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGame.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGameChaCreate.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGameChaDelete.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGameChaEquipmentLock.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGameChaGet.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGameChaHair.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGameChaRename.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGameCharInventoryLock.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGameChaSave.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGameChaStorageLock.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGameClub.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGameFriend.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGameInven.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGamePet.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcGameWeb.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcLog.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcLogEvent.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcLogItem.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcManager.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcShop.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcSMS.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcSupervisor.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcUser.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcUserCheck.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcUserGetUserInfo.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COdbcUserRegister.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_OdbcGameVehicle.cpp">
+      <Filter>Database\COdbc</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CDbAction.cpp">
+      <Filter>Database\DB_Action</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CDbActionGame.cpp">
+      <Filter>Database\DB_Action</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CDbActionLog.cpp">
+      <Filter>Database\DB_Action</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CDbActionUser.cpp">
+      <Filter>Database\DB_Action</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CDbActionUserRegister.cpp">
+      <Filter>Database\DB_Action</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CDbActionWeb.cpp">
+      <Filter>Database\DB_Action</Filter>
+    </ClCompile>
+    <ClCompile Include="DaumGameAuth.cpp">
+      <Filter>DaumCrypt</Filter>
+    </ClCompile>
+    <ClCompile Include="DaumGameCrypt.cpp">
+      <Filter>DaumCrypt</Filter>
+    </ClCompile>
+    <ClCompile Include="RcvMsgBuffer.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CHttpPatch.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="s_COverlapped.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CPatch.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CSMsgList.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="s_NetClient.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="s_NetClientMsg.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="s_NetClientMsgDelCharacter.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="s_NetClientMsgLogin.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="s_NetClientWebMsg.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="SendMsgBuffer.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CAgentServer.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CAgentServerApex.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CAgentServerChannel.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CAgentServerMsg.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CAgentServerMsgCharacterDelete.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CAgentServerMsgLogin.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CAgentServerMsgNPROTECT.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CAgentServerMsgRegister.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CAgentServerMsgWeb.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CAgentServerSession.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CAgentServerThread.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CFieldServer.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CFieldServerMsg.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CFieldServerMsgNPROTECT.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CFieldServerSession.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CFieldServerThread.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CLoginServer.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CLoginServerMsg.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CLoginServerSession.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CServer.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CSessionServer.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CSessionServerMsg.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CSessionServerThread.cpp">
+      <Filter>Server</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CIPFilter.cpp">
+      <Filter>Server\IPFilter</Filter>
+    </ClCompile>
+    <ClCompile Include="ApexCloseList.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="ApexProxy.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="des.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="dhkey.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="gamecode.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="MinLzo.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="minTea.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="minUuid.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="NETCOMMENTS.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CAddressChecker.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CBit.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CCfg.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CClientConsoleMsg.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CClientLock.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CClientLogSystem.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CConsoleMessage.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CCsvFile.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CGetFileSize.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CLock.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CLogSystem.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CMemPooler.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CMinMd5.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CRandomNumber.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CSystemInfo.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CUserChecker.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CWhiteRock.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_CWhiteRockXML.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="s_Util.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="NSPCID.cpp">
+      <Filter>Util\PCID</Filter>
+    </ClCompile>
+    <ClCompile Include="s_NetGlobal.cpp" />
+    <ClCompile Include="stdafx.cpp" />
+    <ClCompile Include="ggsrv.cpp">
+      <Filter>nProtect</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="s_CClientAgent.h">
+      <Filter>Client</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CClientField.h">
+      <Filter>Client</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CClientLogin.h">
+      <Filter>Client</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CClientManager.h">
+      <Filter>Client</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CClientSession.h">
+      <Filter>Client</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CNetUser.h">
+      <Filter>Client</Filter>
+    </ClInclude>
+    <ClInclude Include="s_DbBase.h">
+      <Filter>Database</Filter>
+    </ClInclude>
+    <ClInclude Include="s_COdbcEnv.h">
+      <Filter>Database\COdbc</Filter>
+    </ClInclude>
+    <ClInclude Include="s_COdbcManager.h">
+      <Filter>Database\COdbc</Filter>
+    </ClInclude>
+    <ClInclude Include="s_COdbcSupervisor.h">
+      <Filter>Database\COdbc</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CDbAction.h">
+      <Filter>Database\DB_Action</Filter>
+    </ClInclude>
+    <ClInclude Include="DaumGameAuth.h">
+      <Filter>DaumCrypt</Filter>
+    </ClInclude>
+    <ClInclude Include="DaumGameCrypt.h">
+      <Filter>DaumCrypt</Filter>
+    </ClInclude>
+    <ClInclude Include="RcvMsgBuffer.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CHttpPatch.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="s_COverlapped.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CPatch.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CSMsgList.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="s_NetClient.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="SendMsgBuffer.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CAgentServer.h">
+      <Filter>Server</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CAgentServerApex.h">
+      <Filter>Server</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CFieldServer.h">
+      <Filter>Server</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CLoginServer.h">
+      <Filter>Server</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CServer.h">
+      <Filter>Server</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CSessionServer.h">
+      <Filter>Server</Filter>
+    </ClInclude>
+    <ClInclude Include="ServerControllerMsgDefine.h">
+      <Filter>Server</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CIPFilter.h">
+      <Filter>Server\IPFilter</Filter>
+    </ClInclude>
+    <ClInclude Include="ApexClient.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="ApexCloseList.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="ApexProxy.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="china_md5.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="des.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="dhkey.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="gamecode.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="MinLzo.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="minTea.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="minUuid.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="NETCOMMENTS.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CAddressChecker.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CBit.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CCfg.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CClientConsoleMsg.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CClientLock.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CClientLogSystem.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CConsoleMessage.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CCsvFile.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CLock.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CLogSystem.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CMemPooler.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CMinMd5.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CRandomNumber.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CSystemInfo.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CUserChecker.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CWhiteRock.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_CWhiteRockXML.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="s_Util.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="NSPCID.h">
+      <Filter>Util\PCID</Filter>
+    </ClInclude>
+    <ClInclude Include="s_NetGlobal.h" />
+    <ClInclude Include="stdafx.h" />
+    <ClInclude Include="ggsrv.h">
+      <Filter>nProtect</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="ReadMe.txt" />
+  </ItemGroup>
+</Project>

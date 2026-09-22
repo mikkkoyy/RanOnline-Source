@@ -1,0 +1,125 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{650fab2d-ad36-4209-aef8-0ecd32901595}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source">
+      <UniqueIdentifier>{42ac328c-eb3e-4019-b3dc-44899441cfc2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\Editor">
+      <UniqueIdentifier>{5071a36a-2b18-433e-8fb3-95ebd7f25190}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="GameViewer.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="res\GameViewer.rc2">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="res\GameViewerDoc.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="..\res\Icon_Tool.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="res\Toolbar.bmp">
+      <Filter>Resource Files</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="GameViewer.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="GameViewerDoc.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="GameViewerView.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="GameViewerView3D.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="GameViewerViewFile.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="MainFrm.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="EditorBar.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageABF.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageABL.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageCHF.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageEGP.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PagePIE.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageVCF.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="SheetWithTab.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="stdafx.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="GameViewer.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="GameViewerDoc.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="GameViewerView.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="MainFrm.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorBar.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageABF.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageABL.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageCHF.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageEGP.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PagePIE.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageVCF.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="SheetWithTab.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="stdafx.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="ReadMe.txt" />
+  </ItemGroup>
+</Project>

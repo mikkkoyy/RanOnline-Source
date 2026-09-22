@@ -1,0 +1,537 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)\r\n"
+    "LANGUAGE 9, 1\r\n"
+    "#pragma code_page(1252)\r\n"
+    "#include ""res\\GameViewer.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""         // Standard components\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "../res/Icon_Tool.ico"
+IDR_GameViewerTYPE      ICON                    "res\\GameViewerDoc.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Bitmap
+//
+
+IDR_MAINFRAME           BITMAP                  "res\\Toolbar.bmp"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Toolbar
+//
+
+IDR_MAINFRAME TOOLBAR  16, 16
+BEGIN
+    BUTTON      ID_APP_ABOUT
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MAINFRAME MENU 
+BEGIN
+    POPUP "&File"
+    BEGIN
+        MENUITEM SEPARATOR
+        MENUITEM "E&xit",                       ID_APP_EXIT
+    END
+    POPUP "&View"
+    BEGIN
+        MENUITEM "&Toolbar",                    ID_VIEW_TOOLBAR
+        MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
+        MENUITEM "Editor Toolbar",              ID_VIEW_EDITORTOOLBAR
+    END
+    POPUP "Render"
+    BEGIN
+        MENUITEM "Render Debug",                ID_RENDER_DEBUG
+        MENUITEM "Render Plane",                ID_RENDER_PLANE
+        MENUITEM "Render AABB",                 ID_RENDER_AABB
+        MENUITEM "Render Skeleton",             ID_RENDER_SKELETON
+        MENUITEM SEPARATOR
+        MENUITEM "Render VCF Front",            ID_RENDER_VCFFRONT
+        MENUITEM "Render VCF Back",             ID_RENDER_VCFBACK
+        MENUITEM SEPARATOR
+        MENUITEM "Reset Camera",                ID_RENDER_RESETCAMERA
+    END
+    POPUP "Setting"
+    BEGIN
+        MENUITEM "Attack Pos",                  ID_SETTING_ATTACKPOS
+        MENUITEM "Loop Play",                   ID_SETTING_LOOPPLAY
+    END
+    POPUP "ItemLevel"
+    BEGIN
+        MENUITEM SEPARATOR
+        MENUITEM "Disable",                     ID_ITEMLEVEL_OFF
+        MENUITEM "Level 1 (+1~+2)",             ID_ITEMLEVEL_01
+        MENUITEM "Level 2 (+3~+4)",             ID_ITEMLEVEL_02
+        MENUITEM "Level 3 (+5~+6)",             ID_ITEMLEVEL_03
+        MENUITEM "Level 4 (+7~+8)",             ID_ITEMLEVEL_04
+        MENUITEM "Level 5 (+9)",                ID_ITEMLEVEL_05
+        MENUITEM "Level 6 (+10)",               ID_ITEMLEVEL_06
+        MENUITEM "Level 7 (+11)",               ID_ITEMLEVEL_07
+        MENUITEM "Level 8 (+12)",               ID_ITEMLEVEL_08
+        MENUITEM "Level 9 (+13)",               ID_ITEMLEVEL_09
+        MENUITEM "Level 10 (+14)",              ID_ITEMLEVEL_10
+        MENUITEM "Level 11 (+15)",              ID_ITEMLEVEL_11
+    END
+    POPUP "&Help"
+    BEGIN
+        MENUITEM "&About GameViewer...",        ID_APP_ABOUT
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Accelerator
+//
+
+IDR_MAINFRAME ACCELERATORS 
+BEGIN
+    "N",            ID_FILE_NEW,            VIRTKEY, CONTROL
+    "O",            ID_FILE_OPEN,           VIRTKEY, CONTROL
+    "S",            ID_FILE_SAVE,           VIRTKEY, CONTROL
+    "Z",            ID_EDIT_UNDO,           VIRTKEY, CONTROL
+    "X",            ID_EDIT_CUT,            VIRTKEY, CONTROL
+    "C",            ID_EDIT_COPY,           VIRTKEY, CONTROL
+    "V",            ID_EDIT_PASTE,          VIRTKEY, CONTROL
+    VK_BACK,        ID_EDIT_UNDO,           VIRTKEY, ALT
+    VK_DELETE,      ID_EDIT_CUT,            VIRTKEY, SHIFT
+    VK_INSERT,      ID_EDIT_COPY,           VIRTKEY, CONTROL
+    VK_INSERT,      ID_EDIT_PASTE,          VIRTKEY, SHIFT
+    VK_F6,          ID_NEXT_PANE,           VIRTKEY 
+    VK_F6,          ID_PREV_PANE,           VIRTKEY, SHIFT
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX DIALOGEX 0, 0, 170, 62
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About GameViewer"
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    ICON            IDR_MAINFRAME,IDC_STATIC,14,14,20,20
+    LTEXT           "GameViewer, Version 1.0",IDC_STATIC,42,14,114,8,SS_NOPREFIX
+    LTEXT           "Copyright (C) DevLordX",IDC_STATIC,42,26,114,8
+    DEFPUSHBUTTON   "OK",IDOK,113,41,50,14,WS_GROUP
+END
+
+IDD_DLG_MAIN DIALOGEX 0, 0, 384, 400
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "Static",IDC_STATIC_TOOL,7,3,370,390
+END
+
+IDD_PAGE_CHF DIALOGEX 0, 0, 370, 390
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "CHF"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Load",IDC_BUTTON_CHF_LOAD,0,1,30,12
+    EDITTEXT        IDC_EDIT_FILENAME,31,1,150,12,ES_AUTOHSCROLL | ES_READONLY
+    CONTROL         "",IDC_LIST_ANIM,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,182,16,185,345
+    CONTROL         "",IDC_LIST_PIECE,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,0,16,180,246
+    PUSHBUTTON      "Play",IDC_BUTTON_ANIM_PLAY,181,362,30,12
+    PUSHBUTTON      "o_m",IDC_BUTTON_CHF_LOAD_M,183,1,25,12
+    PUSHBUTTON      "o_w",IDC_BUTTON_CHF_LOAD_W,209,1,25,12
+    PUSHBUTTON      "Reload",IDC_BUTTON_CHF_RELOAD,235,1,35,12
+    PUSHBUTTON      "Set CPS",IDC_BUTTON_PIECE_CPS,1,264,35,12
+    PUSHBUTTON      "Reset",IDC_BUTTON_PIECE_RESET,145,264,35,12
+    PUSHBUTTON      "Apply EffSkin_a",IDC_BUTTON_PIECE_EFFSKIN,1,277,60,12
+    PUSHBUTTON      "Set ABL",IDC_BUTTON_ABF,37,264,35,12
+    PUSHBUTTON      "Apply EffSkin",IDC_BUTTON_PIECE_EFFSKIN_CHF,1,290,60,12
+    PUSHBUTTON      "Set VCF",IDC_BUTTON_PIECE_VCF,74,264,35,12
+END
+
+IDD_PAGE_EGP DIALOGEX 0, 0, 370, 390
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "EGP"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Load",IDC_BUTTON_EGP_LOAD,0,1,30,12
+    EDITTEXT        IDC_EDIT_FILENAME,62,1,150,12,ES_AUTOHSCROLL | ES_READONLY
+    CONTROL         "",IDC_LIST_EFFECTS,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,196,34,170,325
+    PUSHBUTTON      "Play",IDC_BUTTON_EGP_PLAY,0,15,30,12
+    PUSHBUTTON      "Reload",IDC_BUTTON_EGP_RELOAD,215,1,35,12
+    CONTROL         "Play",IDC_CHECK_FLAG_PLAY,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,45,29,10
+    CONTROL         "Done",IDC_CHECK_FLAG_DONE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,55,33,10
+    CONTROL         "End",IDC_CHECK_FLAG_END,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,65,28,10
+    CONTROL         "RendPass",IDC_CHECK_FLAG_RENDPASS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,75,47,10
+    CONTROL         "None",IDC_CHECK_FLAG_NONE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,70,45,33,10
+    CONTROL         "TargetPos",IDC_CHECK_FLAG_TARGETPOS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,70,55,49,10
+    CONTROL         "TargetID",IDC_CHECK_FLAG_TARGETID,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,70,65,45,10
+    CONTROL         "Move",IDC_CHECK_FLAG_MOVE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,70,75,33,10
+    CONTROL         "Average",IDC_CHECK_FLAG_AVERAGE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,130,45,43,10
+    CONTROL         "SlowFast",IDC_CHECK_FLAG_SLOWFAST,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,130,55,45,10
+    CONTROL         "FastSlow",IDC_CHECK_FLAG_FASTSLOW,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,130,65,45,10
+    CONTROL         "Accelerate",IDC_CHECK_FLAG_ACCELERATE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,130,75,50,10
+    CONTROL         "TargetLine",IDC_CHECK_FLAG_TARGETLINE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,70,85,50,10
+    CONTROL         "NeverDie",IDC_CHECK_FLAG_NEVERDIE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,85,45,10
+    CONTROL         "Event",IDC_CHECK_FLAG_EVENT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,100,35,10
+    CONTROL         "AutoAABBBox",IDC_CHECK_FLAG_AUTOAABBBOX,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,110,61,10
+    GROUPBOX        "Flags",IDC_STATIC,2,31,188,95
+    PUSHBUTTON      "Save",IDC_BUTTON_EGP_SAVE,30,1,30,12
+END
+
+IDD_PAGE_ABF DIALOGEX 0, 0, 370, 390
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "ABF"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Load",IDC_BUTTON_ABF_LOAD,0,1,30,12
+    EDITTEXT        IDC_EDIT_FILENAME,31,1,150,12,ES_AUTOHSCROLL | ES_READONLY
+    CONTROL         "",IDC_LIST_ANIM,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,182,16,185,345
+    CONTROL         "",IDC_LIST_PIECE,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,0,16,180,246
+    PUSHBUTTON      "Play",IDC_BUTTON_ANIM_PLAY,181,362,30,12
+    PUSHBUTTON      "Set CPS",IDC_BUTTON_PIECE_CPS,1,264,35,12
+    PUSHBUTTON      "Reset",IDC_BUTTON_PIECE_RESET,145,264,35,12
+    PUSHBUTTON      "Apply EffSkin_a",IDC_BUTTON_PIECE_EFFSKIN,1,277,60,12
+    PUSHBUTTON      "Apply EffSkin",IDC_BUTTON_PIECE_EFFSKIN_ABF,1,290,60,12
+END
+
+IDD_PAGE_ABL DIALOGEX 0, 0, 370, 390
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "ABL"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Load",IDC_BUTTON_ABF_LOAD,0,1,30,12
+    EDITTEXT        IDC_EDIT_FILENAME,31,1,150,12,ES_AUTOHSCROLL | ES_READONLY
+    CONTROL         "",IDC_LIST_ANIM,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,182,16,185,345
+    CONTROL         "",IDC_LIST_PIECE,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,0,35,180,246
+    PUSHBUTTON      "Play",IDC_BUTTON_ANIM_PLAY,181,362,30,12
+    PUSHBUTTON      "Set CPS",IDC_BUTTON_PIECE_CPS,1,283,35,12
+    PUSHBUTTON      "Reset",IDC_BUTTON_PIECE_RESET,145,283,35,12
+    PUSHBUTTON      "Apply EffSkin_a",IDC_BUTTON_PIECE_EFFSKIN,1,296,60,12
+    EDITTEXT        IDC_EDIT_MASKPIECE,45,18,133,12,ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "Mask Piece",IDC_STATIC,5,20,36,8
+    PUSHBUTTON      "Apply EffSkin",IDC_BUTTON_PIECE_EFFSKIN_ABL,1,309,60,12
+END
+
+IDD_PAGE_PIE DIALOGEX 0, 0, 370, 390
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "PIE"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Load",IDC_BUTTON_PIE_LOAD,0,1,30,12
+    EDITTEXT        IDC_EDIT_FILENAME,62,1,150,12,ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "Save",IDC_BUTTON_PIE_SAVE,30,1,30,12
+END
+
+IDD_PAGE_VCF DIALOGEX 0, 0, 370, 390
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "VCF"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Load",IDC_BUTTON_VCF_LOAD,0,1,30,12
+    EDITTEXT        IDC_EDIT_FILENAME,31,1,150,12,ES_AUTOHSCROLL | ES_READONLY
+    CONTROL         "",IDC_LIST_ANIM,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,182,16,185,345
+    CONTROL         "",IDC_LIST_PIECE,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,0,16,180,246
+    PUSHBUTTON      "Play",IDC_BUTTON_ANIM_PLAY,181,362,30,12
+    PUSHBUTTON      "Set CPS",IDC_BUTTON_PIECE_CPS,1,264,35,12
+    PUSHBUTTON      "Reset",IDC_BUTTON_PIECE_RESET,145,264,35,12
+    PUSHBUTTON      "Apply EffSkin_A",IDC_BUTTON_PIECE_EFFSKIN,1,277,60,12
+    PUSHBUTTON      "Apply EffSkin",IDC_BUTTON_PIECE_EFFSKIN_NEW_VCF,1,290,60,12
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904e4"
+        BEGIN
+            VALUE "CompanyName", "DevLordX"
+            VALUE "FileDescription", "GameViewer"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "GameViewer.exe"
+            VALUE "LegalCopyright", "(c) DevLordX.  All rights reserved."
+            VALUE "OriginalFilename", "GameViewer.exe"
+            VALUE "ProductName", "RanOnline"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_ABOUTBOX, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 163
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 55
+    END
+
+    IDD_DLG_MAIN, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 377
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 393
+    END
+
+    IDD_PAGE_CHF, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 389
+    END
+
+    IDD_PAGE_EGP, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 389
+    END
+
+    IDD_PAGE_ABF, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 389
+    END
+
+    IDD_PAGE_ABL, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 389
+    END
+
+    IDD_PAGE_PIE, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 389
+    END
+
+    IDD_PAGE_VCF, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 389
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDP_OLE_INIT_FAILED     "OLE initialization failed.  Make sure that the OLE libraries are the correct version."
+END
+
+STRINGTABLE 
+BEGIN
+    IDR_MAINFRAME           "GameViewer\n\nGameViewer\n\n\nGameViewer.Document\nGameViewer.Document"
+END
+
+STRINGTABLE 
+BEGIN
+    AFX_IDS_APP_TITLE       "GameViewer"
+    AFX_IDS_IDLEMESSAGE     "Ready"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_INDICATOR_EXT        "EXT"
+    ID_INDICATOR_CAPS       "CAP"
+    ID_INDICATOR_NUM        "NUM"
+    ID_INDICATOR_SCRL       "SCRL"
+    ID_INDICATOR_OVR        "OVR"
+    ID_INDICATOR_REC        "REC"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_FILE_NEW             "Create a new document\nNew"
+    ID_FILE_OPEN            "Open an existing document\nOpen"
+    ID_FILE_CLOSE           "Close the active document\nClose"
+    ID_FILE_SAVE            "Save the active document\nSave"
+    ID_FILE_SAVE_AS         "Save the active document with a new name\nSave As"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_APP_ABOUT            "Display program information, version number and copyright\nAbout"
+    ID_APP_EXIT             "Quit the application; prompts to save documents\nExit"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_FILE_MRU_FILE1       "Open this document"
+    ID_FILE_MRU_FILE2       "Open this document"
+    ID_FILE_MRU_FILE3       "Open this document"
+    ID_FILE_MRU_FILE4       "Open this document"
+    ID_FILE_MRU_FILE5       "Open this document"
+    ID_FILE_MRU_FILE6       "Open this document"
+    ID_FILE_MRU_FILE7       "Open this document"
+    ID_FILE_MRU_FILE8       "Open this document"
+    ID_FILE_MRU_FILE9       "Open this document"
+    ID_FILE_MRU_FILE10      "Open this document"
+    ID_FILE_MRU_FILE11      "Open this document"
+    ID_FILE_MRU_FILE12      "Open this document"
+    ID_FILE_MRU_FILE13      "Open this document"
+    ID_FILE_MRU_FILE14      "Open this document"
+    ID_FILE_MRU_FILE15      "Open this document"
+    ID_FILE_MRU_FILE16      "Open this document"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_NEXT_PANE            "Switch to the next window pane\nNext Pane"
+    ID_PREV_PANE            "Switch back to the previous window pane\nPrevious Pane"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_WINDOW_SPLIT         "Split the active window into panes\nSplit"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_EDIT_CLEAR           "Erase the selection\nErase"
+    ID_EDIT_CLEAR_ALL       "Erase everything\nErase All"
+    ID_EDIT_COPY            "Copy the selection and put it on the Clipboard\nCopy"
+    ID_EDIT_CUT             "Cut the selection and put it on the Clipboard\nCut"
+    ID_EDIT_FIND            "Find the specified text\nFind"
+    ID_EDIT_PASTE           "Insert Clipboard contents\nPaste"
+    ID_EDIT_REPEAT          "Repeat the last action\nRepeat"
+    ID_EDIT_REPLACE         "Replace specific text with different text\nReplace"
+    ID_EDIT_SELECT_ALL      "Select the entire document\nSelect All"
+    ID_EDIT_UNDO            "Undo the last action\nUndo"
+    ID_EDIT_REDO            "Redo the previously undone action\nRedo"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_VIEW_TOOLBAR         "Show or hide the toolbar\nToggle ToolBar"
+    ID_VIEW_STATUS_BAR      "Show or hide the status bar\nToggle Status Bar"
+END
+
+STRINGTABLE 
+BEGIN
+    AFX_IDS_SCSIZE          "Change the window size"
+    AFX_IDS_SCMOVE          "Change the window position"
+    AFX_IDS_SCMINIMIZE      "Reduce the window to an icon"
+    AFX_IDS_SCMAXIMIZE      "Enlarge the window to full size"
+    AFX_IDS_SCNEXTWINDOW    "Switch to the next document window"
+    AFX_IDS_SCPREVWINDOW    "Switch to the previous document window"
+    AFX_IDS_SCCLOSE         "Close the active window and prompts to save the documents"
+END
+
+STRINGTABLE 
+BEGIN
+    AFX_IDS_SCRESTORE       "Restore the window to normal size"
+    AFX_IDS_SCTASKLIST      "Activate Task List"
+END
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE 9, 1
+#pragma code_page(1252)
+#include "res\GameViewer.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"         // Standard components
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

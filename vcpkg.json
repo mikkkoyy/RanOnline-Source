@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "ranonline-asura",
+  "version": "1.0.0",
+  "description": "RanOnline Asura private server — modernization dependencies",
+  "builtin-baseline": "9edb1b8a3c5342c017a96af514da5b3a2d5063b7",
+  "dependencies": [
+    "spdlog",
+    "fmt",
+    "zlib",
+    "tbb"
+  ]
+}

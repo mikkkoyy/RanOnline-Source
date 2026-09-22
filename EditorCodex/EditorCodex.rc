@@ -1,0 +1,399 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)\r\n"
+    "LANGUAGE 9, 1\r\n"
+    "#pragma code_page(1252)\r\n"
+    "#include ""res\\EditorCodex.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""     // Standard components\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "../res/Icon_Tool.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_EDITORCODEX_DIALOG DIALOGEX 0, 0, 910, 418
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_MINIMIZEBOX | WS_POPUP | 
+    WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "EditorCodex"
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_LIST_CODEX,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | 
+                    WS_BORDER | WS_TABSTOP,4,22,600,371
+    PUSHBUTTON      "Load",IDC_BUTTON_FILE_LOAD,1,6,41,14
+    PUSHBUTTON      "Save",IDC_BUTTON_FILE_SAVE,44,6,41,14
+    PUSHBUTTON      "Add",IDC_BUTTON_ADD,1,395,40,14
+    PUSHBUTTON      "Edit",IDC_BUTTON_EDIT,43,395,40,14
+    PUSHBUTTON      "Delete",IDC_BUTTON_DELETE,85,395,40,14
+    PUSHBUTTON      "Clear",IDC_BUTTON_CLEAR,170,395,40,14
+    EDITTEXT        IDC_EDIT_ID,652,33,40,12,ES_AUTOHSCROLL
+    COMBOBOX        IDC_COMBO_TYPE,652,101,140,155,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_COMBO_NOTIFY,652,86,140,155,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_EDIT_TITLE,693,33,208,12,ES_AUTOHSCROLL
+    LTEXT           "ID/Title",IDC_STATIC,611,35,24,8
+    LTEXT           "Type",IDC_STATIC,610,103,17,8
+    LTEXT           "Notify",IDC_STATIC,611,88,20,8
+    GROUPBOX        "Codex Edit",IDC_STATIC,606,18,302,221
+    CONTROL         "Badge",IDC_CHECK_BADGE,"Button",BS_AUTOCHECKBOX | NOT 
+                    WS_VISIBLE | WS_DISABLED | WS_GROUP | WS_TABSTOP,728,288,
+                    36,10
+    EDITTEXT        IDC_EDIT_BADGE,770,286,140,12,ES_AUTOHSCROLL | NOT 
+                    WS_VISIBLE | WS_DISABLED
+    EDITTEXT        IDC_EDIT_REWARD_POINT,653,116,60,12,ES_AUTOHSCROLL
+    LTEXT           "Point",IDC_STATIC,611,119,17,8
+    PUSHBUTTON      "Save",IDC_BUTTON_SAVE,852,217,50,14
+    EDITTEXT        IDC_EDIT_PROGRESS_LEVEL,770,274,60,12,ES_AUTOHSCROLL | 
+                    NOT WS_VISIBLE | WS_DISABLED | WS_GROUP
+    LTEXT           "Level ",IDC_STATIC,729,276,20,8,NOT WS_VISIBLE | 
+                    WS_DISABLED
+    EDITTEXT        IDC_EDIT_DESC,652,47,249,36,ES_MULTILINE | ES_WANTRETURN | 
+                    WS_VSCROLL
+    LTEXT           "Desc",IDC_STATIC,611,49,16,8
+    PUSHBUTTON      "Item 1",IDC_BUTTON_MOB_KILL,613,143,40,12
+    EDITTEXT        IDC_EDIT_PROGRESS_MOB_KILL_NAME,818,143,86,12,
+                    ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_PROGRESS_MOB_KILL_NUM,737,143,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_MOB_KILL_MID,654,143,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_MOB_KILL_SID,695,143,40,12,
+                    ES_AUTOHSCROLL
+    PUSHBUTTON      "Item 2",IDC_BUTTON_MAP_KILL,613,157,40,12
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_KILL_NAME,816,157,88,12,
+                    ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_KILL_NUM,737,157,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_KILL_MID,654,157,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_KILL_SID,695,157,40,12,
+                    ES_AUTOHSCROLL
+    PUSHBUTTON      "Item 3",IDC_BUTTON_MAP_REACH,613,171,40,12
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_REACH_NAME,816,171,88,12,
+                    ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_REACH_NUM,736,171,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_REACH_MID,654,171,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_REACH_SID,695,171,40,12,
+                    ES_AUTOHSCROLL
+    PUSHBUTTON      "Item 4",IDC_BUTTON_TAKE_ITEM,613,186,40,12
+    EDITTEXT        IDC_EDIT_PROGRESS_TAKE_ITEM_NAME,817,186,87,12,
+                    ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_PROGRESS_TAKE_ITEM_NUM,736,186,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_TAKE_ITEM_MID,654,186,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_TAKE_ITEM_SID,695,186,40,12,
+                    ES_AUTOHSCROLL
+    PUSHBUTTON      "Item 5",IDC_BUTTON_USE_ITEM,613,200,40,12
+    EDITTEXT        IDC_EDIT_PROGRESS_USE_ITEM_NAME,816,200,88,12,
+                    ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_PROGRESS_USE_ITEM_NUM,736,200,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_USE_ITEM_MID,654,200,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_USE_ITEM_SID,695,200,40,12,
+                    ES_AUTOHSCROLL
+    COMBOBOX        IDC_COMBO_USE_QBOX,611,229,140,155,CBS_DROPDOWNLIST | 
+                    NOT WS_VISIBLE | WS_DISABLED | WS_VSCROLL | WS_GROUP | 
+                    WS_TABSTOP
+    EDITTEXT        IDC_EDIT_PROGRESS_USE_QBOX,753,229,40,12,ES_AUTOHSCROLL | 
+                    NOT WS_VISIBLE | WS_DISABLED | WS_GROUP
+    PUSHBUTTON      "Quest",IDC_BUTTON_COMPLETE_QUEST,620,398,40,12,NOT 
+                    WS_VISIBLE | WS_DISABLED | WS_GROUP
+    EDITTEXT        IDC_EDIT_PROGRESS_COMPLETE_QUEST_NAME,744,399,166,12,
+                    ES_AUTOHSCROLL | ES_READONLY | NOT WS_VISIBLE | 
+                    WS_DISABLED | WS_GROUP
+    EDITTEXT        IDC_EDIT_PROGRESS_COMPLETE_QUEST_NUM,702,399,40,12,
+                    ES_AUTOHSCROLL | NOT WS_VISIBLE | WS_DISABLED | WS_GROUP
+    EDITTEXT        IDC_EDIT_PROGRESS_COMPLETE_QUEST_ID,660,399,40,12,
+                    ES_AUTOHSCROLL | NOT WS_VISIBLE | WS_DISABLED | WS_GROUP
+    EDITTEXT        IDC_EDIT_PROGRESS_CODEX_POINT,843,255,60,12,
+                    ES_AUTOHSCROLL | NOT WS_VISIBLE | WS_DISABLED | WS_GROUP
+    LTEXT           "Reach Point",IDC_STATIC,802,257,39,8,NOT WS_VISIBLE | 
+                    WS_DISABLED
+    EDITTEXT        IDC_EDIT_TOTAL_CODEX,540,395,60,12,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    EDITTEXT        IDC_EDIT_PROGRESS_GRADE1,776,143,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_GRADE2,776,157,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_GRADE3,776,170,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_GRADE4,776,186,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_GRADE5,776,199,40,12,ES_AUTOHSCROLL
+    LTEXT           "Item MID",IDC_STATIC,659,132,33,8
+    LTEXT           "Item MID",IDC_STATIC,700,132,33,8
+    LTEXT           "Quantity",IDC_STATIC,739,132,33,8
+    LTEXT           "Grade",IDC_STATIC,779,132,33,8
+    LTEXT           "Item Name",IDC_STATIC,821,132,64,8
+    PUSHBUTTON      "Import .ini",IDC_BUTTON_FILE_IMPORT,252,4,74,16
+    PUSHBUTTON      "Save Csv",IDC_BUTTON_FILE_CSV_SAVE,155,5,54,16
+    PUSHBUTTON      "Load Csv",IDC_BUTTON_FILE_CSV_LOAD,97,5,53,16
+    EDITTEXT        IDC_EDIT_TOTAL_CODEX1,652,258,60,12,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    LTEXT           "HP",IDC_STATIC,609,261,38,8
+    EDITTEXT        IDC_EDIT_TOTAL_CODEX2,652,268,60,12,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    LTEXT           "MP",IDC_STATIC,609,272,38,8
+    EDITTEXT        IDC_EDIT_TOTAL_CODEX3,652,280,60,12,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    LTEXT           "SP",IDC_STATIC,609,283,38,8
+    EDITTEXT        IDC_EDIT_TOTAL_CODEX4,652,291,60,12,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    LTEXT           "Attack",IDC_STATIC,609,294,38,8
+    EDITTEXT        IDC_EDIT_TOTAL_CODEX5,652,302,60,12,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    LTEXT           "Defense",IDC_STATIC,609,305,38,8
+    EDITTEXT        IDC_EDIT_TOTAL_CODEX6,652,313,60,12,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    LTEXT           "Shooting",IDC_STATIC,610,315,38,8
+    EDITTEXT        IDC_EDIT_TOTAL_CODEX7,652,324,60,12,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    LTEXT           "Melee",IDC_STATIC,610,326,38,8
+    EDITTEXT        IDC_EDIT_TOTAL_CODEX8,652,335,60,12,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    LTEXT           "Energy",IDC_STATIC,610,336,38,8
+    EDITTEXT        IDC_EDIT_TOTAL_CODEX9,652,345,60,12,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    LTEXT           "Hitrate",IDC_STATIC,610,357,38,8
+    EDITTEXT        IDC_EDIT_TOTAL_CODEX10,652,355,60,12,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    LTEXT           "Avoidrate",IDC_STATIC,610,367,38,8
+    LTEXT           "Resistance",IDC_STATIC,610,347,38,8
+    EDITTEXT        IDC_EDIT_TOTAL_CODEX11,652,365,60,12,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    GROUPBOX        "Total Statistics",IDC_STATIC,608,242,299,149
+END
+
+IDD_DLG_FIND_CROW DIALOGEX 0, 0, 280, 350
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | 
+    WS_CAPTION | WS_SYSMENU
+CAPTION "Find Crow"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "OK",IDC_BUTTON_OK,209,330,70,12
+    EDITTEXT        IDC_EDIT_CROW_SEARCH,139,7,105,14,ES_AUTOHSCROLL
+    COMBOBOX        IDC_COMBO_CROW_SEARCH,47,7,90,100,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Search Crow",-1,3,9,42,8
+    LTEXT           "Crow",IDC_STATIC_FILTER_INFO,3,23,275,13
+    CONTROL         "",IDC_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | 
+                    LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | 
+                    WS_TABSTOP,0,34,280,295
+    PUSHBUTTON      "Search",IDC_BUTTON_HELPER_SEARCH,247,7,30,12
+END
+
+IDD_DLG_FIND_MAP DIALOGEX 0, 0, 280, 350
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | 
+    WS_CAPTION | WS_SYSMENU
+CAPTION "Find Map"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "OK",IDC_BUTTON_OK,209,330,70,12
+    EDITTEXT        IDC_EDIT_MAP_SEARCH,139,7,105,14,ES_AUTOHSCROLL
+    COMBOBOX        IDC_COMBO_MAP_SEARCH,47,7,90,100,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Search Map",-1,3,9,38,8
+    LTEXT           "Maps",IDC_STATIC_FILTER_INFO,3,23,275,13
+    CONTROL         "",IDC_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | 
+                    LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | 
+                    WS_TABSTOP,0,34,280,295
+    PUSHBUTTON      "Search",IDC_BUTTON_HELPER_SEARCH,247,7,30,12
+END
+
+IDD_DLG_FIND_ITEM DIALOGEX 0, 0, 280, 350
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | 
+    WS_CAPTION | WS_SYSMENU
+CAPTION "Find Item"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "OK",IDC_BUTTON_OK,209,330,70,12
+    EDITTEXT        IDC_EDIT_ITEM_SEARCH,139,7,105,14,ES_AUTOHSCROLL
+    COMBOBOX        IDC_COMBO_ITEM_SEARCH,47,7,90,100,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Search Item",IDC_STATIC,3,9,40,8
+    CONTROL         "",IDC_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | 
+                    LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | 
+                    WS_TABSTOP,0,34,280,295
+    LTEXT           "Items",IDC_STATIC,3,23,19,8
+    PUSHBUTTON      "Search",IDC_BUTTON_HELPER_SEARCH,247,7,30,12
+END
+
+IDD_DLG_FIND_QUEST DIALOGEX 0, 0, 280, 350
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | 
+    WS_CAPTION | WS_SYSMENU
+CAPTION "Find Quest"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | 
+                    LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | 
+                    WS_TABSTOP,0,34,280,295
+    PUSHBUTTON      "OK",IDC_BUTTON_OK,209,330,70,12
+    LTEXT           "Quests",-1,3,23,24,8
+    EDITTEXT        IDC_EDIT_QUEST_SEARCH,139,7,105,14,ES_AUTOHSCROLL
+    COMBOBOX        IDC_COMBO_QUEST_SEARCH,52,7,85,100,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Search Quest",-1,3,9,44,8
+    PUSHBUTTON      "Search",IDC_BUTTON_HELPER_SEARCH,247,7,30,12
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904e4"
+        BEGIN
+            VALUE "CompanyName", "TODO: <Company name>"
+            VALUE "FileDescription", "TODO: <File description>"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "EditorCodex.exe"
+            VALUE "LegalCopyright", "TODO: (c) <Company name>.  All rights reserved."
+            VALUE "OriginalFilename", "EditorCodex.exe"
+            VALUE "ProductName", "TODO: <Product name>"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_DLG_FIND_CROW, DIALOG
+    BEGIN
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 343
+    END
+
+    IDD_DLG_FIND_MAP, DIALOG
+    BEGIN
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 343
+    END
+
+    IDD_DLG_FIND_ITEM, DIALOG
+    BEGIN
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 343
+    END
+
+    IDD_DLG_FIND_QUEST, DIALOG
+    BEGIN
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 343
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE 9, 1
+#pragma code_page(1252)
+#include "res\EditorCodex.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"     // Standard components
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

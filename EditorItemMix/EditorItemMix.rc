@@ -1,0 +1,278 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)\r\n"
+    "LANGUAGE 9, 1\r\n"
+    "#include ""res\\EditorItemMix.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""      // Standard components\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "..//res//Icon_Tool.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_EDITORITEMMIX_DIALOG DIALOGEX 0, 0, 549, 421
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_MINIMIZEBOX | WS_POPUP | 
+    WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "EditorItemMix       "
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_LIST_ITEMMIX,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | 
+                    WS_BORDER | WS_TABSTOP,7,24,225,371
+    PUSHBUTTON      "Load",IDC_BUTTON_FILE_LOAD,6,7,41,14
+    PUSHBUTTON      "Save",IDC_BUTTON_FILE_SAVE,48,7,41,14
+    PUSHBUTTON      "Import",IDC_BUTTON_FILE_IMPORT,91,7,41,14
+    PUSHBUTTON      "Add",IDC_BUTTON_ITEMMIX_ADD,7,400,40,14
+    PUSHBUTTON      "Edit",IDC_BUTTON_ITEMMIX_EDIT,48,400,40,14
+    PUSHBUTTON      "Delete",IDC_BUTTON_ITEMMIX_DELETE,89,400,40,14
+    PUSHBUTTON      "Clear",IDC_BUTTON_ITEMMIX_CLEAR,146,400,40,14
+    GROUPBOX        "ItemMix Edit",IDC_STATIC,236,23,304,384
+    EDITTEXT        IDC_EDIT_ITEMMIX_ID,286,47,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MID_RESULT,286,102,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_SID_RESULT,322,102,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_ITEMMIX_RATE,286,66,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_ITEMMIX_PRICE,286,82,72,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_NAME_RESULT,359,102,120,14,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    LTEXT           "ItemMix ID",IDC_STATIC,242,49,36,8
+    PUSHBUTTON      "Item Result",IDC_BUTTON_ITEMMIX_RESULT,240,102,45,14
+    PUSHBUTTON      "X",IDC_BUTTON_ITEMMIX_DEL_RESULT,518,102,16,14
+    EDITTEXT        IDC_EDIT_MID_ITEMMIX_0,286,127,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_SID_ITEMMIX_0,322,127,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_NAME_ITEMMIX_0,359,127,120,14,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    PUSHBUTTON      "ItemMix 0",IDC_BUTTON_ITEMMIX_0,240,127,45,14
+    PUSHBUTTON      "X",IDC_BUTTON_ITEMMIX_DEL_0,518,127,16,14
+    EDITTEXT        IDC_EDIT_MID_ITEMMIX_1,286,143,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_SID_ITEMMIX_1,322,143,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_NAME_ITEMMIX_1,359,143,120,14,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    PUSHBUTTON      "ItemMix 1",IDC_BUTTON_ITEMMIX_1,240,143,45,14
+    PUSHBUTTON      "X",IDC_BUTTON_ITEMMIX_DEL_1,518,143,16,14
+    EDITTEXT        IDC_EDIT_MID_ITEMMIX_2,286,159,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_SID_ITEMMIX_2,322,159,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_NAME_ITEMMIX_2,359,159,120,14,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    PUSHBUTTON      "ItemMix 2",IDC_BUTTON_ITEMMIX_2,240,159,45,14
+    PUSHBUTTON      "X",IDC_BUTTON_ITEMMIX_DEL_2,518,159,16,14
+    EDITTEXT        IDC_EDIT_MID_ITEMMIX_3,286,175,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_SID_ITEMMIX_3,322,175,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_NAME_ITEMMIX_3,359,175,120,14,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    PUSHBUTTON      "ItemMix 3",IDC_BUTTON_ITEMMIX_3,240,175,45,14
+    PUSHBUTTON      "X",IDC_BUTTON_ITEMMIX_DEL_3,518,175,16,14
+    EDITTEXT        IDC_EDIT_MID_ITEMMIX_4,286,191,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_SID_ITEMMIX_4,322,191,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_NAME_ITEMMIX_4,359,191,120,14,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    PUSHBUTTON      "ItemMix 4",IDC_BUTTON_ITEMMIX_4,240,191,45,14
+    PUSHBUTTON      "X",IDC_BUTTON_ITEMMIX_DEL_4,518,191,16,14
+    LTEXT           "ItemMix Rate",IDC_STATIC,242,68,44,8
+    LTEXT           "ItemMix Price",IDC_STATIC,242,84,44,8
+    EDITTEXT        IDC_EDIT_NUM_RESULT,481,102,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_NUM_ITEMMIX_0,481,127,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_NUM_ITEMMIX_1,481,143,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_NUM_ITEMMIX_2,481,159,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_NUM_ITEMMIX_3,481,175,35,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_NUM_ITEMMIX_4,481,191,35,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "SAVE",IDC_BUTTON_ITEMMIX_SAVE,485,388,50,14
+    EDITTEXT        IDC_EDIT_DATA_TIME,285,232,55,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DATA_3,405,218,55,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DATA_4,405,232,55,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DATA_5,405,246,55,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DATA_6,405,260,55,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DATA_9,405,274,55,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DATA_10,405,288,55,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DATA_11,405,302,55,12,ES_AUTOHSCROLL
+    LTEXT           "Time",IDC_STATIC,245,234,16,8
+    LTEXT           "Category",IDC_STATIC,245,219,31,8
+    EDITTEXT        IDC_EDIT_DATA_LEVEL,285,246,55,12,ES_AUTOHSCROLL
+    LTEXT           "Level Req",IDC_STATIC,245,248,32,8
+    GROUPBOX        "Item Compound Data",IDC_STATIC,239,206,230,114,
+                    BS_CENTER
+    COMBOBOX        IDC_COMBO_CATEGORY,285,217,110,100,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    CONTROL         "Generate Random Option",
+                    IDC_CHECK_GENERATE_RANDOM_OPTION,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,242,356,97,10
+    EDITTEXT        IDC_EDIT_DATA_ITEM_ATT,286,326,35,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DATA_ITEM_DEF,323,326,35,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DATA_ITEM_RES_FIRE,286,340,35,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DATA_ITEM_RES_ICE,323,340,35,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DATA_ITEM_RES_ELECT,360,340,35,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DATA_ITEM_RES_POISON,397,340,35,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DATA_ITEM_RES_SPIRIT,434,340,35,12,
+                    ES_AUTOHSCROLL
+    LTEXT           "Att/Def",IDC_STATIC,243,328,25,8
+    LTEXT           "Resistance",IDC_STATIC,243,342,36,8
+END
+
+IDD_DLG_FIND_ITEM DIALOGEX 0, 0, 280, 350
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | 
+    WS_CAPTION | WS_SYSMENU
+CAPTION "Find Item"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "OK",IDC_BUTTON_OK,209,330,70,12
+    EDITTEXT        IDC_EDIT_ITEM_SEARCH,139,7,105,14,ES_AUTOHSCROLL
+    COMBOBOX        IDC_COMBO_ITEM_SEARCH,47,7,90,100,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Search Item",IDC_STATIC,3,9,40,8
+    CONTROL         "",IDC_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | 
+                    LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | 
+                    WS_TABSTOP,0,34,280,295
+    LTEXT           "Items",IDC_STATIC,3,23,19,8
+    PUSHBUTTON      "Search",IDC_BUTTON_HELPER_SEARCH,247,7,30,12
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "DevLordX"
+            VALUE "FileDescription", "EditorItemMix"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "EditorItemMix.exe"
+            VALUE "LegalCopyright", "(c) DevLordX.  All rights reserved."
+            VALUE "OriginalFilename", "EditorItemMix.exe"
+            VALUE "ProductName", "RanOnline"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_EDITORITEMMIX_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 542
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 414
+    END
+
+    IDD_DLG_FIND_ITEM, DIALOG
+    BEGIN
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 343
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE 9, 1
+#include "res\EditorItemMix.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"      // Standard components
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{2E62027E-53E5-4ADA-8AFD-8E94F3081AA1}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>EditorItem</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>Editor_Crypt</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>..\_Bin\Data</OutDir>
+    <IntDir>$(SolutionDir)_Build\$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetName>Editor_Crypt</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>..\_Bin\Data</OutDir>
+    <IntDir>$(SolutionDir)_Build\$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetName>Editor_CryptD</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>false</IntrinsicFunctions>
+      <SDLCheck>
+      </SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>./;./res;../Lib_Engine;../Lib_Engine/Common;../Lib_Engine/DxCommon;../Lib_Engine/DxCommon9;../Lib_Engine/DxEffect;../Lib_Engine/DxEffect/Char;../Lib_Engine/DxEffect/EffAni;../Lib_Engine/DxEffect/EffKeep;../Lib_Engine/DxEffect/EffProj;../Lib_Engine/DxEffect/Single;../Lib_Engine/DxFrame;../Lib_Engine/DxOctree;../Lib_Engine/Meshs;../Lib_Engine/DxSound;../Lib_Engine/G-Logic;../Lib_Engine/GUInterface;../Lib_Engine/Utils;../Lib_Helper;../Lib_Network;../Lib_Client;../Lib_Client/G-Logic;../Lib_Client/NpcTalk;../Lib_ClientUI/Interface;../Tik/DXInclude;../Tik/DXLib;../Tik/Include;../Tik/Library;../Tik/TbbLib</AdditionalIncludeDirectories>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <OmitFramePointers>true</OmitFramePointers>
+      <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <OutputFile>..\_Bin/Tool/$(TargetName)$(TargetExt)</OutputFile>
+      <AdditionalLibraryDirectories>../Tik/DXInclude;../Tik/DXLib;../Tik/Include;../Tik/Library;../Tik/TbbLib;../_Bin/Data/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+      <AdditionalDependencies>dsound.lib;dinput8.lib;dxerr9.lib;d3dx9.lib;d3d9.lib;d3dxof.lib;dxguid.lib;imm32.lib;libogg.lib;libvorbis_static.lib;libvorbisfile_static.lib;legacy_stdio_definitions.lib;BugTrap.lib;Lib_Client.lib;Lib_ClientUI.lib;Lib_Engine.lib;Lib_Network.lib;Lib_Helper.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>libcmt.lib;libcmtd.lib</IgnoreSpecificDefaultLibraries>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>
+      </SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>./;./Resources;./Sources;../[Lib]__Engine/Sources;../[Lib]__Engine/Sources/Common;../[Lib]__Engine/Sources/DxCommon;../[Lib]__Engine/Sources/DxCommon9;../[Lib]__Engine/Sources/DxEffect;../[Lib]__Engine/Sources/DxMeshs;../[Lib]__Engine/Sources/DxTools;../[Lib]__Engine/Sources/G-Logic;../[Lib]__MfcEx/Sources;../[Lib]__MfcEx/Sources/ExLibs;../[Lib]__NetClient/Sources;../[Lib]__RanClient/Sources;../[Lib]__RanClient/Sources/G-Logic;../[Lib]__RanClient/Sources/G-Logic/Data;../[Lib]__RanClient/Sources/G-Logic/Npc;../[Lib]__RanClient/Sources/G-Logic/Quest;../Dependency/common;../Dependency/directx;../Dependency/lzo;../Dependency/NetGlobal</AdditionalIncludeDirectories>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <OutputFile>..\_Bin/Data/$(TargetName)$(TargetExt)</OutputFile>
+      <AdditionalLibraryDirectories>../Dependency/commonlib;../Dependency/directx/x86;../Dependency/lzo;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+      <AdditionalDependencies>dsound.lib;dinput8.lib;dxerr9.lib;d3dx9.lib;d3d9.lib;d3dxof.lib;dxguid.lib;imm32.lib;libogg.lib;libvorbis_static.lib;libvorbisfile_static.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>libcmt.lib;libcmtd.lib</IgnoreSpecificDefaultLibraries>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ResourceCompile Include="FileCrypt.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="res\FileCrypt.rc2" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\res\Icon_Tool.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="FileCrypt.cpp" />
+    <ClCompile Include="FileCryptDlg.cpp" />
+    <ClCompile Include="FileCryptDlgCrypt.cpp" />
+    <ClCompile Include="stdafx.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="FileCrypt.h" />
+    <ClInclude Include="FileCryptDlg.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="stdafx.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="ReadMe.txt" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+  <ProjectExtensions>
+    <VisualStudio>
+      <UserProperties RESOURCE_FILE="FileCrypt.rc" />
+    </VisualStudio>
+  </ProjectExtensions>
+</Project>

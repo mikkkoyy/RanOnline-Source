@@ -1,0 +1,137 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{afd9188a-c8cf-4d9d-b780-280c011106c4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source">
+      <UniqueIdentifier>{7a43bed0-9b24-494c-a10d-b74412437f02}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\Editor">
+      <UniqueIdentifier>{ac54e003-b2c3-4aba-9a08-861af47e1378}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="EditorNpcAction.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="res\EditorNpcAction.rc2">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\res\Icon_Tool.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="EditorNpcAction.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="EditorNpcActionDlg.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="EditorNpcActionDlgEx.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="DlgInputNum.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="DlgItem.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="DlgQuest.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="DlgSkill.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="DlgSkill2.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="DlgTalk.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageAction.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageActionEx.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageAnswer.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageCondition.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageConditionEx.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageTable.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageTalk.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageTalkEx.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="SheetWithTab.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="stdafx.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="EditorNpcAction.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorNpcActionDlg.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="DlgInputNum.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="DlgItem.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="DlgQuest.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="DlgSkill.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="DlgSkill2.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="DlgTalk.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageAction.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageAnswer.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageCondition.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageTable.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageTalk.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="SheetWithTab.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="stdafx.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="ReadMe.txt" />
+  </ItemGroup>
+</Project>

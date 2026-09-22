@@ -1,0 +1,1036 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{07CE590D-8516-4147-87D1-8E1CCD79E73E}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>LibRanClientUI</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>Lib_ClientUI</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>..\_Bin\Data</OutDir>
+    <IntDir>$(SolutionDir)_Build\$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetName>Lib_ClientUI</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>..\_Bin\Data</OutDir>
+    <IntDir>$(SolutionDir)_Build\$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetName>RanClientUID</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>false</FunctionLevelLinking>
+      <IntrinsicFunctions>false</IntrinsicFunctions>
+      <SDLCheck>
+      </SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <OmitFramePointers>true</OmitFramePointers>
+      <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <AdditionalIncludeDirectories>./;./Interface;../Lib_Engine;../Lib_Engine/Common;../Lib_Engine/DxCommon;../Lib_Engine/DxCommon9;../Lib_Engine/DxEffect;../Lib_Engine/DxEffect/Char;../Lib_Engine/DxEffect/EffAni;../Lib_Engine/DxEffect/EffKeep;../Lib_Engine/DxEffect/EffProj;../Lib_Engine/DxEffect/Single;../Lib_Engine/DxFrame;../Lib_Engine/DxOctree;../Lib_Engine/Meshs;../Lib_Engine/DxSound;../Lib_Engine/G-Logic;../Lib_Engine/GUInterface;../Lib_Engine/Utils;../Lib_Helper;../Lib_Network;../Lib_Client;../Lib_Client/G-Logic;../Lib_Client/NpcTalk;../Tik/DXInclude;../Tik/DXLib;../Tik/Include;../Tik/Library;../Tik/TbbLib</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>
+      </SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalIncludeDirectories>./;./Sources/ControlExUI;./Sources/InnerUI;./Sources/LoaderUI;./Sources/OuterUI;./Sources/TextUI;../Lib_Engine/Sources;../Lib_Engine/Sources/Common;../Lib_Engine/Sources/DxCommon;../Lib_Engine/Sources/DxCommon9;../Lib_Engine/Sources/DxEffect;../Lib_Engine/Sources/DxLand;../Lib_Engine/Sources/DxMeshs;../Lib_Engine/Sources/DxTools;../Lib_Engine/Sources/G-Logic;../Lib_EngineSound/Sources;../Lib_EngineSound/Sources/DxSound;../Lib_EngineSound/Sources/ogg;../Lib_EngineSound/Sources/vorbis;../Lib_EngineUI/Sources;../Lib_Helper/Sources;../Lib_Helper/Sources/ExLibs;../[Lib]__NetClient/Sources;../Lib_Network/Sources;../Lib_Client/Sources;../Lib_Client/Sources/DbAction;../Lib_Client/Sources/G-Logic;../Lib_Client/Sources/G-Logic/Client;../Lib_Client/Sources/G-Logic/Data;../Lib_Client/Sources/G-Logic/GLMsg;../Lib_Client/Sources/G-Logic/Npc;../Lib_Client/Sources/G-Logic/Quest;../Lib_Client/Sources/G-Logic/Server;../Dependency/common;../Dependency/directx;../Dependency/lzo;../Dependency/NetGlobal;../Dependency/tbblib/Include</AdditionalIncludeDirectories>
+      <MinimalRebuild>false</MinimalRebuild>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="Interface\AcademyConftDisplay.cpp" />
+    <ClCompile Include="Interface\ActivityItemList.cpp" />
+    <ClCompile Include="Interface\ActivityItemListSlot.cpp" />
+    <ClCompile Include="Interface\ActivityItemWindow.cpp" />
+    <ClCompile Include="Interface\ActivityPage.cpp" />
+    <ClCompile Include="Interface\ActivityPageMain.cpp" />
+    <ClCompile Include="Interface\ActivityPageMainSlot.cpp" />
+    <ClCompile Include="Interface\AdminMessageDisplay.cpp" />
+    <ClCompile Include="Interface\AttendanceBookWindow.cpp" />
+    <ClCompile Include="Interface\AudioOption.cpp" />
+    <ClCompile Include="Interface\BasicAnimationBox.cpp" />
+    <ClCompile Include="Interface\BasicButton.cpp" />
+    <ClCompile Include="Interface\BasicCarrat.cpp" />
+    <ClCompile Include="Interface\BasicChat.cpp" />
+    <ClCompile Include="Interface\BasicChatLeftBar.cpp" />
+    <ClCompile Include="Interface\BasicChatRightBody.cpp" />
+    <ClCompile Include="Interface\BasicChatRightBodyEx.cpp" />
+    <ClCompile Include="Interface\BasicComboBox.cpp" />
+    <ClCompile Include="Interface\BasicComboBoxRollOver.cpp" />
+    <ClCompile Include="Interface\BasicEscMenu.cpp" />
+    <ClCompile Include="Interface\BasicGameMenu.cpp" />
+    <ClCompile Include="Interface\BasicHWOptionWindow.cpp" />
+    <ClCompile Include="Interface\BasicInfoView.cpp" />
+    <ClCompile Include="Interface\BasicLevelDisplay.cpp" />
+    <ClCompile Include="Interface\BasicLineBox.cpp" />
+    <ClCompile Include="Interface\BasicLineBoxButton.cpp" />
+    <ClCompile Include="Interface\BasicLineBoxEx.cpp" />
+    <ClCompile Include="Interface\BasicLineBoxSmart.cpp" />
+    <ClCompile Include="Interface\BasicMiniBarGauge.cpp" />
+    <ClCompile Include="Interface\BasicPotionTray.cpp" />
+    <ClCompile Include="Interface\BasicProgressBar.cpp" />
+    <ClCompile Include="Interface\BasicQuickPotionSlot.cpp" />
+    <ClCompile Include="Interface\BasicQuickPotionSlotEx.cpp" />
+    <ClCompile Include="Interface\BasicQuickSkillSlot.cpp" />
+    <ClCompile Include="Interface\BasicQuickSkillSlotEx.cpp" />
+    <ClCompile Include="Interface\BasicScrollBar.cpp" />
+    <ClCompile Include="Interface\BasicScrollBarEx.cpp" />
+    <ClCompile Include="Interface\BasicScrollThumb.cpp" />
+    <ClCompile Include="Interface\BasicScrollThumbFrame.cpp" />
+    <ClCompile Include="Interface\BasicScrollThumbFrameUpdate.cpp" />
+    <ClCompile Include="Interface\BasicSkillTray.cpp" />
+    <ClCompile Include="Interface\BasicTextBox.cpp" />
+    <ClCompile Include="Interface\BasicTextBoxEtc.cpp" />
+    <ClCompile Include="Interface\BasicTextBoxEx.cpp" />
+    <ClCompile Include="Interface\BasicTextBoxSimple.cpp" />
+    <ClCompile Include="Interface\BasicTextButton.cpp" />
+    <ClCompile Include="Interface\BasicTextButtonEx.cpp" />
+    <ClCompile Include="Interface\BasicTextButtonImage.cpp" />
+    <ClCompile Include="Interface\BasicTree.cpp" />
+    <ClCompile Include="Interface\BasicTreeEx.cpp" />
+    <ClCompile Include="Interface\BasicTreeNode.cpp" />
+    <ClCompile Include="Interface\BasicVarTextBox.cpp" />
+    <ClCompile Include="Interface\BasicVarTextBoxItemLink.cpp" />
+    <ClCompile Include="Interface\BikeColorSelect.cpp" />
+    <ClCompile Include="Interface\BikeColorSelectSlot.cpp" />
+    <ClCompile Include="Interface\BikeColorWindow.cpp" />
+    <ClCompile Include="Interface\BlockProgramAlarm.cpp" />
+    <ClCompile Include="Interface\BonusTimeDisplay.cpp" />
+    <ClCompile Include="Interface\BonusTimeGauge.cpp" />
+    <ClCompile Include="Interface\BonusTimeType.cpp" />
+    <ClCompile Include="Interface\BusWindow.cpp" />
+    <ClCompile Include="Interface\Calendar.cpp" />
+    <ClCompile Include="Interface\CarColorSelectSlot.cpp" />
+    <ClCompile Include="Interface\CarColorWindow.cpp" />
+    <ClCompile Include="Interface\CdmRankingDisplay.cpp" />
+    <ClCompile Include="Interface\CdmRankingDisplaySlot.cpp" />
+    <ClCompile Include="Interface\ChangeScaleWindow.cpp" />
+    <ClCompile Include="Interface\ChangeSchoolWindow.cpp" />
+    <ClCompile Include="Interface\CharacterCreateInfo.cpp" />
+    <ClCompile Include="Interface\CharacterCreateInfoClass.cpp" />
+    <ClCompile Include="Interface\CharacterCreateInfoSchool.cpp" />
+    <ClCompile Include="Interface\CharacterCreateInfoSex.cpp" />
+    <ClCompile Include="Interface\CharacterCreatePage.cpp" />
+    <ClCompile Include="Interface\CharacterCreatePageSet.cpp" />
+    <ClCompile Include="Interface\CharacterCreatePageStyle.cpp" />
+    <ClCompile Include="Interface\CharacterCreateRotate.cpp" />
+    <ClCompile Include="Interface\CharacterInfoViewPageStats.cpp" />
+    <ClCompile Include="Interface\CharacterInfoViewPageStatsMark.cpp" />
+    <ClCompile Include="Interface\CharacterInfoViewPageStatsRender.cpp" />
+    <ClCompile Include="Interface\CharacterInfoViewWindow.cpp" />
+    <ClCompile Include="Interface\CharacterWindow\CharacterWindow.cpp" />
+    <ClCompile Include="Interface\CharacterWindow\CharacterWindowChar.cpp" />
+    <ClCompile Include="Interface\CharacterWindow\CharacterWindowCharRender.cpp" />
+    <ClCompile Include="Interface\CharacterWindow\CharacterWindowCharStat.cpp" />
+    <ClCompile Include="Interface\CharacterWindow\CharacterWindowCharStatMark.cpp" />
+    <ClCompile Include="Interface\CharacterWindow\CharacterWindowCharWear.cpp" />
+    <ClCompile Include="Interface\CharacterWindow\CharacterWindowCharWearEx.cpp" />
+    <ClCompile Include="Interface\CharacterWindow\ItemImageCharWear.cpp" />
+    <ClCompile Include="Interface\ChatMacroWindow.cpp" />
+    <ClCompile Include="Interface\ChatShowFlag.cpp" />
+    <ClCompile Include="Interface\ClubAnnounce.cpp" />
+    <ClCompile Include="Interface\ClubBattle.cpp" />
+    <ClCompile Include="Interface\ClubBattleModalWindow.cpp" />
+    <ClCompile Include="Interface\ClubMake.cpp" />
+    <ClCompile Include="Interface\ClubMember.cpp" />
+    <ClCompile Include="Interface\ClubUnion.cpp" />
+    <ClCompile Include="Interface\ClubWindow.cpp" />
+    <ClCompile Include="Interface\CodexWindow\CodexPage.cpp" />
+    <ClCompile Include="Interface\CodexWindow\CodexPageMain.cpp" />
+    <ClCompile Include="Interface\CodexWindow\CodexPageMainSlot.cpp" />
+    <ClCompile Include="Interface\CodexWindow\StudentCodexButton.cpp" />
+    <ClCompile Include="Interface\CodexWindow\StudentCodexWindow.cpp" />
+    <ClCompile Include="Interface\CompetitionNotifyButton.cpp" />
+    <ClCompile Include="Interface\CompetitionNotifyButtonAlarm.cpp" />
+    <ClCompile Include="Interface\CompetitionWindow.cpp" />
+    <ClCompile Include="Interface\ConftConfirm.cpp" />
+    <ClCompile Include="Interface\ConftDisplayMan.cpp" />
+    <ClCompile Include="Interface\ConftModalWindow.cpp" />
+    <ClCompile Include="Interface\ConftModalWindowMsg.cpp" />
+    <ClCompile Include="Interface\CountMsg.cpp" />
+    <ClCompile Include="Interface\CrowTargetInfo.cpp" />
+    <ClCompile Include="Interface\CrowTargetInfoNpc.cpp" />
+    <ClCompile Include="Interface\CrowTargetInfoPlayer.cpp" />
+    <ClCompile Include="Interface\CWRankingDisplay\CWRankingDisplay.cpp" />
+    <ClCompile Include="Interface\DamageDisplay.cpp" />
+    <ClCompile Include="Interface\DamageDisplayMan.cpp" />
+    <ClCompile Include="Interface\DayBox.cpp" />
+    <ClCompile Include="Interface\DialogueWindow.cpp" />
+    <ClCompile Include="Interface\DialogueWindowRenewal.cpp" />
+    <ClCompile Include="Interface\EquipmentLockEnableWindow.cpp" />
+    <ClCompile Include="Interface\EquipmentLockInputWindow.cpp" />
+    <ClCompile Include="Interface\EquipmentLockRecoverWindow.cpp" />
+    <ClCompile Include="Interface\EscMenuOpen.cpp" />
+    <ClCompile Include="Interface\ExtraNotice.cpp" />
+    <ClCompile Include="Interface\FaceStyleCard.cpp" />
+    <ClCompile Include="Interface\FItemFactTimeDisplay.cpp" />
+    <ClCompile Include="Interface\ForgotPassChangePage.cpp" />
+    <ClCompile Include="Interface\ForgotPassPage.cpp" />
+    <ClCompile Include="Interface\FriendWindow.cpp" />
+    <ClCompile Include="Interface\FriendWindowBlockPage.cpp" />
+    <ClCompile Include="Interface\FriendWindowNormalPage.cpp" />
+    <ClCompile Include="Interface\GambleAgainBox.cpp" />
+    <ClCompile Include="Interface\GambleAnimationBox.cpp" />
+    <ClCompile Include="Interface\GambleBox.cpp" />
+    <ClCompile Include="Interface\GambleResultBox.cpp" />
+    <ClCompile Include="Interface\GambleResultEvenBox.cpp" />
+    <ClCompile Include="Interface\GambleResultOddBox.cpp" />
+    <ClCompile Include="Interface\GambleSelectBox.cpp" />
+    <ClCompile Include="Interface\GamePlayOption.cpp" />
+    <ClCompile Include="Interface\GamePlayOptionMsg.cpp" />
+    <ClCompile Include="Interface\GameStats.cpp" />
+    <ClCompile Include="Interface\GameTextControl.cpp" />
+    <ClCompile Include="Interface\GameTimeConvertUI.cpp" />
+    <ClCompile Include="Interface\GarbageInventoryPage.cpp" />
+    <ClCompile Include="Interface\GarbageInventoryWindow.cpp" />
+    <ClCompile Include="Interface\GatherGauge.cpp" />
+    <ClCompile Include="Interface\GenderChangeWindow.cpp" />
+    <ClCompile Include="Interface\GlobalRankingWindow\GlobalRankingPage.cpp" />
+    <ClCompile Include="Interface\GlobalRankingWindow\GlobalRankingPageSlot.cpp" />
+    <ClCompile Include="Interface\GlobalRankingWindow\GlobalRankingWindow.cpp" />
+    <ClCompile Include="Interface\HairColorCard.cpp" />
+    <ClCompile Include="Interface\HairStyleCard.cpp" />
+    <ClCompile Include="Interface\HeadChatDisplay.cpp" />
+    <ClCompile Include="Interface\HeadChatDisplayMan.cpp" />
+    <ClCompile Include="Interface\HelpDataMan.cpp" />
+    <ClCompile Include="Interface\HelpWindow.cpp" />
+    <ClCompile Include="Interface\HelpWindowWeb.cpp" />
+    <ClCompile Include="Interface\InBoxWindow.cpp" />
+    <ClCompile Include="Interface\InfoBoxContents.cpp" />
+    <ClCompile Include="Interface\InnerInterface.cpp" />
+    <ClCompile Include="Interface\InnerInterfaceModalMsg.cpp" />
+    <ClCompile Include="Interface\InnerInterfaceMsg.cpp" />
+    <ClCompile Include="Interface\InnerInterfaceSimple.cpp" />
+    <ClCompile Include="Interface\InventoryLockEnableWindow.cpp" />
+    <ClCompile Include="Interface\InventoryLockInputWindow.cpp" />
+    <ClCompile Include="Interface\InventoryLockRecoverWindow.cpp" />
+    <ClCompile Include="Interface\InventoryUI.cpp" />
+    <ClCompile Include="Interface\InventoryUIBank.cpp" />
+    <ClCompile Include="Interface\InventoryUIInven.cpp" />
+    <ClCompile Include="Interface\InventoryUIWishList.cpp" />
+    <ClCompile Include="Interface\InventoryUI_ItemMix.cpp" />
+    <ClCompile Include="Interface\InventoryUI_ItemMixInven.cpp" />
+    <ClCompile Include="Interface\InventoryUI_Rebuild.cpp" />
+    <ClCompile Include="Interface\InventoryUI_RebuildInven.cpp" />
+    <ClCompile Include="Interface\InventoryUI_Trade.cpp" />
+    <ClCompile Include="Interface\InventoryUI_TradeInven.cpp" />
+    <ClCompile Include="Interface\InventoryUI_Trash.cpp" />
+    <ClCompile Include="Interface\InventoryUI_TrashInven.cpp" />
+    <ClCompile Include="Interface\ItemBankPage.cpp" />
+    <ClCompile Include="Interface\ItemBankWindow.cpp" />
+    <ClCompile Include="Interface\ItemColorSelectSlot.cpp" />
+    <ClCompile Include="Interface\ItemColorWindow.cpp" />
+    <ClCompile Include="Interface\ItemGarbage.cpp" />
+    <ClCompile Include="Interface\ItemImage.cpp" />
+    <ClCompile Include="Interface\ItemInfoToolTip.cpp" />
+    <ClCompile Include="Interface\ItemMallButton.cpp" />
+    <ClCompile Include="Interface\ItemMallWindow.cpp" />
+    <ClCompile Include="Interface\ItemMallWindowMenu.cpp" />
+    <ClCompile Include="Interface\ItemMallWindowMenuButton.cpp" />
+    <ClCompile Include="Interface\ItemMallWindowMenuPage.cpp" />
+    <ClCompile Include="Interface\ItemMallWindowMenuSlot.cpp" />
+    <ClCompile Include="Interface\ItemMixInventoryPage.cpp" />
+    <ClCompile Include="Interface\ItemMixInventoryWindow.cpp" />
+    <ClCompile Include="Interface\ItemMixWindow.cpp" />
+    <ClCompile Include="Interface\ItemMove.cpp" />
+    <ClCompile Include="Interface\ItemPreviewWindow.cpp" />
+    <ClCompile Include="Interface\ItemPreviewWindowRender.cpp" />
+    <ClCompile Include="Interface\ItemRebuild.cpp" />
+    <ClCompile Include="Interface\ItemRebuildOption.cpp" />
+    <ClCompile Include="Interface\ItemSearchResultWindow.cpp" />
+    <ClCompile Include="Interface\ItemShopIcon.cpp" />
+    <ClCompile Include="Interface\ItemShopIconMan.cpp" />
+    <ClCompile Include="Interface\ItemShopSlot.cpp" />
+    <ClCompile Include="Interface\ItemShopWindow.cpp" />
+    <ClCompile Include="Interface\ItemShopWindowWeb.cpp" />
+    <ClCompile Include="Interface\ItemSlot.cpp" />
+    <ClCompile Include="Interface\ItemSlotEx.cpp" />
+    <ClCompile Include="Interface\ItemSlotEx_Renew.cpp" />
+    <ClCompile Include="Interface\ItemSlotPrivateMarket.cpp" />
+    <ClCompile Include="Interface\ItemSlot_Renew.cpp" />
+    <ClCompile Include="Interface\ItemTransferInventoryPage.cpp" />
+    <ClCompile Include="Interface\ItemTransferInventoryWindow.cpp" />
+    <ClCompile Include="Interface\ItemTransferWindow.cpp" />
+    <ClCompile Include="Interface\KeySettingWindow.cpp" />
+    <ClCompile Include="Interface\LargeMapWindow.cpp" />
+    <ClCompile Include="Interface\LargeMapWindowCheckBox.cpp" />
+    <ClCompile Include="Interface\LargeMapWindowImage.cpp" />
+    <ClCompile Include="Interface\LargeMapWindowInfo.cpp" />
+    <ClCompile Include="Interface\LargeMapWindowMob.cpp" />
+    <ClCompile Include="Interface\LargeMapWindowMobDrop.cpp" />
+    <ClCompile Include="Interface\LargeMapWindowRadio.cpp" />
+    <ClCompile Include="Interface\LargeMapWindowSetting.cpp" />
+    <ClCompile Include="Interface\LargeMapWindowSlotRender.cpp" />
+    <ClCompile Include="Interface\LoadingMapThread.cpp" />
+    <ClCompile Include="Interface\LoadingThread.cpp" />
+    <ClCompile Include="Interface\LobbyTitle.cpp" />
+    <ClCompile Include="Interface\LoginPage.cpp" />
+    <ClCompile Include="Interface\MapMoveDisplay.cpp" />
+    <ClCompile Include="Interface\MapRequireCheck.cpp" />
+    <ClCompile Include="Interface\MarketPage.cpp" />
+    <ClCompile Include="Interface\MarketWindow.cpp" />
+    <ClCompile Include="Interface\MessageWindow.cpp" />
+    <ClCompile Include="Interface\MiniMap.cpp" />
+    <ClCompile Include="Interface\MiniMapInfo.cpp" />
+    <ClCompile Include="Interface\MiniPartySlot.cpp" />
+    <ClCompile Include="Interface\MiniPartyWindow.cpp" />
+    <ClCompile Include="Interface\MobDBWindowItem.cpp" />
+    <ClCompile Include="Interface\MobPreviewWindow.cpp" />
+    <ClCompile Include="Interface\MobPreviewWindowRender.cpp" />
+    <ClCompile Include="Interface\ModalWindow.cpp" />
+    <ClCompile Include="Interface\ModernQuestInfoDone.cpp" />
+    <ClCompile Include="Interface\ModernQuestInfoProg.cpp" />
+    <ClCompile Include="Interface\ModernQuestListDone.cpp" />
+    <ClCompile Include="Interface\ModernQuestListProg.cpp" />
+    <ClCompile Include="Interface\ModernQuestWindow.cpp" />
+    <ClCompile Include="Interface\MultiModeButton.cpp" />
+    <ClCompile Include="Interface\MultiModeButtonImage.cpp" />
+    <ClCompile Include="Interface\NameDisplay.cpp" />
+    <ClCompile Include="Interface\NameDisplayMan.cpp" />
+    <ClCompile Include="Interface\NPCDialoguePage.cpp" />
+    <ClCompile Include="Interface\NPCItemExchangeSlot.cpp" />
+    <ClCompile Include="Interface\NPCItemExchangeWindow.cpp" />
+    <ClCompile Include="Interface\NPCMarketPage.cpp" />
+    <ClCompile Include="Interface\NPCPromotionPage.cpp" />
+    <ClCompile Include="Interface\NPCShopItemSlot.cpp" />
+    <ClCompile Include="Interface\NPCShopWindow.cpp" />
+    <ClCompile Include="Interface\OuterInterface.cpp" />
+    <ClCompile Include="Interface\OuterInterfaceModalMsg.cpp" />
+    <ClCompile Include="Interface\OuterInterfaceMsg.cpp" />
+    <ClCompile Include="Interface\OuterInterfaceSimple.cpp" />
+    <ClCompile Include="Interface\PandoraBoxButton.cpp" />
+    <ClCompile Include="Interface\PandoraBoxItemSlot.cpp" />
+    <ClCompile Include="Interface\PandoraBoxResultsItemSlot.cpp" />
+    <ClCompile Include="Interface\PandoraBoxWindow.cpp" />
+    <ClCompile Include="Interface\PartyBuffInfo.cpp" />
+    <ClCompile Include="Interface\PartyBuffInfoUnit.cpp" />
+    <ClCompile Include="Interface\PartyDisplay.cpp" />
+    <ClCompile Include="Interface\PartyDisplayBuffInfo.cpp" />
+    <ClCompile Include="Interface\PartyDisplayBuffInfoUnit.cpp" />
+    <ClCompile Include="Interface\PartyModalWindow.cpp" />
+    <ClCompile Include="Interface\PartyModalWindowMsg.cpp" />
+    <ClCompile Include="Interface\PartySearch\PartyFinderIcon.cpp" />
+    <ClCompile Include="Interface\PartySearch\PartyFinderSlot.cpp" />
+    <ClCompile Include="Interface\PartySearch\PartyFinderWindow.cpp" />
+    <ClCompile Include="Interface\PartySearch\PartyRequestModalWindow.cpp" />
+    <ClCompile Include="Interface\PartySlot.cpp" />
+    <ClCompile Include="Interface\PartySlotDisplay.cpp" />
+    <ClCompile Include="Interface\PartyWindow.cpp" />
+    <ClCompile Include="Interface\PartyWindowCheckBox.cpp" />
+    <ClCompile Include="Interface\PassKeyboard.cpp" />
+    <ClCompile Include="Interface\PetColorCard.cpp" />
+    <ClCompile Include="Interface\PetQuickSkillSlot.cpp" />
+    <ClCompile Include="Interface\PetQuickSkillSlot2.cpp" />
+    <ClCompile Include="Interface\PetRebirthDialogue.cpp" />
+    <ClCompile Include="Interface\PetSkillImage.cpp" />
+    <ClCompile Include="Interface\PetSkillInfoDisplay.cpp" />
+    <ClCompile Include="Interface\PetSkillInfoDisplay2.cpp" />
+    <ClCompile Include="Interface\PetSkillPage.cpp" />
+    <ClCompile Include="Interface\PetSkillSlot.cpp" />
+    <ClCompile Include="Interface\PetSkillWindow.cpp" />
+    <ClCompile Include="Interface\PetskinMixImage.cpp" />
+    <ClCompile Include="Interface\PetStatus.cpp" />
+    <ClCompile Include="Interface\PetStyleCard.cpp" />
+    <ClCompile Include="Interface\PetWindow.cpp" />
+    <ClCompile Include="Interface\PetWindowRender.cpp" />
+    <ClCompile Include="Interface\PKComboDisplay.cpp" />
+    <ClCompile Include="Interface\PKComboType.cpp" />
+    <ClCompile Include="Interface\PKRankNotification.cpp" />
+    <ClCompile Include="Interface\PKRankNotificationInfo.cpp" />
+    <ClCompile Include="Interface\PlayerRankingButton.cpp" />
+    <ClCompile Include="Interface\PrivateMarketMake.cpp" />
+    <ClCompile Include="Interface\PrivateMarketPage.cpp" />
+    <ClCompile Include="Interface\PrivateMarketSellWindow.cpp" />
+    <ClCompile Include="Interface\PrivateMarketShow.cpp" />
+    <ClCompile Include="Interface\PrivateMarketShowMan.cpp" />
+    <ClCompile Include="Interface\PrivateMarketWindow.cpp" />
+    <ClCompile Include="Interface\ProductButton.cpp" />
+    <ClCompile Include="Interface\ProductWindow.cpp" />
+    <ClCompile Include="Interface\ProductWindowList.cpp" />
+    <ClCompile Include="Interface\ProductWindowProduct.cpp" />
+    <ClCompile Include="Interface\ProductWindowType.cpp" />
+    <ClCompile Include="Interface\ProductWindowTypeBase.cpp" />
+    <ClCompile Include="Interface\PtoPWindow.cpp" />
+    <ClCompile Include="Interface\PVPCaptureTheFlagBattleNotice.cpp" />
+    <ClCompile Include="Interface\PVPCaptureTheFlagHoldIcon.cpp" />
+    <ClCompile Include="Interface\PVPCaptureTheFlagPage.cpp" />
+    <ClCompile Include="Interface\PVPCaptureTheFlagPageBattle.cpp" />
+    <ClCompile Include="Interface\PVPCaptureTheFlagPageHistory.cpp" />
+    <ClCompile Include="Interface\PVPCaptureTheFlagRankingPage.cpp" />
+    <ClCompile Include="Interface\PVPCaptureTheFlagRankingPageSlot.cpp" />
+    <ClCompile Include="Interface\PVPCaptureTheFlagRankings.cpp" />
+    <ClCompile Include="Interface\PVPCaptureTheFlagRebirthDialogue.cpp" />
+    <ClCompile Include="Interface\PVPCaptureTheFlagScore.cpp" />
+    <ClCompile Include="Interface\PVPCaptureTheFlagTopRankings.cpp" />
+    <ClCompile Include="Interface\PVPCaptureTheFlagTopRankingsSlot.cpp" />
+    <ClCompile Include="Interface\PVPSchoolWarsBattleNotice.cpp" />
+    <ClCompile Include="Interface\PVPSchoolWarsPage.cpp" />
+    <ClCompile Include="Interface\PVPSchoolWarsPageBattle.cpp" />
+    <ClCompile Include="Interface\PVPSchoolWarsPageHistory.cpp" />
+    <ClCompile Include="Interface\PVPSchoolWarsRankingPage.cpp" />
+    <ClCompile Include="Interface\PVPSchoolWarsRankingPageSlot.cpp" />
+    <ClCompile Include="Interface\PVPSchoolWarsRankings.cpp" />
+    <ClCompile Include="Interface\PVPSchoolWarsRebirthDialogue.cpp" />
+    <ClCompile Include="Interface\PVPSchoolWarsScore.cpp" />
+    <ClCompile Include="Interface\PVPSchoolWarsTopRankings.cpp" />
+    <ClCompile Include="Interface\PVPSchoolWarsTopRankingsSlot.cpp" />
+    <ClCompile Include="Interface\PVPTyranny2CaptureNotice.cpp" />
+    <ClCompile Include="Interface\PVPTyrannyBattleNotice.cpp" />
+    <ClCompile Include="Interface\PVPTyrannyCaptureNotice.cpp" />
+    <ClCompile Include="Interface\PVPTyrannyPage.cpp" />
+    <ClCompile Include="Interface\PVPTyrannyPageBattle.cpp" />
+    <ClCompile Include="Interface\PVPTyrannyPageHistory.cpp" />
+    <ClCompile Include="Interface\PVPTyrannyPageHistoryBuff.cpp" />
+    <ClCompile Include="Interface\PVPTyrannyRankingPage.cpp" />
+    <ClCompile Include="Interface\PVPTyrannyRankingPageSlot.cpp" />
+    <ClCompile Include="Interface\PVPTyrannyRankings.cpp" />
+    <ClCompile Include="Interface\PVPTyrannyRebirthDialogue.cpp" />
+    <ClCompile Include="Interface\PVPTyrannyTopRankings.cpp" />
+    <ClCompile Include="Interface\PVPTyrannyTopRankingsSlot.cpp" />
+    <ClCompile Include="Interface\PVPTyrannyTowerCapture.cpp" />
+    <ClCompile Include="Interface\PVPTyrannyTowerProgress.cpp" />
+    <ClCompile Include="Interface\QBoxButton.cpp" />
+    <ClCompile Include="Interface\QBoxButtonIcon.cpp" />
+    <ClCompile Include="Interface\QuestAlarm.cpp" />
+    <ClCompile Include="Interface\QuestGiftView.cpp" />
+    <ClCompile Include="Interface\QuestHelper.cpp" />
+    <ClCompile Include="Interface\QuestionItemDisplay.cpp" />
+    <ClCompile Include="Interface\QuestionItemType.cpp" />
+    <ClCompile Include="Interface\QuestList.cpp" />
+    <ClCompile Include="Interface\QuestMain.cpp" />
+    <ClCompile Include="Interface\QuestStep.cpp" />
+    <ClCompile Include="Interface\QuestWindow.cpp" />
+    <ClCompile Include="Interface\RebirthDialogue.cpp" />
+    <ClCompile Include="Interface\RebirthWindow.cpp" />
+    <ClCompile Include="Interface\RebirthWindowButton.cpp" />
+    <ClCompile Include="Interface\RebuildInventoryPage.cpp" />
+    <ClCompile Include="Interface\RebuildInventoryWindow.cpp" />
+    <ClCompile Include="Interface\ReceiveNoteWindow.cpp" />
+    <ClCompile Include="Interface\RegisterPage.cpp" />
+    <ClCompile Include="Interface\SecPassCheckPage.cpp" />
+    <ClCompile Include="Interface\SecPassSetPage.cpp" />
+    <ClCompile Include="Interface\SecurityWindow.cpp" />
+    <ClCompile Include="Interface\SelectCharacterButton.cpp" />
+    <ClCompile Include="Interface\SelectCharacterChangeMail.cpp" />
+    <ClCompile Include="Interface\SelectCharacterChangePass.cpp" />
+    <ClCompile Include="Interface\SelectCharacterChangePin.cpp" />
+    <ClCompile Include="Interface\SelectCharacterInfoPage.cpp" />
+    <ClCompile Include="Interface\SelectCharacterList.cpp" />
+    <ClCompile Include="Interface\SelectCharacterListItem.cpp" />
+    <ClCompile Include="Interface\SelectCharacterPage.cpp" />
+    <ClCompile Include="Interface\SelectCharacterResetPin.cpp" />
+    <ClCompile Include="Interface\SelectCharacterTopUp.cpp" />
+    <ClCompile Include="Interface\SelectChinaAreaPage.cpp" />
+    <ClCompile Include="Interface\SelectServerChannel.cpp" />
+    <ClCompile Include="Interface\SelectServerPage.cpp" />
+    <ClCompile Include="Interface\SelectServerPageTw.cpp" />
+    <ClCompile Include="Interface\SentWindow.cpp" />
+    <ClCompile Include="Interface\ShopItemSearchWindow.cpp" />
+    <ClCompile Include="Interface\ShotCutBox.cpp" />
+    <ClCompile Include="Interface\SimpleHP.cpp" />
+    <ClCompile Include="Interface\SimpleMessageMan.cpp" />
+    <ClCompile Include="Interface\SkillFunc.cpp" />
+    <ClCompile Include="Interface\SkillImage.cpp" />
+    <ClCompile Include="Interface\SkillImage33.cpp" />
+    <ClCompile Include="Interface\SkillInforToolTip.cpp" />
+    <ClCompile Include="Interface\SkillLinkInfoToolTip.cpp" />
+    <ClCompile Include="Interface\SkillPage.cpp" />
+    <ClCompile Include="Interface\SkillSlot.cpp" />
+    <ClCompile Include="Interface\SkillTimeDisplay.cpp" />
+    <ClCompile Include="Interface\SkillTimeUnit.cpp" />
+    <ClCompile Include="Interface\SkillTrayTab.cpp" />
+    <ClCompile Include="Interface\SkillWindow.cpp" />
+    <ClCompile Include="Interface\SkillWindowToTray.cpp" />
+    <ClCompile Include="Interface\SlotCountMsg.cpp" />
+    <ClCompile Include="Interface\SMSSendWindow.cpp" />
+    <ClCompile Include="Interface\StaticUIManager.cpp" />
+    <ClCompile Include="Interface\StorageChargeCard.cpp" />
+    <ClCompile Include="Interface\StorageLockEnableWindow.cpp" />
+    <ClCompile Include="Interface\StorageLockInputWindow.cpp" />
+    <ClCompile Include="Interface\StorageLockRecoverWindow.cpp" />
+    <ClCompile Include="Interface\StoragePage.cpp" />
+    <ClCompile Include="Interface\StorageWindow.cpp" />
+    <ClCompile Include="Interface\StudentRecordButton.cpp" />
+    <ClCompile Include="Interface\StudentRecordWindow.cpp" />
+    <ClCompile Include="Interface\SubMasterSet.cpp" />
+    <ClCompile Include="Interface\SwapImage.cpp" />
+    <ClCompile Include="Interface\SystemBuffTimeDisplay.cpp" />
+    <ClCompile Include="Interface\SystemMessageDisplay.cpp" />
+    <ClCompile Include="Interface\SystemMessageWindow.cpp" />
+    <ClCompile Include="Interface\TargetInfoDisplay.cpp" />
+    <ClCompile Include="Interface\TargetInfoDisplayNpc.cpp" />
+    <ClCompile Include="Interface\TargetInfoDisplayPlayer.cpp" />
+    <ClCompile Include="Interface\TaxiWindow.cpp" />
+    <ClCompile Include="Interface\ThaiCCafeMark.cpp" />
+    <ClCompile Include="Interface\TradeControlPage.cpp" />
+    <ClCompile Include="Interface\TradeInventoryPage.cpp" />
+    <ClCompile Include="Interface\TradeInventoryWindow.cpp" />
+    <ClCompile Include="Interface\TradePage.cpp" />
+    <ClCompile Include="Interface\TradeWindow.cpp" />
+    <ClCompile Include="Interface\UIEditBox.cpp" />
+    <ClCompile Include="Interface\UIEditBoxMan.cpp" />
+    <ClCompile Include="Interface\UIItemInfoLoader.cpp" />
+    <ClCompile Include="Interface\UILeftTopGroup.cpp" />
+    <ClCompile Include="Interface\UIModal.cpp" />
+    <ClCompile Include="Interface\UIMultiEditBox.cpp" />
+    <ClCompile Include="Interface\UIOuterWindow.cpp" />
+    <ClCompile Include="Interface\UISkillInfoLoader.cpp" />
+    <ClCompile Include="Interface\UITextControl.cpp" />
+    <ClCompile Include="Interface\UIWindow.cpp" />
+    <ClCompile Include="Interface\UIWindowBody.cpp" />
+    <ClCompile Include="Interface\UIWindowEx.cpp" />
+    <ClCompile Include="Interface\UIWindowTitle.cpp" />
+    <ClCompile Include="Interface\Util\CheckBox.cpp" />
+    <ClCompile Include="Interface\Util\MessageBox.cpp" />
+    <ClCompile Include="Interface\Util\NpcActionable.cpp" />
+    <ClCompile Include="Interface\Util\RnButton.cpp" />
+    <ClCompile Include="Interface\Util\RnProgressBar.cpp" />
+    <ClCompile Include="Interface\Util\TapSelector.cpp" />
+    <ClCompile Include="Interface\VehicleBoosterDisplay.cpp" />
+    <ClCompile Include="Interface\VehicleStatus.cpp" />
+    <ClCompile Include="Interface\VehicleWindow.cpp" />
+    <ClCompile Include="Interface\VehicleWindowRender.cpp" />
+    <ClCompile Include="Interface\VideoOption.cpp" />
+    <ClCompile Include="Interface\VideoOptionMsg.cpp" />
+    <ClCompile Include="Interface\VNGainSysGauge.cpp" />
+    <ClCompile Include="Interface\VNGainSysInventory.cpp" />
+    <ClCompile Include="Interface\VNGainSysPage.cpp" />
+    <ClCompile Include="Interface\WaitDialogue.cpp" />
+    <ClCompile Include="Interface\WaitServerDialogue.cpp" />
+    <ClCompile Include="Interface\WarningMsg.cpp" />
+    <ClCompile Include="Interface\WeaponDisplay.cpp" />
+    <ClCompile Include="Interface\WriteNoteWindow.cpp" />
+    <ClCompile Include="stdafx.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Interface\AcademyConftDisplay.h" />
+    <ClInclude Include="Interface\ActivityItemList.h" />
+    <ClInclude Include="Interface\ActivityItemListSlot.h" />
+    <ClInclude Include="Interface\ActivityItemWindow.h" />
+    <ClInclude Include="Interface\ActivityPage.h" />
+    <ClInclude Include="Interface\ActivityPageMain.h" />
+    <ClInclude Include="Interface\ActivityPageMainSlot.h" />
+    <ClInclude Include="Interface\AdminMessageDisplay.h" />
+    <ClInclude Include="Interface\AttendanceBookWindow.h" />
+    <ClInclude Include="Interface\AudioOption.h" />
+    <ClInclude Include="Interface\BasicAnimationBox.h" />
+    <ClInclude Include="Interface\BasicButton.h" />
+    <ClInclude Include="Interface\BasicCarrat.h" />
+    <ClInclude Include="Interface\BasicChat.h" />
+    <ClInclude Include="Interface\BasicChatLeftBar.h" />
+    <ClInclude Include="Interface\BasicChatRightBody.h" />
+    <ClInclude Include="Interface\BasicComboBox.h" />
+    <ClInclude Include="Interface\BasicComboBoxRollOver.h" />
+    <ClInclude Include="Interface\BasicEscMenu.h" />
+    <ClInclude Include="Interface\BasicGameMenu.h" />
+    <ClInclude Include="Interface\BasicHWOptionWindow.h" />
+    <ClInclude Include="Interface\BasicInfoView.h" />
+    <ClInclude Include="Interface\BasicLevelDisplay.h" />
+    <ClInclude Include="Interface\BasicLineBox.h" />
+    <ClInclude Include="Interface\BasicLineBoxButton.h" />
+    <ClInclude Include="Interface\BasicLineBoxEx.h" />
+    <ClInclude Include="Interface\BasicLineBoxSmart.h" />
+    <ClInclude Include="Interface\BasicMiniBarGauge.h" />
+    <ClInclude Include="Interface\BasicPotionTray.h" />
+    <ClInclude Include="Interface\BasicProgressBar.h" />
+    <ClInclude Include="Interface\BasicQuickPotionSlot.h" />
+    <ClInclude Include="Interface\BasicQuickPotionSlotEx.h" />
+    <ClInclude Include="Interface\BasicQuickSkillSlot.h" />
+    <ClInclude Include="Interface\BasicQuickSkillSlotEx.h" />
+    <ClInclude Include="Interface\BasicScrollBar.h" />
+    <ClInclude Include="Interface\BasicScrollBarEx.h" />
+    <ClInclude Include="Interface\BasicScrollThumb.h" />
+    <ClInclude Include="Interface\BasicScrollThumbFrame.h" />
+    <ClInclude Include="Interface\BasicSkillTray.h" />
+    <ClInclude Include="Interface\BasicTextBox.h" />
+    <ClInclude Include="Interface\BasicTextBoxEx.h" />
+    <ClInclude Include="Interface\BasicTextButton.h" />
+    <ClInclude Include="Interface\BasicTextButtonImage.h" />
+    <ClInclude Include="Interface\BasicTree.h" />
+    <ClInclude Include="Interface\BasicTreeEx.h" />
+    <ClInclude Include="Interface\BasicTreeNode.h" />
+    <ClInclude Include="Interface\BasicVarTextBox.h" />
+    <ClInclude Include="Interface\BasicVarTextBoxItemLink.h" />
+    <ClInclude Include="Interface\BikeColorSelect.h" />
+    <ClInclude Include="Interface\BikeColorSelectSlot.h" />
+    <ClInclude Include="Interface\BikeColorWindow.h" />
+    <ClInclude Include="Interface\BlockProgramAlarm.h" />
+    <ClInclude Include="Interface\BonusTimeDisplay.h" />
+    <ClInclude Include="Interface\BonusTimeGauge.h" />
+    <ClInclude Include="Interface\BonusTimeType.h" />
+    <ClInclude Include="Interface\BusWindow.h" />
+    <ClInclude Include="Interface\Calendar.h" />
+    <ClInclude Include="Interface\CarColorSelectSlot.h" />
+    <ClInclude Include="Interface\CarColorWindow.h" />
+    <ClInclude Include="Interface\CdmRankingDisplay.h" />
+    <ClInclude Include="Interface\CdmRankingDisplaySlot.h" />
+    <ClInclude Include="Interface\ChangeScaleWindow.h" />
+    <ClInclude Include="Interface\ChangeSchoolWindow.h" />
+    <ClInclude Include="Interface\CharacterCreateInfo.h" />
+    <ClInclude Include="Interface\CharacterCreateInfoClass.h" />
+    <ClInclude Include="Interface\CharacterCreateInfoSchool.h" />
+    <ClInclude Include="Interface\CharacterCreateInfoSex.h" />
+    <ClInclude Include="Interface\CharacterCreatePage.h" />
+    <ClInclude Include="Interface\CharacterCreatePageSet.h" />
+    <ClInclude Include="Interface\CharacterCreatePageStyle.h" />
+    <ClInclude Include="Interface\CharacterCreateRotate.h" />
+    <ClInclude Include="Interface\CharacterInfoViewPageStats.h" />
+    <ClInclude Include="Interface\CharacterInfoViewPageStatsMark.h" />
+    <ClInclude Include="Interface\CharacterInfoViewPageStatsRender.h" />
+    <ClInclude Include="Interface\CharacterInfoViewWindow.h" />
+    <ClInclude Include="Interface\CharacterWindow\CharacterWindow.h" />
+    <ClInclude Include="Interface\CharacterWindow\CharacterWindowChar.h" />
+    <ClInclude Include="Interface\CharacterWindow\CharacterWindowCharRender.h" />
+    <ClInclude Include="Interface\CharacterWindow\CharacterWindowCharStat.h" />
+    <ClInclude Include="Interface\CharacterWindow\CharacterWindowCharStatMark.h" />
+    <ClInclude Include="Interface\CharacterWindow\CharacterWindowCharWear.h" />
+    <ClInclude Include="Interface\CharacterWindow\CharacterWindowCharWearEx.h" />
+    <ClInclude Include="Interface\CharacterWindow\ItemImageCharWear.h" />
+    <ClInclude Include="Interface\ChatMacroWindow.h" />
+    <ClInclude Include="Interface\ChatShowFlag.h" />
+    <ClInclude Include="Interface\ClubAnnounce.h" />
+    <ClInclude Include="Interface\ClubBattle.h" />
+    <ClInclude Include="Interface\ClubBattleModalWindow.h" />
+    <ClInclude Include="Interface\ClubMake.h" />
+    <ClInclude Include="Interface\ClubMember.h" />
+    <ClInclude Include="Interface\ClubUnion.h" />
+    <ClInclude Include="Interface\ClubWindow.h" />
+    <ClInclude Include="Interface\CodexWindow\CodexPage.h" />
+    <ClInclude Include="Interface\CodexWindow\CodexPageMain.h" />
+    <ClInclude Include="Interface\CodexWindow\CodexPageMainSlot.h" />
+    <ClInclude Include="Interface\CodexWindow\StudentCodexButton.h" />
+    <ClInclude Include="Interface\CodexWindow\StudentCodexWindow.h" />
+    <ClInclude Include="Interface\CompetitionNotifyButton.h" />
+    <ClInclude Include="Interface\CompetitionNotifyButtonAlarm.h" />
+    <ClInclude Include="Interface\CompetitionWindow.h" />
+    <ClInclude Include="Interface\ConftConfirm.h" />
+    <ClInclude Include="Interface\ConftDisplayMan.h" />
+    <ClInclude Include="Interface\ConftModalWindow.h" />
+    <ClInclude Include="Interface\CountMsg.h" />
+    <ClInclude Include="Interface\CrowTargetInfo.h" />
+    <ClInclude Include="Interface\CrowTargetInfoNpc.h" />
+    <ClInclude Include="Interface\CrowTargetInfoPlayer.h" />
+    <ClInclude Include="Interface\CWRankingDisplay\CWRankingDisplay.h" />
+    <ClInclude Include="Interface\DamageDisplay.h" />
+    <ClInclude Include="Interface\DamageDisplayMan.h" />
+    <ClInclude Include="Interface\DayBox.h" />
+    <ClInclude Include="Interface\DialogueWindow.h" />
+    <ClInclude Include="Interface\DialogueWindowRenewal.h" />
+    <ClInclude Include="Interface\EquipmentLockEnableWindow.h" />
+    <ClInclude Include="Interface\EquipmentLockInputWindow.h" />
+    <ClInclude Include="Interface\EquipmentLockRecoverWindow.h" />
+    <ClInclude Include="Interface\EscMenuOpen.h" />
+    <ClInclude Include="Interface\ExtraNotice.h" />
+    <ClInclude Include="Interface\FaceStyleCard.h" />
+    <ClInclude Include="Interface\FItemFactTimeDisplay.h" />
+    <ClInclude Include="Interface\ForgotPassChangePage.h" />
+    <ClInclude Include="Interface\ForgotPassPage.h" />
+    <ClInclude Include="Interface\FriendWindow.h" />
+    <ClInclude Include="Interface\FriendWindowBlockPage.h" />
+    <ClInclude Include="Interface\FriendWindowNormalPage.h" />
+    <ClInclude Include="Interface\GambleAgainBox.h" />
+    <ClInclude Include="Interface\GambleAnimationBox.h" />
+    <ClInclude Include="Interface\GambleBox.h" />
+    <ClInclude Include="Interface\GambleResultBox.h" />
+    <ClInclude Include="Interface\GambleResultEvenBox.h" />
+    <ClInclude Include="Interface\GambleResultOddBox.h" />
+    <ClInclude Include="Interface\GambleSelectBox.h" />
+    <ClInclude Include="Interface\GamePlayOption.h" />
+    <ClInclude Include="Interface\GameStats.h" />
+    <ClInclude Include="Interface\GameTextControl.h" />
+    <ClInclude Include="Interface\GameTimeConvertUI.h" />
+    <ClInclude Include="Interface\GarbageInventoryPage.h" />
+    <ClInclude Include="Interface\GarbageInventoryWindow.h" />
+    <ClInclude Include="Interface\GatherGauge.h" />
+    <ClInclude Include="Interface\GenderChangeWindow.h" />
+    <ClInclude Include="Interface\GlobalRankingWindow\GlobalRankingPage.h" />
+    <ClInclude Include="Interface\GlobalRankingWindow\GlobalRankingPageSlot.h" />
+    <ClInclude Include="Interface\GlobalRankingWindow\GlobalRankingWindow.h" />
+    <ClInclude Include="Interface\HairColorCard.h" />
+    <ClInclude Include="Interface\HairStyleCard.h" />
+    <ClInclude Include="Interface\HeadChatDisplay.h" />
+    <ClInclude Include="Interface\HeadChatDisplayMan.h" />
+    <ClInclude Include="Interface\HelpDataMan.h" />
+    <ClInclude Include="Interface\HelpWindow.h" />
+    <ClInclude Include="Interface\HelpWindowWeb.h" />
+    <ClInclude Include="Interface\InBoxWindow.h" />
+    <ClInclude Include="Interface\InfoBoxContents.h" />
+    <ClInclude Include="Interface\InnerInterface.h" />
+    <ClInclude Include="Interface\InnerInterfaceGuid.h" />
+    <ClInclude Include="Interface\InventoryLockEnableWindow.h" />
+    <ClInclude Include="Interface\InventoryLockInputWindow.h" />
+    <ClInclude Include="Interface\InventoryLockRecoverWindow.h" />
+    <ClInclude Include="Interface\InventoryUI.h" />
+    <ClInclude Include="Interface\InventoryUIBank.h" />
+    <ClInclude Include="Interface\InventoryUIInven.h" />
+    <ClInclude Include="Interface\InventoryUIWishList.h" />
+    <ClInclude Include="Interface\InventoryUI_ItemMix.h" />
+    <ClInclude Include="Interface\InventoryUI_ItemMixInven.h" />
+    <ClInclude Include="Interface\InventoryUI_Rebuild.h" />
+    <ClInclude Include="Interface\InventoryUI_RebuildInven.h" />
+    <ClInclude Include="Interface\InventoryUI_Trade.h" />
+    <ClInclude Include="Interface\InventoryUI_TradeInven.h" />
+    <ClInclude Include="Interface\InventoryUI_Trash.h" />
+    <ClInclude Include="Interface\InventoryUI_TrashInven.h" />
+    <ClInclude Include="Interface\ItemBankPage.h" />
+    <ClInclude Include="Interface\ItemBankWindow.h" />
+    <ClInclude Include="Interface\ItemColorSelectSlot.h" />
+    <ClInclude Include="Interface\ItemColorWindow.h" />
+    <ClInclude Include="Interface\ItemGarbage.h" />
+    <ClInclude Include="Interface\ItemImage.h" />
+    <ClInclude Include="Interface\ItemInfoToolTip.h" />
+    <ClInclude Include="Interface\ItemMallButton.h" />
+    <ClInclude Include="Interface\ItemMallWindow.h" />
+    <ClInclude Include="Interface\ItemMallWindowMenu.h" />
+    <ClInclude Include="Interface\ItemMallWindowMenuButton.h" />
+    <ClInclude Include="Interface\ItemMallWindowMenuPage.h" />
+    <ClInclude Include="Interface\ItemMallWindowMenuSlot.h" />
+    <ClInclude Include="Interface\ItemMixInventoryPage.h" />
+    <ClInclude Include="Interface\ItemMixInventoryWindow.h" />
+    <ClInclude Include="Interface\ItemMixWindow.h" />
+    <ClInclude Include="Interface\ItemMove.h" />
+    <ClInclude Include="Interface\ItemPreviewWindow.h" />
+    <ClInclude Include="Interface\ItemPreviewWindowRender.h" />
+    <ClInclude Include="Interface\ItemRebuild.h" />
+    <ClInclude Include="Interface\ItemRebuildOption.h" />
+    <ClInclude Include="Interface\ItemSearchResultWindow.h" />
+    <ClInclude Include="Interface\ItemShopIcon.h" />
+    <ClInclude Include="Interface\ItemShopIconMan.h" />
+    <ClInclude Include="Interface\ItemShopSlot.h" />
+    <ClInclude Include="Interface\ItemShopWindow.h" />
+    <ClInclude Include="Interface\ItemShopWindowWeb.h" />
+    <ClInclude Include="Interface\ItemSlot.h" />
+    <ClInclude Include="Interface\ItemSlotEx.h" />
+    <ClInclude Include="Interface\ItemSlotEx_Renew.h" />
+    <ClInclude Include="Interface\ItemSlotPrivateMarket.h" />
+    <ClInclude Include="Interface\ItemSlot_Renew.h" />
+    <ClInclude Include="Interface\ItemTransferInventoryPage.h" />
+    <ClInclude Include="Interface\ItemTransferInventoryWindow.h" />
+    <ClInclude Include="Interface\ItemTransferWindow.h" />
+    <ClInclude Include="Interface\KeySettingWindow.h" />
+    <ClInclude Include="Interface\LargeMapWindow.h" />
+    <ClInclude Include="Interface\LargeMapWindowCheckBox.h" />
+    <ClInclude Include="Interface\LargeMapWindowImage.h" />
+    <ClInclude Include="Interface\LargeMapWindowInfo.h" />
+    <ClInclude Include="Interface\LargeMapWindowMob.h" />
+    <ClInclude Include="Interface\LargeMapWindowMobDrop.h" />
+    <ClInclude Include="Interface\LargeMapWindowRadio.h" />
+    <ClInclude Include="Interface\LargeMapWindowSetting.h" />
+    <ClInclude Include="Interface\LargeMapWindowSlotRender.h" />
+    <ClInclude Include="Interface\LoadingMapThread.h" />
+    <ClInclude Include="Interface\LoadingThread.h" />
+    <ClInclude Include="Interface\LobbyTitle.h" />
+    <ClInclude Include="Interface\LoginPage.h" />
+    <ClInclude Include="Interface\MapMoveDisplay.h" />
+    <ClInclude Include="Interface\MapRequireCheck.h" />
+    <ClInclude Include="Interface\MarketPage.h" />
+    <ClInclude Include="Interface\MarketWindow.h" />
+    <ClInclude Include="Interface\MessageWindow.h" />
+    <ClInclude Include="Interface\MiniMap.h" />
+    <ClInclude Include="Interface\MiniMapInfo.h" />
+    <ClInclude Include="Interface\MiniPartySlot.h" />
+    <ClInclude Include="Interface\MiniPartyWindow.h" />
+    <ClInclude Include="Interface\MobDBWindowItem.h" />
+    <ClInclude Include="Interface\MobPreviewWindow.h" />
+    <ClInclude Include="Interface\MobPreviewWindowRender.h" />
+    <ClInclude Include="Interface\ModalCallerID.h" />
+    <ClInclude Include="Interface\ModalWindow.h" />
+    <ClInclude Include="Interface\ModernQuestInfoDone.h" />
+    <ClInclude Include="Interface\ModernQuestInfoProg.h" />
+    <ClInclude Include="Interface\ModernQuestListDone.h" />
+    <ClInclude Include="Interface\ModernQuestListProg.h" />
+    <ClInclude Include="Interface\ModernQuestWindow.h" />
+    <ClInclude Include="Interface\MultiModeButton.h" />
+    <ClInclude Include="Interface\MultiModeButtonImage.h" />
+    <ClInclude Include="Interface\NameDisplay.h" />
+    <ClInclude Include="Interface\NameDisplayMan.h" />
+    <ClInclude Include="Interface\NPCDialoguePage.h" />
+    <ClInclude Include="Interface\NPCItemExchangeSlot.h" />
+    <ClInclude Include="Interface\NPCItemExchangeWindow.h" />
+    <ClInclude Include="Interface\NPCMarketPage.h" />
+    <ClInclude Include="Interface\NPCPromotionPage.h" />
+    <ClInclude Include="Interface\NPCShopItemSlot.h" />
+    <ClInclude Include="Interface\NPCShopWindow.h" />
+    <ClInclude Include="Interface\OuterInterface.h" />
+    <ClInclude Include="Interface\PandoraBoxButton.h" />
+    <ClInclude Include="Interface\PandoraBoxItemSlot.h" />
+    <ClInclude Include="Interface\PandoraBoxResultsItemSlot.h" />
+    <ClInclude Include="Interface\PandoraBoxWindow.h" />
+    <ClInclude Include="Interface\PartyBuffInfo.h" />
+    <ClInclude Include="Interface\PartyBuffInfoUnit.h" />
+    <ClInclude Include="Interface\PartyDisplay.h" />
+    <ClInclude Include="Interface\PartyDisplayBuffInfo.h" />
+    <ClInclude Include="Interface\PartyDisplayBuffInfoUnit.h" />
+    <ClInclude Include="Interface\PartyModalWindow.h" />
+    <ClInclude Include="Interface\PartySearch\PartyFinderIcon.h" />
+    <ClInclude Include="Interface\PartySearch\PartyFinderSlot.h" />
+    <ClInclude Include="Interface\PartySearch\PartyFinderWindow.h" />
+    <ClInclude Include="Interface\PartySearch\PartyRequestModalWindow.h" />
+    <ClInclude Include="Interface\PartySlot.h" />
+    <ClInclude Include="Interface\PartySlotDisplay.h" />
+    <ClInclude Include="Interface\PartyWindow.h" />
+    <ClInclude Include="Interface\PartyWindowCheckBox.h" />
+    <ClInclude Include="Interface\PassKeyboard.h" />
+    <ClInclude Include="Interface\PetColorCard.h" />
+    <ClInclude Include="Interface\PetQuickSkillSlot.h" />
+    <ClInclude Include="Interface\PetQuickSkillSlot2.h" />
+    <ClInclude Include="Interface\PetRebirthDialogue.h" />
+    <ClInclude Include="Interface\PetSkillImage.h" />
+    <ClInclude Include="Interface\PetSkillInfoDisplay.h" />
+    <ClInclude Include="Interface\PetSkillInfoDisplay2.h" />
+    <ClInclude Include="Interface\PetSkillPage.h" />
+    <ClInclude Include="Interface\PetSkillSlot.h" />
+    <ClInclude Include="Interface\PetSkillWindow.h" />
+    <ClInclude Include="Interface\PetskinMixImage.h" />
+    <ClInclude Include="Interface\PetStatus.h" />
+    <ClInclude Include="Interface\PetStyleCard.h" />
+    <ClInclude Include="Interface\PetWindow.h" />
+    <ClInclude Include="Interface\PetWindowRender.h" />
+    <ClInclude Include="Interface\PKComboDisplay.h" />
+    <ClInclude Include="Interface\PKComboType.h" />
+    <ClInclude Include="Interface\PKRankNotification.h" />
+    <ClInclude Include="Interface\PKRankNotificationInfo.h" />
+    <ClInclude Include="Interface\PlayerRankingButton.h" />
+    <ClInclude Include="Interface\PrivateMarketMake.h" />
+    <ClInclude Include="Interface\PrivateMarketPage.h" />
+    <ClInclude Include="Interface\PrivateMarketSellWindow.h" />
+    <ClInclude Include="Interface\PrivateMarketShow.h" />
+    <ClInclude Include="Interface\PrivateMarketShowMan.h" />
+    <ClInclude Include="Interface\PrivateMarketWindow.h" />
+    <ClInclude Include="Interface\ProductButton.h" />
+    <ClInclude Include="Interface\ProductWindow.h" />
+    <ClInclude Include="Interface\ProductWindowList.h" />
+    <ClInclude Include="Interface\ProductWindowProduct.h" />
+    <ClInclude Include="Interface\ProductWindowType.h" />
+    <ClInclude Include="Interface\ProductWindowTypeBase.h" />
+    <ClInclude Include="Interface\PtoPWindow.h" />
+    <ClInclude Include="Interface\PVPCaptureTheFlagBattleNotice.h" />
+    <ClInclude Include="Interface\PVPCaptureTheFlagHoldIcon.h" />
+    <ClInclude Include="Interface\PVPCaptureTheFlagPage.h" />
+    <ClInclude Include="Interface\PVPCaptureTheFlagPageBattle.h" />
+    <ClInclude Include="Interface\PVPCaptureTheFlagPageHistory.h" />
+    <ClInclude Include="Interface\PVPCaptureTheFlagRankingPage.h" />
+    <ClInclude Include="Interface\PVPCaptureTheFlagRankingPageSlot.h" />
+    <ClInclude Include="Interface\PVPCaptureTheFlagRankings.h" />
+    <ClInclude Include="Interface\PVPCaptureTheFlagRebirthDialogue.h" />
+    <ClInclude Include="Interface\PVPCaptureTheFlagScore.h" />
+    <ClInclude Include="Interface\PVPCaptureTheFlagTopRankings.h" />
+    <ClInclude Include="Interface\PVPCaptureTheFlagTopRankingsSlot.h" />
+    <ClInclude Include="Interface\PVPSchoolWarsBattleNotice.h" />
+    <ClInclude Include="Interface\PVPSchoolWarsPage.h" />
+    <ClInclude Include="Interface\PVPSchoolWarsPageBattle.h" />
+    <ClInclude Include="Interface\PVPSchoolWarsPageHistory.h" />
+    <ClInclude Include="Interface\PVPSchoolWarsRankingPage.h" />
+    <ClInclude Include="Interface\PVPSchoolWarsRankingPageSlot.h" />
+    <ClInclude Include="Interface\PVPSchoolWarsRankings.h" />
+    <ClInclude Include="Interface\PVPSchoolWarsRebirthDialogue.h" />
+    <ClInclude Include="Interface\PVPSchoolWarsScore.h" />
+    <ClInclude Include="Interface\PVPSchoolWarsTopRankings.h" />
+    <ClInclude Include="Interface\PVPSchoolWarsTopRankingsSlot.h" />
+    <ClInclude Include="Interface\PVPTyranny2CaptureNotice.h" />
+    <ClInclude Include="Interface\PVPTyrannyBattleNotice.h" />
+    <ClInclude Include="Interface\PVPTyrannyCaptureNotice.h" />
+    <ClInclude Include="Interface\PVPTyrannyPage.h" />
+    <ClInclude Include="Interface\PVPTyrannyPageBattle.h" />
+    <ClInclude Include="Interface\PVPTyrannyPageHistory.h" />
+    <ClInclude Include="Interface\PVPTyrannyPageHistoryBuff.h" />
+    <ClInclude Include="Interface\PVPTyrannyRankingPage.h" />
+    <ClInclude Include="Interface\PVPTyrannyRankingPageSlot.h" />
+    <ClInclude Include="Interface\PVPTyrannyRankings.h" />
+    <ClInclude Include="Interface\PVPTyrannyRebirthDialogue.h" />
+    <ClInclude Include="Interface\PVPTyrannyTopRankings.h" />
+    <ClInclude Include="Interface\PVPTyrannyTopRankingsSlot.h" />
+    <ClInclude Include="Interface\PVPTyrannyTowerCapture.h" />
+    <ClInclude Include="Interface\PVPTyrannyTowerProgress.h" />
+    <ClInclude Include="Interface\QBoxButton.h" />
+    <ClInclude Include="Interface\QBoxButtonIcon.h" />
+    <ClInclude Include="Interface\QuestAlarm.h" />
+    <ClInclude Include="Interface\QuestGiftView.h" />
+    <ClInclude Include="Interface\QuestHelper.h" />
+    <ClInclude Include="Interface\QuestionItemDisplay.h" />
+    <ClInclude Include="Interface\QuestionItemType.h" />
+    <ClInclude Include="Interface\QuestList.h" />
+    <ClInclude Include="Interface\QuestMain.h" />
+    <ClInclude Include="Interface\QuestStep.h" />
+    <ClInclude Include="Interface\QuestWindow.h" />
+    <ClInclude Include="Interface\RebirthDialogue.h" />
+    <ClInclude Include="Interface\RebirthWindow.h" />
+    <ClInclude Include="Interface\RebirthWindowButton.h" />
+    <ClInclude Include="Interface\RebuildInventoryPage.h" />
+    <ClInclude Include="Interface\RebuildInventoryWindow.h" />
+    <ClInclude Include="Interface\ReceiveNoteWindow.h" />
+    <ClInclude Include="Interface\RegisterPage.h" />
+    <ClInclude Include="Interface\SecPassCheckPage.h" />
+    <ClInclude Include="Interface\SecPassSetPage.h" />
+    <ClInclude Include="Interface\SecurityWindow.h" />
+    <ClInclude Include="Interface\SelectCharacterButton.h" />
+    <ClInclude Include="Interface\SelectCharacterChangeMail.h" />
+    <ClInclude Include="Interface\SelectCharacterChangePass.h" />
+    <ClInclude Include="Interface\SelectCharacterChangePin.h" />
+    <ClInclude Include="Interface\SelectCharacterInfoPage.h" />
+    <ClInclude Include="Interface\SelectCharacterList.h" />
+    <ClInclude Include="Interface\SelectCharacterListItem.h" />
+    <ClInclude Include="Interface\SelectCharacterPage.h" />
+    <ClInclude Include="Interface\SelectCharacterResetPin.h" />
+    <ClInclude Include="Interface\SelectCharacterTopUp.h" />
+    <ClInclude Include="Interface\SelectChinaAreaPage.h" />
+    <ClInclude Include="Interface\SelectServerChannel.h" />
+    <ClInclude Include="Interface\SelectServerPage.h" />
+    <ClInclude Include="Interface\SentWindow.h" />
+    <ClInclude Include="Interface\ShopItemSearchWindow.h" />
+    <ClInclude Include="Interface\ShotCutBox.h" />
+    <ClInclude Include="Interface\SimpleHP.h" />
+    <ClInclude Include="Interface\SimpleMessageMan.h" />
+    <ClInclude Include="Interface\SkillFunc.h" />
+    <ClInclude Include="Interface\SkillImage.h" />
+    <ClInclude Include="Interface\SkillImage33.h" />
+    <ClInclude Include="Interface\SkillInforToolTip.h" />
+    <ClInclude Include="Interface\SkillLinkInfoToolTip.h" />
+    <ClInclude Include="Interface\SkillPage.h" />
+    <ClInclude Include="Interface\SkillSlot.h" />
+    <ClInclude Include="Interface\SkillTimeDisplay.h" />
+    <ClInclude Include="Interface\SkillTimeUnit.h" />
+    <ClInclude Include="Interface\SkillTrayTab.h" />
+    <ClInclude Include="Interface\SkillWindow.h" />
+    <ClInclude Include="Interface\SkillWindowToTray.h" />
+    <ClInclude Include="Interface\SlotCountMsg.h" />
+    <ClInclude Include="Interface\SMSSendWindow.h" />
+    <ClInclude Include="Interface\StaticUIManager.h" />
+    <ClInclude Include="Interface\StorageChargeCard.h" />
+    <ClInclude Include="Interface\StorageLockEnableWindow.h" />
+    <ClInclude Include="Interface\StorageLockInputWindow.h" />
+    <ClInclude Include="Interface\StorageLockRecoverWindow.h" />
+    <ClInclude Include="Interface\StoragePage.h" />
+    <ClInclude Include="Interface\StorageWindow.h" />
+    <ClInclude Include="Interface\StudentRecordButton.h" />
+    <ClInclude Include="Interface\StudentRecordWindow.h" />
+    <ClInclude Include="Interface\SubMasterSet.h" />
+    <ClInclude Include="Interface\SwapImage.h" />
+    <ClInclude Include="Interface\SystemBuffTimeDisplay.h" />
+    <ClInclude Include="Interface\SystemMessageDisplay.h" />
+    <ClInclude Include="Interface\SystemMessageWindow.h" />
+    <ClInclude Include="Interface\TargetInfoDisplay.h" />
+    <ClInclude Include="Interface\TargetInfoDisplayNpc.h" />
+    <ClInclude Include="Interface\TargetInfoDisplayPlayer.h" />
+    <ClInclude Include="Interface\TaxiWindow.h" />
+    <ClInclude Include="Interface\ThaiCCafeMark.h" />
+    <ClInclude Include="Interface\TradeControlPage.h" />
+    <ClInclude Include="Interface\TradeInventoryPage.h" />
+    <ClInclude Include="Interface\TradeInventoryWindow.h" />
+    <ClInclude Include="Interface\TradePage.h" />
+    <ClInclude Include="Interface\TradeWindow.h" />
+    <ClInclude Include="Interface\UIEditBox.h" />
+    <ClInclude Include="Interface\UIEditBoxMan.h" />
+    <ClInclude Include="Interface\UIInfoLoader.h" />
+    <ClInclude Include="Interface\UILeftTopGroup.h" />
+    <ClInclude Include="Interface\UIModal.h" />
+    <ClInclude Include="Interface\UIMultiEditBox.h" />
+    <ClInclude Include="Interface\UIOuterWindow.h" />
+    <ClInclude Include="Interface\UITextControl.h" />
+    <ClInclude Include="Interface\UIWindow.h" />
+    <ClInclude Include="Interface\UIWindowBody.h" />
+    <ClInclude Include="Interface\UIWindowEx.h" />
+    <ClInclude Include="Interface\UIWindowTitle.h" />
+    <ClInclude Include="Interface\Util\CheckBox.h" />
+    <ClInclude Include="Interface\Util\MessageBox.h" />
+    <ClInclude Include="Interface\Util\NpcActionable.h" />
+    <ClInclude Include="Interface\Util\RnButton.h" />
+    <ClInclude Include="Interface\Util\RnProgressBar.h" />
+    <ClInclude Include="Interface\Util\TapSelector.h" />
+    <ClInclude Include="Interface\Util\TapSelectorEx.h" />
+    <ClInclude Include="Interface\VehicleBoosterDisplay.h" />
+    <ClInclude Include="Interface\VehicleStatus.h" />
+    <ClInclude Include="Interface\VehicleWindow.h" />
+    <ClInclude Include="Interface\VehicleWindowRender.h" />
+    <ClInclude Include="Interface\VideoOption.h" />
+    <ClInclude Include="Interface\VNGainSysGauge.h" />
+    <ClInclude Include="Interface\VNGainSysInventory.h" />
+    <ClInclude Include="Interface\VNGainSysPage.h" />
+    <ClInclude Include="Interface\WaitDialogue.h" />
+    <ClInclude Include="Interface\WaitServerDialogue.h" />
+    <ClInclude Include="Interface\WarningMsg.h" />
+    <ClInclude Include="Interface\WeaponDisplay.h" />
+    <ClInclude Include="Interface\WriteNoteWindow.h" />
+    <ClInclude Include="stdafx.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Interface\Util\TapSelectorEx.inl" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="ReadMe.txt" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

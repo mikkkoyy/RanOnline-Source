@@ -1,0 +1,556 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{48C5F730-9C88-401B-BD25-6F2C100B5064}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>LibRanClient</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>Lib_Client</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>..\_Bin\Data</OutDir>
+    <IntDir>$(SolutionDir)_Build\$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetName>Lib_Client</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>..\_Bin\Data</OutDir>
+    <IntDir>$(SolutionDir)_Build\$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetName>RanClientD</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>false</FunctionLevelLinking>
+      <IntrinsicFunctions>false</IntrinsicFunctions>
+      <SDLCheck>
+      </SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <OmitFramePointers>true</OmitFramePointers>
+      <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <AdditionalIncludeDirectories>./;./G-Logic;./NpcTalk;../Lib_Engine;../Lib_Engine/Common;../Lib_Engine/DxCommon;../Lib_Engine/DxCommon9;../Lib_Engine/DxEffect;../Lib_Engine/DxEffect/Char;../Lib_Engine/DxEffect/EffAni;../Lib_Engine/DxEffect/EffKeep;../Lib_Engine/DxEffect/EffProj;../Lib_Engine/DxEffect/Single;../Lib_Engine/DxFrame;../Lib_Engine/DxOctree;../Lib_Engine/Meshs;../Lib_Engine/DxSound;../Lib_Engine/G-Logic;../Lib_Engine/GUInterface;../Lib_Engine/Utils;../Lib_Helper;../Lib_Network;../Lib_ClientUI/Interface;../Tik/DXInclude;../Tik/DXLib;../Tik/Include;../Tik/Library;../Tik/TbbLib</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>
+      </SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalIncludeDirectories>./;./Sources;./Sources/DbAction;./Sources/G-Logic;./Sources/G-Logic/Client;./Sources/G-Logic/Data;./Sources/G-Logic/GLMsg;./Sources/G-Logic/Npc;./Sources/G-Logic/Quest;./Sources/G-Logic/Server;../Lib_Engine/Sources;../Lib_Engine/Sources/Common;../Lib_Engine/Sources/DxCommon;../Lib_Engine/Sources/DxCommon9;../Lib_Engine/Sources/DxEffect;../Lib_Engine/Sources/DxLand;../Lib_Engine/Sources/DxMeshs;../Lib_Engine/Sources/DxTools;../Lib_Engine/Sources/G-Logic;../Lib_EngineSound/Sources;../Lib_EngineSound/Sources/DxSound;../Lib_EngineSound/Sources/ogg;../Lib_EngineSound/Sources/vorbis;../Lib_Helper/Sources;../Lib_Helper/Sources/ExLibs;../[Lib]__NetClient/Sources;../Lib_Network/Sources;../Lib_ClientUI/Sources/ControlExUI;../Lib_ClientUI/Sources/InnerUI;../Lib_ClientUI/Sources/LoaderUI;../Lib_ClientUI/Sources/OuterUI;../Lib_ClientUI/Sources/TextUI;../Dependency/common;../Dependency/directx;../Dependency/lzo;../Dependency/NetGlobal;../Dependency/tbblib/Include</AdditionalIncludeDirectories>
+      <MinimalRebuild>false</MinimalRebuild>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="ClientApex.cpp" />
+    <ClCompile Include="DbActionLogic.cpp" />
+    <ClCompile Include="DbActionLogicClub.cpp" />
+    <ClCompile Include="DbActionLogicEquipmentLock.cpp" />
+    <ClCompile Include="DbActionLogicInventoryLock.cpp" />
+    <ClCompile Include="DbActionLogicLog.cpp" />
+    <ClCompile Include="DbActionLogicPet.cpp" />
+    <ClCompile Include="DbActionLogicShop.cpp" />
+    <ClCompile Include="DbActionLogicSMS.cpp" />
+    <ClCompile Include="DbActionLogicStorageLock.cpp" />
+    <ClCompile Include="DbActionLogicVehicle.cpp" />
+    <ClCompile Include="DxCharSham.cpp" />
+    <ClCompile Include="DxGameStage.cpp" />
+    <ClCompile Include="DxGlobalStage.cpp" />
+    <ClCompile Include="dxincommand.cpp" />
+    <ClCompile Include="DxLobyStage.cpp" />
+    <ClCompile Include="DxLobyStageCreateChar.cpp" />
+    <ClCompile Include="DxLobyStageSelectChar.cpp" />
+    <ClCompile Include="DxParamSet.cpp" />
+    <ClCompile Include="DxServerInstance.cpp" />
+    <ClCompile Include="G-Logic\Emoticon.cpp" />
+    <ClCompile Include="G-Logic\GLActivity.cpp" />
+    <ClCompile Include="G-Logic\GLActivityData.cpp" />
+    <ClCompile Include="G-Logic\GLActivityDefine.cpp" />
+    <ClCompile Include="G-Logic\GLAgentServer.cpp" />
+    <ClCompile Include="G-Logic\GLAgentServerEx.cpp" />
+    <ClCompile Include="G-Logic\GLAgentServerMsg.cpp" />
+    <ClCompile Include="G-Logic\GLAGLandMan.cpp" />
+    <ClCompile Include="G-Logic\GLAnyPet.cpp" />
+    <ClCompile Include="G-Logic\GLAnySummon.cpp" />
+    <ClCompile Include="G-Logic\GLAnySummonMsg.cpp" />
+    <ClCompile Include="G-Logic\GLARoundSlot.cpp" />
+    <ClCompile Include="G-Logic\GLAutoLevel.cpp" />
+    <ClCompile Include="G-Logic\GLAutoLevelMan.cpp" />
+    <ClCompile Include="G-Logic\GLBusData.cpp" />
+    <ClCompile Include="G-Logic\GLBusList.cpp" />
+    <ClCompile Include="G-Logic\GLBusStation.cpp" />
+    <ClCompile Include="G-Logic\GLChar.cpp" />
+    <ClCompile Include="G-Logic\GLCharacter.cpp" />
+    <ClCompile Include="G-Logic\GLCharacterAllianceMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCharacterClubBattleMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCharacterClubMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCharacterConfrontMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCharacterMiniGameMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCharacterMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCharacterQuestMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCharacterSkill.cpp" />
+    <ClCompile Include="G-Logic\GLCharacterSkillTarget.cpp" />
+    <ClCompile Include="G-Logic\GLCharActivity.cpp" />
+    <ClCompile Include="G-Logic\GLCharactorReq.cpp" />
+    <ClCompile Include="G-Logic\GLCharactorReq2.cpp" />
+    <ClCompile Include="G-Logic\GLCharAG.cpp" />
+    <ClCompile Include="G-Logic\GLCharAGClub.cpp" />
+    <ClCompile Include="G-Logic\GLCharClient.cpp" />
+    <ClCompile Include="G-Logic\GLCharClubMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCharCodex.cpp" />
+    <ClCompile Include="G-Logic\GLCharData.cpp" />
+    <ClCompile Include="G-Logic\GLCharDataActivity.cpp" />
+    <ClCompile Include="G-Logic\GLCharDataCodex.cpp" />
+    <ClCompile Include="G-Logic\GLCharDataLoad.cpp" />
+    <ClCompile Include="G-Logic\GLCharDataPandora.cpp" />
+    <ClCompile Include="G-Logic\GLCharDefine.cpp" />
+    <ClCompile Include="G-Logic\GLCharEx.cpp" />
+    <ClCompile Include="G-Logic\GLCharInvenMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCharInvenMsg2.cpp" />
+    <ClCompile Include="G-Logic\GLCharMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCharPetMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCharPMarketMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCharQuest.cpp" />
+    <ClCompile Include="G-Logic\GLCharQuestMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCharSkillMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCharSkillMsg_SetTarget.cpp" />
+    <ClCompile Include="G-Logic\GLCharStorageMsg.cpp" />
+    <ClCompile Include="G-Logic\GLClubDeathMatch.cpp" />
+    <ClCompile Include="G-Logic\GLClubMan.cpp" />
+    <ClCompile Include="G-Logic\GLCodex.cpp" />
+    <ClCompile Include="G-Logic\GLCodexData.cpp" />
+    <ClCompile Include="G-Logic\GLCodexDefine.cpp" />
+    <ClCompile Include="G-Logic\GLCommentFile.cpp" />
+    <ClCompile Include="G-Logic\GLContrlMsg.cpp" />
+    <ClCompile Include="G-Logic\GLContrlPcMsg.cpp" />
+    <ClCompile Include="G-Logic\GLCrow.cpp" />
+    <ClCompile Include="G-Logic\GLCrowClient.cpp" />
+    <ClCompile Include="G-Logic\GLCrowData.cpp" />
+    <ClCompile Include="G-Logic\GLCrowDataAction.cpp" />
+    <ClCompile Include="G-Logic\GLCrowDataAttack.cpp" />
+    <ClCompile Include="G-Logic\GLCrowDataBasic.cpp" />
+    <ClCompile Include="G-Logic\GLCrowDataGen.cpp" />
+    <ClCompile Include="G-Logic\GLCrowDataItemExchange.cpp" />
+    <ClCompile Include="G-Logic\GLCrowDataLoad.cpp" />
+    <ClCompile Include="G-Logic\GLCrowDataNPCShop.cpp" />
+    <ClCompile Include="G-Logic\GLCrowGenerateReward.cpp" />
+    <ClCompile Include="G-Logic\GLCrowReAction.cpp" />
+    <ClCompile Include="G-Logic\GLCrowRenList.cpp" />
+    <ClCompile Include="G-Logic\GLCrowSkill.cpp" />
+    <ClCompile Include="G-Logic\GLCrowSkillTarget.cpp" />
+    <ClCompile Include="G-Logic\GLDescriptionFile.cpp" />
+    <ClCompile Include="G-Logic\GLEventProc.cpp" />
+    <ClCompile Include="G-Logic\GLFactData.cpp" />
+    <ClCompile Include="G-Logic\GLFactEffect.cpp" />
+    <ClCompile Include="G-Logic\GLFreePK.cpp" />
+    <ClCompile Include="G-Logic\GLFriendClient.cpp" />
+    <ClCompile Include="G-Logic\GLGaeaClient.cpp" />
+    <ClCompile Include="G-Logic\GLGaeaServer.cpp" />
+    <ClCompile Include="G-Logic\GLGaeaServerEx.cpp" />
+    <ClCompile Include="G-Logic\GLGaeaServerMsg.cpp" />
+    <ClCompile Include="G-Logic\GLGuidance.cpp" />
+    <ClCompile Include="G-Logic\GLInventory.cpp" />
+    <ClCompile Include="G-Logic\GLItem.cpp" />
+    <ClCompile Include="G-Logic\GLItemBasic.cpp" />
+    <ClCompile Include="G-Logic\GLItemBox.cpp" />
+    <ClCompile Include="G-Logic\GLItemDef.cpp" />
+    <ClCompile Include="G-Logic\GLItemDef2.cpp" />
+    <ClCompile Include="G-Logic\GLItemDrug.cpp" />
+    <ClCompile Include="G-Logic\GLItemGenerate.cpp" />
+    <ClCompile Include="G-Logic\GLItemGrinding.cpp" />
+    <ClCompile Include="G-Logic\GLItemLink.cpp" />
+    <ClCompile Include="G-Logic\GLITEMLMT.cpp" />
+    <ClCompile Include="G-Logic\GLItemMan.cpp" />
+    <ClCompile Include="G-Logic\GLItemMix.cpp" />
+    <ClCompile Include="G-Logic\GLItemMixMan.cpp" />
+    <ClCompile Include="G-Logic\GLItemPet.cpp" />
+    <ClCompile Include="G-Logic\GLItemPetSkin.cpp" />
+    <ClCompile Include="G-Logic\GLItemQuestion.cpp" />
+    <ClCompile Include="G-Logic\GLItemRandomBox.cpp" />
+    <ClCompile Include="G-Logic\GLItemRandomOption.cpp" />
+    <ClCompile Include="G-Logic\GLItemRVCard.cpp" />
+    <ClCompile Include="G-Logic\GLItemSkillBook.cpp" />
+    <ClCompile Include="G-Logic\GLItemSuit.cpp" />
+    <ClCompile Include="G-Logic\GLItemVehicle.cpp" />
+    <ClCompile Include="G-Logic\GLLandMan.cpp" />
+    <ClCompile Include="G-Logic\GLLandManClient.cpp" />
+    <ClCompile Include="G-Logic\GLLandManSet.cpp" />
+    <ClCompile Include="G-Logic\GLLandMark.cpp" />
+    <ClCompile Include="G-Logic\GLLevelEtcFunction.cpp" />
+    <ClCompile Include="G-Logic\GLLevelFile.cpp" />
+    <ClCompile Include="G-Logic\GLLevelFileSaveLoad.cpp" />
+    <ClCompile Include="G-Logic\GLLevelHead.cpp" />
+    <ClCompile Include="G-Logic\GLLevelRequire.cpp" />
+    <ClCompile Include="G-Logic\GLMapAxisInfo.cpp" />
+    <ClCompile Include="G-Logic\GLMapList.cpp" />
+    <ClCompile Include="G-Logic\GLMapNode.cpp" />
+    <ClCompile Include="G-Logic\GLMaterial.cpp" />
+    <ClCompile Include="G-Logic\GLMaterialClient.cpp" />
+    <ClCompile Include="G-Logic\GLMobSchedule.cpp" />
+    <ClCompile Include="G-Logic\GLMobScheduleSaveLoad.cpp" />
+    <ClCompile Include="G-Logic\GLMoney.cpp" />
+    <ClCompile Include="G-Logic\GLNote.cpp" />
+    <ClCompile Include="G-Logic\GLogicData.cpp" />
+    <ClCompile Include="G-Logic\GLogicDataLoad.cpp" />
+    <ClCompile Include="G-Logic\GLogicEx.cpp" />
+    <ClCompile Include="G-Logic\GLogicExNPC.cpp" />
+    <ClCompile Include="G-Logic\GLogixExPC.cpp" />
+    <ClCompile Include="G-Logic\GLParty.cpp" />
+    <ClCompile Include="G-Logic\GLPartyClient.cpp" />
+    <ClCompile Include="G-Logic\GLPartyField.cpp" />
+    <ClCompile Include="G-Logic\GLPartyFieldMan.cpp" />
+    <ClCompile Include="G-Logic\GLPartyMan.cpp" />
+    <ClCompile Include="G-Logic\GLPet.cpp" />
+    <ClCompile Include="G-Logic\GLPetClient.cpp" />
+    <ClCompile Include="G-Logic\GLPetClientMsg.cpp" />
+    <ClCompile Include="G-Logic\GLPetClientReq.cpp" />
+    <ClCompile Include="G-Logic\GLPetClientSkill.cpp" />
+    <ClCompile Include="G-Logic\GLPetField.cpp" />
+    <ClCompile Include="G-Logic\GLPetFieldMsg.cpp" />
+    <ClCompile Include="G-Logic\GLPrivateMarket.cpp" />
+    <ClCompile Include="G-Logic\GLProductDefine.cpp" />
+    <ClCompile Include="G-Logic\GLPVPCaptureTheFlag.cpp" />
+    <ClCompile Include="G-Logic\GLPVPCaptureTheFlagAgent.cpp" />
+    <ClCompile Include="G-Logic\GLPVPCaptureTheFlagAgentMapMove.cpp" />
+    <ClCompile Include="G-Logic\GLPVPCaptureTheFlagAgentMsg.cpp" />
+    <ClCompile Include="G-Logic\GLPVPCaptureTheFlagAgentRegister.cpp" />
+    <ClCompile Include="G-Logic\GLPVPCaptureTheFlagClient.cpp" />
+    <ClCompile Include="G-Logic\GLPVPCaptureTheFlagClientFlag.cpp" />
+    <ClCompile Include="G-Logic\GLPVPCaptureTheFlagClientMSG.cpp" />
+    <ClCompile Include="G-Logic\GLPVPCaptureTheFlagField.cpp" />
+    <ClCompile Include="G-Logic\GLPVPCaptureTheFlagFieldFlag.cpp" />
+    <ClCompile Include="G-Logic\GLPVPCaptureTheFlagFieldMSG.cpp" />
+    <ClCompile Include="G-Logic\GLPVPCaptureTheFlagFieldRanking.cpp" />
+    <ClCompile Include="G-Logic\GLPVPSchoolWars.cpp" />
+    <ClCompile Include="G-Logic\GLPVPSchoolWarsAgent.cpp" />
+    <ClCompile Include="G-Logic\GLPVPSchoolWarsAgentMapMove.cpp" />
+    <ClCompile Include="G-Logic\GLPVPSchoolWarsAgentMsg.cpp" />
+    <ClCompile Include="G-Logic\GLPVPSchoolWarsAgentRegister.cpp" />
+    <ClCompile Include="G-Logic\GLPVPSchoolWarsClient.cpp" />
+    <ClCompile Include="G-Logic\GLPVPSchoolWarsClientMSG.cpp" />
+    <ClCompile Include="G-Logic\GLPVPSchoolWarsField.cpp" />
+    <ClCompile Include="G-Logic\GLPVPSchoolWarsFieldMSG.cpp" />
+    <ClCompile Include="G-Logic\GLPVPSchoolWarsFieldRanking.cpp" />
+    <ClCompile Include="G-Logic\GLPVPTyranny.cpp" />
+    <ClCompile Include="G-Logic\GLPVPTyrannyAgent.cpp" />
+    <ClCompile Include="G-Logic\GLPVPTyrannyAgentMapMove.cpp" />
+    <ClCompile Include="G-Logic\GLPVPTyrannyAgentMSG.cpp" />
+    <ClCompile Include="G-Logic\GLPVPTyrannyAgentRegister.cpp" />
+    <ClCompile Include="G-Logic\GLPVPTyrannyAgentTower.cpp" />
+    <ClCompile Include="G-Logic\GLPVPTyrannyClient.cpp" />
+    <ClCompile Include="G-Logic\GLPVPTyrannyClientMSG.cpp" />
+    <ClCompile Include="G-Logic\GLPVPTyrannyField.cpp" />
+    <ClCompile Include="G-Logic\GLPVPTyrannyFieldMSG.cpp" />
+    <ClCompile Include="G-Logic\GLPVPTyrannyFieldRanking.cpp" />
+    <ClCompile Include="G-Logic\GLQuest.cpp" />
+    <ClCompile Include="G-Logic\GLQuestGenItem.cpp" />
+    <ClCompile Include="G-Logic\GLQuestMan.cpp" />
+    <ClCompile Include="G-Logic\GLQuestPlay.cpp" />
+    <ClCompile Include="G-Logic\GLQuestStart.cpp" />
+    <ClCompile Include="G-Logic\GLQuestStep.cpp" />
+    <ClCompile Include="G-Logic\GLSchoolFreePK.cpp" />
+    <ClCompile Include="G-Logic\GLSkill.cpp" />
+    <ClCompile Include="G-Logic\GLSkillApply.cpp" />
+    <ClCompile Include="G-Logic\GLSkillBasic.cpp" />
+    <ClCompile Include="G-Logic\GLSkillDefine.cpp" />
+    <ClCompile Include="G-Logic\GLSkillExData.cpp" />
+    <ClCompile Include="G-Logic\GLSkillLearn.cpp" />
+    <ClCompile Include="G-Logic\GLSkillSpecial.cpp" />
+    <ClCompile Include="G-Logic\GLSkillToolTip.cpp" />
+    <ClCompile Include="G-Logic\GLStrikeSelector.cpp" />
+    <ClCompile Include="G-Logic\GLStringTable.cpp" />
+    <ClCompile Include="G-Logic\GLSummon.cpp" />
+    <ClCompile Include="G-Logic\GLSummonClient.cpp" />
+    <ClCompile Include="G-Logic\GLSummonClientMsg.cpp" />
+    <ClCompile Include="G-Logic\GLSummonData.cpp" />
+    <ClCompile Include="G-Logic\GLSummonDef.cpp" />
+    <ClCompile Include="G-Logic\GLSummonField.cpp" />
+    <ClCompile Include="G-Logic\GLSummonFieldMsg.cpp" />
+    <ClCompile Include="G-Logic\GLSummonSkill.cpp" />
+    <ClCompile Include="G-Logic\GLTaxiData.cpp" />
+    <ClCompile Include="G-Logic\GLTaxiStation.cpp" />
+    <ClCompile Include="G-Logic\GLTrade.cpp" />
+    <ClCompile Include="G-Logic\GLTradeClient.cpp" />
+    <ClCompile Include="G-Logic\GLVEHICLE.cpp" />
+    <ClCompile Include="G-Logic\stl_Func.cpp" />
+    <ClCompile Include="NpcTalk\NpcDialogue.cpp" />
+    <ClCompile Include="NpcTalk\NpcDialogueCase.cpp" />
+    <ClCompile Include="NpcTalk\NpcDialogueSet.cpp" />
+    <ClCompile Include="NpcTalk\NpcTalk.cpp" />
+    <ClCompile Include="NpcTalk\NpcTalkCondition.cpp" />
+    <ClCompile Include="NpcTalk\NpcTalkControl.cpp" />
+    <ClCompile Include="stdafx.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ClientApex.h" />
+    <ClInclude Include="DbActionLogic.h" />
+    <ClInclude Include="DxCharSham.h" />
+    <ClInclude Include="DxGameStage.h" />
+    <ClInclude Include="DxGlobalStage.h" />
+    <ClInclude Include="dxincommand.h" />
+    <ClInclude Include="DxLobyStage.h" />
+    <ClInclude Include="DxParamSet.h" />
+    <ClInclude Include="DxServerInstance.h" />
+    <ClInclude Include="DxStage.h" />
+    <ClInclude Include="G-Logic\Emoticon.h" />
+    <ClInclude Include="G-Logic\GLActivity.h" />
+    <ClInclude Include="G-Logic\GLActivityData.h" />
+    <ClInclude Include="G-Logic\GLActivityDefine.h" />
+    <ClInclude Include="G-Logic\GLACTOR.h" />
+    <ClInclude Include="G-Logic\GLAgentServer.h" />
+    <ClInclude Include="G-Logic\GLAGLandMan.h" />
+    <ClInclude Include="G-Logic\GLAnyPet.h" />
+    <ClInclude Include="G-Logic\GLAnySummon.h" />
+    <ClInclude Include="G-Logic\GLARoundSlot.h" />
+    <ClInclude Include="G-Logic\GLAutoLevel.h" />
+    <ClInclude Include="G-Logic\GLAutoLevelMan.h" />
+    <ClInclude Include="G-Logic\GLBikeColorDef.h" />
+    <ClInclude Include="G-Logic\GLBusData.h" />
+    <ClInclude Include="G-Logic\GLBusList.h" />
+    <ClInclude Include="G-Logic\GLBusStation.h" />
+    <ClInclude Include="G-Logic\GLCDMDefine.h" />
+    <ClInclude Include="G-Logic\GLChar.h" />
+    <ClInclude Include="G-Logic\GLCharacter.h" />
+    <ClInclude Include="G-Logic\GLCharAG.h" />
+    <ClInclude Include="G-Logic\GLCharClient.h" />
+    <ClInclude Include="G-Logic\GLCharData.h" />
+    <ClInclude Include="G-Logic\GLCharDefine.h" />
+    <ClInclude Include="G-Logic\GLClubDeathMatch.h" />
+    <ClInclude Include="G-Logic\GLClubMan.h" />
+    <ClInclude Include="G-Logic\GLCodex.h" />
+    <ClInclude Include="G-Logic\GLCodexData.h" />
+    <ClInclude Include="G-Logic\GLCodexDefine.h" />
+    <ClInclude Include="G-Logic\GLCommentFile.h" />
+    <ClInclude Include="G-Logic\GLContrlActivityMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlBaseMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlCaptureTheFlagMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlCaptureTheFlagMsgEnum.h" />
+    <ClInclude Include="G-Logic\GLContrlCharJoinMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlClubMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlCodexMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlConflictMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlCrowMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlFriendMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlInDunMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlInvenMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlInvenMsgEnum.h" />
+    <ClInclude Include="G-Logic\GLContrlMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlNpcMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlPartyMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlPcMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlPcMsg2.h" />
+    <ClInclude Include="G-Logic\GLContrlPcMsgEnum.h" />
+    <ClInclude Include="G-Logic\GLContrlPetMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlPrivateMarket.h" />
+    <ClInclude Include="G-Logic\GLContrlQuestMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlSchoolWarsMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlSchoolWarsMsgEnum.h" />
+    <ClInclude Include="G-Logic\GLContrlServerMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlSkillMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlSummonMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlTradeMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlTyrannyMsg.h" />
+    <ClInclude Include="G-Logic\GLContrlTyrannyMsgEnum.h" />
+    <ClInclude Include="G-Logic\GLCOPY.h" />
+    <ClInclude Include="G-Logic\GLCrow.h" />
+    <ClInclude Include="G-Logic\GLCrowClient.h" />
+    <ClInclude Include="G-Logic\GLCrowData.h" />
+    <ClInclude Include="G-Logic\GLCrowDataAction.h" />
+    <ClInclude Include="G-Logic\GLCrowDataAttack.h" />
+    <ClInclude Include="G-Logic\GLCrowDataBasic.h" />
+    <ClInclude Include="G-Logic\GLCrowDataGen.h" />
+    <ClInclude Include="G-Logic\GLCrowDataItemExchange.h" />
+    <ClInclude Include="G-Logic\GLCrowDataNPCShop.h" />
+    <ClInclude Include="G-Logic\GLCrowRenList.h" />
+    <ClInclude Include="G-Logic\GLDescriptionFile.h" />
+    <ClInclude Include="G-Logic\GLEventProc.h" />
+    <ClInclude Include="G-Logic\GLFactData.h" />
+    <ClInclude Include="G-Logic\GLFactEffect.h" />
+    <ClInclude Include="G-Logic\GLFreePK.h" />
+    <ClInclude Include="G-Logic\GLFriendClient.h" />
+    <ClInclude Include="G-Logic\GLGaeaClient.h" />
+    <ClInclude Include="G-Logic\GLGaeaServer.h" />
+    <ClInclude Include="G-Logic\GLGuidance.h" />
+    <ClInclude Include="G-Logic\GLInventory.h" />
+    <ClInclude Include="G-Logic\GLItem.h" />
+    <ClInclude Include="G-Logic\GLItemBasic.h" />
+    <ClInclude Include="G-Logic\GLItemBox.h" />
+    <ClInclude Include="G-Logic\GLItemDef.h" />
+    <ClInclude Include="G-Logic\GLItemDefEX.h" />
+    <ClInclude Include="G-Logic\GLItemDrug.h" />
+    <ClInclude Include="G-Logic\GLItemGenerate.h" />
+    <ClInclude Include="G-Logic\GLItemGrinding.h" />
+    <ClInclude Include="G-Logic\GLItemLink.h" />
+    <ClInclude Include="G-Logic\GLITEMLMT.h" />
+    <ClInclude Include="G-Logic\GLItemMan.h" />
+    <ClInclude Include="G-Logic\GLItemMix.h" />
+    <ClInclude Include="G-Logic\GLItemMixMan.h" />
+    <ClInclude Include="G-Logic\GLItemPet.h" />
+    <ClInclude Include="G-Logic\GLItemPetSkin.h" />
+    <ClInclude Include="G-Logic\GLItemQuestion.h" />
+    <ClInclude Include="G-Logic\GLItemRandomBox.h" />
+    <ClInclude Include="G-Logic\GLItemRandomOption.h" />
+    <ClInclude Include="G-Logic\GLItemRVCard.h" />
+    <ClInclude Include="G-Logic\GLItemSkillBook.h" />
+    <ClInclude Include="G-Logic\GLItemSuit.h" />
+    <ClInclude Include="G-Logic\GLItemVehicle.h" />
+    <ClInclude Include="G-Logic\GLLandMan.h" />
+    <ClInclude Include="G-Logic\GLLandManClient.h" />
+    <ClInclude Include="G-Logic\GLLandMark.h" />
+    <ClInclude Include="G-Logic\GLLevelEtcFunction.h" />
+    <ClInclude Include="G-Logic\GLLevelFile.h" />
+    <ClInclude Include="G-Logic\GLLevelHead.h" />
+    <ClInclude Include="G-Logic\GLLevelRequire.h" />
+    <ClInclude Include="G-Logic\GLMapAxisInfo.h" />
+    <ClInclude Include="G-Logic\GLMapList.h" />
+    <ClInclude Include="G-Logic\GLMapNode.h" />
+    <ClInclude Include="G-Logic\GLMaterial.h" />
+    <ClInclude Include="G-Logic\GLMaterialClient.h" />
+    <ClInclude Include="G-Logic\GLMobSchedule.h" />
+    <ClInclude Include="G-Logic\GLMoney.h" />
+    <ClInclude Include="G-Logic\GLNote.h" />
+    <ClInclude Include="G-Logic\GLogicData.h" />
+    <ClInclude Include="G-Logic\GLogicEx.h" />
+    <ClInclude Include="G-Logic\GLParty.h" />
+    <ClInclude Include="G-Logic\GLPartyClient.h" />
+    <ClInclude Include="G-Logic\GLPartyField.h" />
+    <ClInclude Include="G-Logic\GLPartyFieldMan.h" />
+    <ClInclude Include="G-Logic\GLPartyMan.h" />
+    <ClInclude Include="G-Logic\GLPet.h" />
+    <ClInclude Include="G-Logic\GLPetClient.h" />
+    <ClInclude Include="G-Logic\GLPetField.h" />
+    <ClInclude Include="G-Logic\GLPrivateMarket.h" />
+    <ClInclude Include="G-Logic\GLProductDefine.h" />
+    <ClInclude Include="G-Logic\GLPVPCaptureTheFlag.h" />
+    <ClInclude Include="G-Logic\GLPVPCaptureTheFlagAgent.h" />
+    <ClInclude Include="G-Logic\GLPVPCaptureTheFlagClient.h" />
+    <ClInclude Include="G-Logic\GLPVPCaptureTheFlagData.h" />
+    <ClInclude Include="G-Logic\GLPVPCaptureTheFlagDefine.h" />
+    <ClInclude Include="G-Logic\GLPVPCaptureTheFlagField.h" />
+    <ClInclude Include="G-Logic\GLPVPSchoolWars.h" />
+    <ClInclude Include="G-Logic\GLPVPSchoolWarsAgent.h" />
+    <ClInclude Include="G-Logic\GLPVPSchoolWarsClient.h" />
+    <ClInclude Include="G-Logic\GLPVPSchoolWarsData.h" />
+    <ClInclude Include="G-Logic\GLPVPSchoolWarsDefine.h" />
+    <ClInclude Include="G-Logic\GLPVPSchoolWarsField.h" />
+    <ClInclude Include="G-Logic\GLPVPTyranny.h" />
+    <ClInclude Include="G-Logic\GLPVPTyrannyAgent.h" />
+    <ClInclude Include="G-Logic\GLPVPTyrannyClient.h" />
+    <ClInclude Include="G-Logic\GLPVPTyrannyData.h" />
+    <ClInclude Include="G-Logic\GLPVPTyrannyDefine.h" />
+    <ClInclude Include="G-Logic\GLPVPTyrannyField.h" />
+    <ClInclude Include="G-Logic\GLQuest.h" />
+    <ClInclude Include="G-Logic\GLQuestGenItem.h" />
+    <ClInclude Include="G-Logic\GLQuestMan.h" />
+    <ClInclude Include="G-Logic\GLQuestPlay.h" />
+    <ClInclude Include="G-Logic\GLQuestStart.h" />
+    <ClInclude Include="G-Logic\GLQuestStep.h" />
+    <ClInclude Include="G-Logic\GLSchoolFreePK.h" />
+    <ClInclude Include="G-Logic\GLSkill.h" />
+    <ClInclude Include="G-Logic\GLSkillApply.h" />
+    <ClInclude Include="G-Logic\GLSkillBasic.h" />
+    <ClInclude Include="G-Logic\GLSkillDefine.h" />
+    <ClInclude Include="G-Logic\GLSkillExData.h" />
+    <ClInclude Include="G-Logic\GLSkillLearn.h" />
+    <ClInclude Include="G-Logic\GLSkillSpecial.h" />
+    <ClInclude Include="G-Logic\GLSkillToolTip.h" />
+    <ClInclude Include="G-Logic\GLStrikeM.h" />
+    <ClInclude Include="G-Logic\GLStrikeSelector.h" />
+    <ClInclude Include="G-Logic\GLStringTable.h" />
+    <ClInclude Include="G-Logic\GLSummon.h" />
+    <ClInclude Include="G-Logic\GLSummonClient.h" />
+    <ClInclude Include="G-Logic\GLSummonData.h" />
+    <ClInclude Include="G-Logic\GLSummonDef.h" />
+    <ClInclude Include="G-Logic\GLSummonField.h" />
+    <ClInclude Include="G-Logic\GLTaxiData.h" />
+    <ClInclude Include="G-Logic\GLTaxiStation.h" />
+    <ClInclude Include="G-Logic\GLTrade.h" />
+    <ClInclude Include="G-Logic\GLTradeClient.h" />
+    <ClInclude Include="G-Logic\GLVEHICLE.h" />
+    <ClInclude Include="G-Logic\PKRankData.h" />
+    <ClInclude Include="G-Logic\stl_Func.h" />
+    <ClInclude Include="GLItemShopData.h" />
+    <ClInclude Include="LG7DLL.h" />
+    <ClInclude Include="NpcTalk\NpcDialogue.h" />
+    <ClInclude Include="NpcTalk\NpcDialogueCase.h" />
+    <ClInclude Include="NpcTalk\NpcDialogueSet.h" />
+    <ClInclude Include="NpcTalk\NpcTalk.h" />
+    <ClInclude Include="NpcTalk\NpcTalkCondition.h" />
+    <ClInclude Include="NpcTalk\NpcTalkControl.h" />
+    <ClInclude Include="NpcTalk\NpcTalkData.h" />
+    <ClInclude Include="stdafx.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="ReadMe.txt" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

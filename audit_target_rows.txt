@@ -1,0 +1,133 @@
+--- Lib_Network\s_COdbcUser.cpp  (VULNERABLE: 61) ---
+143 [printf] UPDATE DaumUserInfo WITH (UPDLOCK) SET ChatBlockDa | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE DaumUserInfo WITH (UPDLOCK) SET ChatBlockDate='%s' WHERE UserNum=%d", strTime.GetString(
+148 [printf] UPDATE JapanUserInfo WITH (UPDLOCK) SET ChatBlockD | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE JapanUserInfo WITH (UPDLOCK) SET ChatBlockDate='%s' WHERE UserNum=%d", strTime.GetString
+155 [printf] UPDATE TerraUserInfo WITH (UPDLOCK) SET ChatBlockD | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE TerraUserInfo WITH (UPDLOCK) SET ChatBlockDate='%s' WHERE UserNum=%d", strTime.GetString
+162 [printf] UPDATE TerraUserInfo WITH (UPDLOCK) SET ChatBlockD | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE TerraUserInfo WITH (UPDLOCK) SET ChatBlockDate='%s' WHERE UserNum=%d", strTime.GetString
+169 [printf] UPDATE UserInfo WITH (UPDLOCK) SET ChatBlockDate=' | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE UserInfo WITH (UPDLOCK) SET ChatBlockDate='%s' WHERE UserNum=%d", strTime.GetString(), n
+176 [printf] UPDATE GspUserInfo WITH (UPDLOCK) SET ChatBlockDat | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE GspUserInfo WITH (UPDLOCK) SET ChatBlockDate='%s' WHERE UserNum=%d", strTime.GetString()
+183 [printf] UPDATE GSUserInfo WITH (UPDLOCK) SET ChatBlockDate | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE GSUserInfo WITH (UPDLOCK) SET ChatBlockDate='%s' WHERE UserNum=%d", strTime.GetString(),
+190 [printf] UPDATE UserInfo WITH (UPDLOCK) SET ChatBlockDate=' | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE UserInfo WITH (UPDLOCK) SET ChatBlockDate='%s' WHERE UserNum=%d", strTime.GetString(), n
+340 [printf] UPDATE DaumUserInfo SET PremiumDate='%s' WHERE Use | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE DaumUserInfo SET PremiumDate='%s' WHERE UserNum=%d", strTime.GetString(), nUserNum );
+345 [printf] UPDATE JapanUserInfo SET PremiumDate='%s' WHERE Us | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE JapanUserInfo SET PremiumDate='%s' WHERE UserNum=%d", strTime.GetString(), nUserNum );
+352 [printf] UPDATE TerraUserInfo SET PremiumDate='%s' WHERE Us | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE TerraUserInfo SET PremiumDate='%s' WHERE UserNum=%d", strTime.GetString(), nUserNum );
+359 [printf] UPDATE TerraUserInfo SET PremiumDate='%s' WHERE Us | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE TerraUserInfo SET PremiumDate='%s' WHERE UserNum=%d", strTime.GetString(), nUserNum );
+366 [printf] UPDATE UserInfo SET PremiumDate='%s' WHERE UserNum | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE UserInfo SET PremiumDate='%s' WHERE UserNum=%d", strTime.GetString(), nUserNum );
+373 [printf] UPDATE GspUserInfo SET PremiumDate='%s' WHERE User | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE GspUserInfo SET PremiumDate='%s' WHERE UserNum=%d", strTime.GetString(), nUserNum );
+380 [printf] UPDATE GSUserInfo SET PremiumDate='%s' WHERE UserN | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE GSUserInfo SET PremiumDate='%s' WHERE UserNum=%d", strTime.GetString(), nUserNum );
+387 [printf] UPDATE UserInfo SET PremiumDate='%s' WHERE UserNum | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE UserInfo SET PremiumDate='%s' WHERE UserNum=%d", strTime.GetString(), nUserNum );
+656 [printf] {call daum_user_logout('%s',%d,%d,%d,%d,%d)} | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 256, "{call daum_user_logout('%s',%d,%d,%d,%d,%d)}", szUsrID, nUsrNum, nGameTime, nChaNum, nSvrGrp, n
+661 [printf] {call user_logout('%s',%d,%d,%d,%d,%d,%d,%d)} | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 256, "{call user_logout('%s',%d,%d,%d,%d,%d,%d,%d)}", szUsrID, nUsrNum, nGameTime, nChaNum, nSvrGrp, 
+667 [printf] {call Japan_user_logout('%s',%d,%d,%d,%d,%d)} | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 256, "{call Japan_user_logout('%s',%d,%d,%d,%d,%d)}", szUsrID, nUsrNum, nGameTime, nChaNum, nSvrGrp, 
+679 [printf] {call terra_user_logout('%s',%d,%d,%d,%d,%d,%d,%d) | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 256, "{call terra_user_logout('%s',%d,%d,%d,%d,%d,%d,%d)}", szUsrID, nUsrNum, nGameTime, nChaNum, nSv
+681 [printf] {call terra_user_logout('%s',%d,%d,%d,%d,%d)} | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 256, "{call terra_user_logout('%s',%d,%d,%d,%d,%d)}", szUsrID, nUsrNum, nGameTime, nChaNum, nSvrGrp, 
+693 [printf] {call terra_user_logout('%s',%d,%d,%d,%d,%d)} | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 256, "{call terra_user_logout('%s',%d,%d,%d,%d,%d)}", szUsrID, nUsrNum, nGameTime, nChaNum, nSvrGrp, 
+704 [printf] {call user_logout('%s',%d,%d,%d,%d,%d)} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "{call user_logout('%s',%d,%d,%d,%d,%d)}", szUsrID, nUsrNum, nGameTime, nChaNum, nSvrGrp, nSvrNu
+715 [printf] {call gsp_user_logout('%s',%d,%d,%d,%d,%d)} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "{call gsp_user_logout('%s',%d,%d,%d,%d,%d)}", szUsrID, nUsrNum, nGameTime, nChaNum, nSvrGrp, nS
+726 [printf] {call GS_user_logout('%s',%d,%d,%d,%d,%d)} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "{call GS_user_logout('%s',%d,%d,%d,%d,%d)}", szUsrID, nUsrNum, nGameTime, nChaNum, nSvrGrp, nSv
+737 [printf] {call user_logout('%s',%d,%d,%d,%d,%d)} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "{call user_logout('%s',%d,%d,%d,%d,%d)}", szUsrID, nUsrNum, nGameTime, nChaNum, nSvrGrp, nSvrNu
+765 [printf] {call Daum_UserLogoutSimple('%s')} | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call Daum_UserLogoutSimple('%s')}", szUsrID );
+773 [printf] {call Japan_UserLogoutSimple('%s')} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call Japan_UserLogoutSimple('%s')}", szUsrID );
+779 [printf] {call Terra_UserLogoutSimple('%s')} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call Terra_UserLogoutSimple('%s')}", szUsrID );
+785 [printf] {call Terra_UserLogoutSimple('%s')} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call Terra_UserLogoutSimple('%s')}", szUsrID );
+791 [printf] {call UserLogoutSimple('%s')} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call UserLogoutSimple('%s')}", szUsrID );
+797 [printf] {call Gsp_UserLogoutSimple('%s')} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call Gsp_UserLogoutSimple('%s')}", szUsrID );
+803 [printf] {call GS_UserLogoutSimple('%s')} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call GS_UserLogoutSimple('%s')}", szUsrID );
+809 [printf] {call UserLogoutSimple('%s')} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call UserLogoutSimple('%s')}", szUsrID );
+994 [printf] {call Daum_UpdateChaName(%d,'%s')} | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call Daum_UpdateChaName(%d,'%s')}", nUsrNum, szChaName );
+1003 [printf] {call Japan_UpdateChaName(%d,'%s')} | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call Japan_UpdateChaName(%d,'%s')}", nUsrNum, szChaName );
+1010 [printf] {call Terra_UpdateChaName(%d,'%s')} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call Terra_UpdateChaName(%d,'%s')}", nUsrNum, szChaName );
+1017 [printf] {call Terra_UpdateChaName(%d,'%s')} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call Terra_UpdateChaName(%d,'%s')}", nUsrNum, szChaName );
+1024 [printf] {call UpdateChaName(%d,'%s')} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call UpdateChaName(%d,'%s')}", nUsrNum, szChaName );
+1031 [printf] {call Gsp_UpdateChaName(%d,'%s')} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call Gsp_UpdateChaName(%d,'%s')}", nUsrNum, szChaName );
+1038 [printf] {call GS_UpdateChaName(%d,'%s')} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call GS_UpdateChaName(%d,'%s')}", nUsrNum, szChaName );
+1045 [printf] {call UpdateChaName(%d,'%s')} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call UpdateChaName(%d,'%s')}", nUsrNum, szChaName );
+1077 [printf] SELECT UserNum FROM DaumUserInfo WITH (NOLOCK)  WH | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "SELECT UserNum FROM DaumUserInfo WITH (NOLOCK)  WHERE UserUID='%s'", szUsrId );
+1084 [printf] SELECT UserNum FROM JapanUserInfo WITH (NOLOCK)  W | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "SELECT UserNum FROM JapanUserInfo WITH (NOLOCK)  WHERE UserUID='%s'", szUsrId );
+1089 [printf] SELECT UserNum FROM TerraUserInfo WITH (NOLOCK)  W | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "SELECT UserNum FROM TerraUserInfo WITH (NOLOCK)  WHERE UserUID='%s'", szUsrId );
+1094 [printf] SELECT UserNum FROM TerraUserInfo WITH (NOLOCK)  W | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "SELECT UserNum FROM TerraUserInfo WITH (NOLOCK)  WHERE UserUID='%s'", szUsrId );
+1099 [printf] SELECT UserNum FROM UserInfo WITH (NOLOCK)  WHERE  | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "SELECT UserNum FROM UserInfo WITH (NOLOCK)  WHERE UserUID='%s'", szUsrId );
+1104 [printf] SELECT UserNum FROM GspUserInfo WITH (NOLOCK)  WHE | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "SELECT UserNum FROM GspUserInfo WITH (NOLOCK)  WHERE UserUID='%s'", szUsrId );
+1109 [printf] SELECT UserNum FROM GSUserInfo WITH (NOLOCK)  WHER | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "SELECT UserNum FROM GSUserInfo WITH (NOLOCK)  WHERE UserUID='%s'", szUsrId );
+1114 [printf] SELECT UserNum FROM UserInfo WITH (NOLOCK)  WHERE  | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "SELECT UserNum FROM UserInfo WITH (NOLOCK)  WHERE UserUID='%s'", szUsrId );
+1169 [printf] INSERT INTO BlockAddress (BlockAddress, BlockReaso | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "INSERT INTO BlockAddress (BlockAddress, BlockReason) VALUES('%s', '%s')", szIP, szReason );
+1522 [printf] UPDATE DaumUserInfo WITH (UPDLOCK) SET UserBlock=1 | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE DaumUserInfo WITH (UPDLOCK) SET UserBlock=1,UserBlockDate='%s' WHERE UserNum=%d", strTim
+1532 [printf] UPDATE JapanUserInfo WITH (UPDLOCK) SET UserBlock= | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE JapanUserInfo WITH (UPDLOCK) SET UserBlock=1,UserBlockDate='%s' WHERE UserNum=%d", strTi
+1540 [printf] UPDATE TerraUserInfo WITH (UPDLOCK) SET UserBlock= | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE TerraUserInfo WITH (UPDLOCK) SET UserBlock=1,UserBlockDate='%s' WHERE UserNum=%d", strTi
+1548 [printf] UPDATE TerraUserInfo WITH (UPDLOCK) SET UserBlock= | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE TerraUserInfo WITH (UPDLOCK) SET UserBlock=1,UserBlockDate='%s' WHERE UserNum=%d", strTi
+1556 [printf] UPDATE UserInfo WITH (UPDLOCK) SET UserBlock=1,Use | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE UserInfo WITH (UPDLOCK) SET UserBlock=1,UserBlockDate='%s' WHERE UserNum=%d", strTime.Ge
+1564 [printf] UPDATE GspUserInfo WITH (UPDLOCK) SET UserBlock=1, | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE GspUserInfo WITH (UPDLOCK) SET UserBlock=1,UserBlockDate='%s' WHERE UserNum=%d", strTime
+1572 [printf] UPDATE GSUserInfo WITH (UPDLOCK) SET UserBlock=1,U | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE GSUserInfo WITH (UPDLOCK) SET UserBlock=1,UserBlockDate='%s' WHERE UserNum=%d", strTime.
+1580 [printf] UPDATE UserInfo WITH (UPDLOCK) SET UserBlock=1,Use | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "UPDATE UserInfo WITH (UPDLOCK) SET UserBlock=1,UserBlockDate='%s' WHERE UserNum=%d", strTime.Ge
+1818 [printf] {call sp_UpdateMoneyPoint(%d,'%s',?)} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call sp_UpdateMoneyPoint(%d,'%s',?)}",
+1832 [printf] {call sp_DeductMoneyPoint(%d,'%s',?)} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call sp_DeductMoneyPoint(%d,'%s',?)}",
+
+--- Lib_Client\G-Logic\GLCharInvenMsg.cpp  (VULNERABLE: 8) ---
+1144 [Format] Insert Money, [%s][%s], Insert Amount:[%I64d], Hav | exec:N;esc:N | interp:%s-family | strTemp.Format( "Insert Money, [%s][%s], Insert Amount:[%I64d], Have Money:[%I64d]",
+1646 [printf] ,[%s][%s], Hold Item from inventory %02d_%02d, %s  | exec:N;esc:N | interp:%s-family | sprintf( szTempChar, ",[%s][%s], Hold Item from inventory %02d_%02d, %s x(%d/%d), GenNum(%d)", m_szUID, m_szName,
+3144 [printf]  Insert New Item %02d_%02d, %s, x(%d/%d), GenNum(% | exec:N;esc:N | interp:%s-family | sprintf( szTempChar, " Insert New Item %02d_%02d, %s, x(%d/%d), GenNum(%d)",
+3232 [printf] ,[%s][%s], Insert from item hold Item %02d_%02d, % | exec:N;esc:N | interp:%s-family | sprintf( szTempChar, ",[%s][%s], Insert from item hold Item %02d_%02d, %s x(%d/%d), GenNum(%d)", m_szUID, m_szName,
+4411 [Format] Buy From Npc, [%s][%s], Buy price:[%I64d], Have Mo | exec:N;esc:N | interp:%s-family | strTemp.Format( "Buy From Npc, [%s][%s], Buy price:[%I64d], Have Money:[%I64d]",
+4422 [printf] ,[%s][%s], Pile Buy Item From NPC %02d_%02d, %s x( | exec:N;esc:N | interp:%s-family | sprintf( szTempChar, ",[%s][%s], Pile Buy Item From NPC %02d_%02d, %s x(%d/%d), GenNum(%d)", m_szUID, m_szName,
+4516 [Format] Buy From Npc, [%s][%s], Buy price:[%I64d], Have Mo | exec:N;esc:N | interp:%s-family | strTemp.Format( "Buy From Npc, [%s][%s], Buy price:[%I64d], Have Money:[%I64d]",
+4528 [printf] ,[%s][%s], Buy Item From NPC %02d_%02d, %s x(%d/%d | exec:N;esc:N | interp:%s-family | sprintf( szTempChar, ",[%s][%s], Buy Item From NPC %02d_%02d, %s x(%d/%d), GenNum(%d)", m_szUID, m_szName,
+
+--- Lib_Client\G-Logic\GLChar.cpp  (VULNERABLE: 5) ---
+824 [Format] Do Trade! From, [%s][%s], Target[%s][%s], RecvMone | exec:N;esc:N | interp:%s-family | strTemp.Format( "Do Trade! From, [%s][%s], Target[%s][%s], RecvMoney:[%I64d], SendMoney:[%I64d], HaveMoney:[%I64d], Targ
+827 [Format] Do Trade! From, [%s][%s], Target Not Found, RecvMo | exec:N;esc:N | interp:%s-family | strTemp.Format( "Do Trade! From, [%s][%s], Target Not Found, RecvMoney:[%I64d], SendMoney:[%I64d], HaveMoney:[%I64d]",
+841 [Format] ,Do Trade! From, [%s][%s], Target[%s][%s], RecvMon | exec:N;esc:N | interp:%s-family | strTemp.Format( ",Do Trade! From, [%s][%s], Target[%s][%s], RecvMoney:[%I64d], SendMoney:[%I64d], HaveMoney:[%I64d], Tar
+850 [Format] ,Do Trade! From, [%s][%s], Target Not Found, RecvM | exec:N;esc:N | interp:%s-family | strTemp.Format( ",Do Trade! From, [%s][%s], Target Not Found, RecvMoney:[%I64d], SendMoney:[%I64d], HaveMoney:[%I64d]",
+910 [Format] ,Do Trade Item! From, [%s][%s], Target[%s][%s] | exec:N;esc:N | interp:%s-family | strTemp.Format( ",Do Trade Item! From, [%s][%s], Target[%s][%s]",m_szUID, m_szName, pFromChar->m_szUID, pFromChar->m_szN
+
+--- Lib_Client\G-Logic\GLCharPMarketMsg.cpp  (VULNERABLE: 2) ---
+730 [Format] ,Buy From PC, [%s][%s], PC Have Money:[%I64d], Mar | exec:N;esc:N | interp:%s-family | strTemp.Format( ",Buy From PC, [%s][%s], PC Have Money:[%I64d], MarketPC[%s][%s], MarketPC Have Money:[%I64d], Buy price
+757 [Format] Buy From PC, [%s][%s], PC Have Money:[%I64d], Mark | exec:N;esc:N | interp:%s-family | strTemp.Format( "Buy From PC, [%s][%s], PC Have Money:[%I64d], MarketPC[%s][%s], MarketPC Have Money:[%I64d], Buy price:
+
+--- GMTool\Logic\GMToolOdbcUser.cpp  (VULNERABLE: 8) ---
+150 [printf] SELECT UserNum, UserID, UserEmail, UserType, UserL | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 1024, "SELECT UserNum, UserID, UserEmail, UserType, UserLoginState, UserAvailable, UserBlock, UserBlo
+154 [printf] SELECT TOP %d UserNum, UserID, UserEmail, UserType | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 1024, "SELECT TOP %d UserNum, UserID, UserEmail, UserType, UserLoginState, UserAvailable, UserBlock, 
+175 [printf] SELECT UserNum, UserID, UserEmail, UserType, UserL | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 1024, "SELECT UserNum, UserID, UserEmail, UserType, UserLoginState, UserAvailable, UserBlock, UserBlo
+179 [printf] SELECT TOP %d UserNum, UserID, UserEmail, UserType | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 1024, "SELECT TOP %d UserNum, UserID, UserEmail, UserType, UserLoginState, UserAvailable, UserBlock, 
+234 [printf] SELECT UserNum FROM UserInfo WITH (NOLOCK) WHERE U | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 1024, "SELECT UserNum FROM UserInfo WITH (NOLOCK) WHERE UserID = '%s' ",  strUSERID.c_str() );
+399 [printf] UPDATE UserInfo SET UserBlock = %u, UserBlockDate  | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 1024, "UPDATE UserInfo SET UserBlock = %u, UserBlockDate = '%s' WHERE UserNum = %u ",
+421 [printf] UPDATE UserInfo SET ChatBlockDate = '%s' WHERE Use | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 1024, "UPDATE UserInfo SET ChatBlockDate = '%s' WHERE UserNum = %u ",
+598 [printf] UPDATE UserInfo SET UserPass ='%s', UserPass2 ='%s | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 1024, "UPDATE UserInfo SET UserPass ='%s', UserPass2 ='%s', UserEmail ='%s', "
+
+--- GMTool\Logic\GMToolOdbcConn.cpp  (VULNERABLE: 3) ---
+347 [printf] SELECT %s FROM ChaInfo where (ChaNum=%d) | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "SELECT %s FROM ChaInfo where (ChaNum=%d)", objName, nChaNum );
+586 [printf] SELECT %s FROM PetInfo where (PetNum=%d And PetCha | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "SELECT %s FROM PetInfo where (PetNum=%d And PetChaNum=%d)", objName, nPetNum, nChaNum );
+645 [printf] SELECT %s FROM VehicleInfo where (VehicleNum=%d) A | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "SELECT %s FROM VehicleInfo where (VehicleNum=%d) And (VehicleChaNum=%d)", objName, nVehicleNum,
+
+--- GMTool\Logic\GMToolOdbcChar.cpp  (VULNERABLE: 3) ---
+240 [printf] SELECT UserNum, ChaNum, ChaName, ChaClass, ChaScho | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 1024, "SELECT UserNum, ChaNum, ChaName, ChaClass, ChaSchool, ChaLevel, ChaOnline, ChaDeleted FROM Cha
+244 [printf] SELECT TOP %d UserNum, ChaNum, ChaName, ChaClass,  | exec:N;esc:N | interp:%s-family | _snprintf( szTemp, 1024, "SELECT TOP %d UserNum, ChaNum, ChaName, ChaClass, ChaSchool, ChaLevel, ChaOnline, ChaDeleted F
+379 [printf] SELECT ChaNum FROM ChaInfo WITH (NOLOCK) WHERE Cha | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 1024, "SELECT ChaNum FROM ChaInfo WITH (NOLOCK) WHERE ChaName = '%s' ",  strCHANAME.c_str() );
+
+--- GMTool\Logic\GMToolOdbcShop.cpp  (VULNERABLE: 3) ---
+32 [printf] SELECT PurKey, ProductNum, PurPrice, PurDate, Item | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 1024, "SELECT PurKey, ProductNum, PurPrice, PurDate, ItemName, ItemMain, ItemSub FROM viewShopPurchas
+108 [printf] UPDATE ShopPurchase SET PurFlag = 1, PurChgDate =  | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 512, "UPDATE ShopPurchase SET PurFlag = 1, PurChgDate = getdate() WHERE UserUID = '%s' AND PurKey=%d"
+125 [printf] DELETE FROM ShopPurchase WHERE UserUID = '%s' | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 512, "DELETE FROM ShopPurchase WHERE UserUID = '%s'", strUSER.c_str() );
+
+--- GMTool\Logic\GMToolOdbcGM.cpp  (VULNERABLE: 1) ---
+25 [printf] SELECT UserNum, UserID, UserType FROM UserInfo WIT | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 1024, "SELECT UserNum, UserID, UserType FROM UserInfo WITH (NOLOCK) WHERE UserID = '%s' AND UserPass 
+
+--- Lib_Network\s_COdbcSupervisor.cpp  (VULNERABLE: 3) ---
+585 [printf] SELECT %s FROM PetInfo where (PetNum=%d And PetCha | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "SELECT %s FROM PetInfo where (PetNum=%d And PetChaNum=%d)", objName, nPetNum, nChaNum );
+657 [printf] SELECT %s FROM VehicleInfo where (VehicleNum=%d) A | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "SELECT %s FROM VehicleInfo where (VehicleNum=%d) And (VehicleChaNum=%d)", objName, nVehicleNum,
+728 [printf] SELECT %s FROM ChaInfo where (ChaNum=%d) | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "SELECT %s FROM ChaInfo where (ChaNum=%d)", objName, nChaNum );
+
+--- Lib_Network\s_COdbcLogEvent.cpp  (VULNERABLE: 4) ---
+22 [printf] {call sp_lottery_check('%s','%s','%s',%d,?)} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call sp_lottery_check('%s','%s','%s',%d,?)}",
+45 [printf] {call sp_LogPungPung('%s','%s',%d,%d)} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call sp_LogPungPung('%s','%s',%d,%d)}",
+71 [printf] {call sp_PungPungCheck('%s',%d,?)} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call sp_PungPungCheck('%s',%d,?)}",
+174 [printf] {call sp_InsertItem('%s','%s',%d,%d,?)} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call sp_InsertItem('%s','%s',%d,%d,?)}",
+
+--- Lib_Network\s_COdbcSMS.cpp  (VULNERABLE: 2) ---
+43 [printf] {call sp_LogSms_Insert(%d,'',%d,'%s','%s',?)} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "{call sp_LogSms_Insert(%d,'',%d,'%s','%s',?)}",
+80 [printf] {call UpdateChaFriendSms(%d,'%s',?)} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call UpdateChaFriendSms(%d,'%s',?)}", nChaNum, szPhoneNumber );
+
+--- Lib_Network\s_COdbcUserGetUserInfo.cpp  (VULNERABLE: 1) ---
+744 [printf] SELECT CheckFlag FROM DaumUserInfo WHERE UserGID=' | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 256, "SELECT CheckFlag FROM DaumUserInfo WHERE UserGID='%s'", szGID );
+
+--- Lib_Network\s_OdbcGameVehicle.cpp  (VULNERABLE: 1) ---
+32 [printf] {call sp_InsertVehicle('%s',%d,%d,%d,%d,?)} | exec:Y;esc:N | interp:%s-family | _snprintf( szTemp, 128, "{call sp_InsertVehicle('%s',%d,%d,%d,%d,?)}",
+

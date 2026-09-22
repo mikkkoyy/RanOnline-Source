@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{46D6A409-7896-4686-86C8-5BBC3518D882}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>LibMfcEx</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>Lib_Helper</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>..\_Bin\Data</OutDir>
+    <IntDir>$(SolutionDir)_Build\$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetName>Lib_Helper</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>..\_Bin\Data</OutDir>
+    <IntDir>$(SolutionDir)_Build\$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetName>MfcExD</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>false</FunctionLevelLinking>
+      <IntrinsicFunctions>false</IntrinsicFunctions>
+      <SDLCheck>
+      </SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <OmitFramePointers>true</OmitFramePointers>
+      <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <AdditionalIncludeDirectories>./;../Lib_Engine/Common;../Lib_Engine/DxCommon;../Lib_Engine/DxCommon9;../Lib_Engine/DxFrame;../Lib_Engine/G-Logic;../Lib_Engine/GUInterface;../Lib_Engine/Utils;../Tik/DXInclude;../Tik/DXLib;../Tik/Include;../Tik/Library;../Tik/TbbLib</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>
+      </SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalIncludeDirectories>./;./Sources;./Sources/DaumParam;./Sources/ExLibs;./Sources/RanOnlineLanchClipboard;../Lib_Engine/Sources/Common;../Lib_Engine/Sources/DxCommon;../Lib_Engine/Sources/DxCommon9;../Lib_Engine/Sources/DxTools;../Lib_Engine/Sources/G-Logic;../Dependency/common;../Dependency/directx;../Dependency/lzo</AdditionalIncludeDirectories>
+      <MinimalRebuild>false</MinimalRebuild>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="CompactFdi.h" />
+    <ClInclude Include="framework.h" />
+    <ClInclude Include="HLibColorValue.h" />
+    <ClInclude Include="HLibDataConvert.h" />
+    <ClInclude Include="HLibTimeFunctions.h" />
+    <ClInclude Include="stdafx.h" />
+    <ClInclude Include="BmpButton.h" />
+    <ClInclude Include="Bubble.h" />
+    <ClInclude Include="CheckListBoxLog.h" />
+    <ClInclude Include="CJFlatComboBox.h" />
+    <ClInclude Include="CoolDialogBar.h" />
+    <ClInclude Include="DIB.h" />
+    <ClInclude Include="DxControlFunc.h" />
+    <ClInclude Include="EtcFunction.h" />
+    <ClInclude Include="flatedit.h" />
+    <ClInclude Include="GetDxVer.h" />
+    <ClInclude Include="HyperlinkStatic.h" />
+    <ClInclude Include="MacButtons.h" />
+    <ClInclude Include="MacProgressCtrl.h" />
+    <ClInclude Include="memdc.h" />
+    <ClInclude Include="MultiSlider.h" />
+    <ClInclude Include="ReportCtrl.h" />
+    <ClInclude Include="Separator.h" />
+    <ClInclude Include="StColor.h" />
+    <ClInclude Include="ToolBarEx.h" />
+    <ClInclude Include="WusDV_Util.h" />
+    <ClInclude Include="rol_clipboard.h" />
+    <ClInclude Include="StopWatch.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="CompactFdi.Cpp" />
+    <ClCompile Include="HLibColorValue.cpp" />
+    <ClCompile Include="HLibDataConvert.cpp" />
+    <ClCompile Include="HLibTimeFunctions.cpp" />
+    <ClCompile Include="stdafx.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="BmpButton.cpp" />
+    <ClCompile Include="Bubble.cpp" />
+    <ClCompile Include="CheckListBoxLog.cpp" />
+    <ClCompile Include="CJFlatComboBox.cpp" />
+    <ClCompile Include="CoolDialogBar.cpp" />
+    <ClCompile Include="DIB.cpp" />
+    <ClCompile Include="DxControlFunc.cpp" />
+    <ClCompile Include="EtcFunction.cpp" />
+    <ClCompile Include="flatedit.cpp" />
+    <ClCompile Include="GetDxVer.cpp" />
+    <ClCompile Include="HyperlinkStatic.cpp" />
+    <ClCompile Include="MacButtons.cpp" />
+    <ClCompile Include="MacProgressCtrl.cpp" />
+    <ClCompile Include="memdc.cpp" />
+    <ClCompile Include="MultiSlider.cpp" />
+    <ClCompile Include="ReportCtrl.cpp" />
+    <ClCompile Include="Separator.cpp" />
+    <ClCompile Include="StColor.cpp" />
+    <ClCompile Include="ToolBarEx.cpp" />
+    <ClCompile Include="WusDV_Util.cpp" />
+    <ClCompile Include="rol_clipboard.cpp" />
+    <ClCompile Include="StopWatch.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

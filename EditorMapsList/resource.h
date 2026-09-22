@@ -1,0 +1,70 @@
+//{{NO_DEPENDENCIES}}
+// Microsoft Visual C++ generated include file.
+// Used by EditorMapsList.rc
+//
+#define IDD_EDITORMAPSLIST_DIALOG       102
+#define IDR_MAINFRAME                   128
+#define IDC_BUTTON_FILE_LOAD            1000
+#define IDC_BUTTON_FILE_SAVE            1001
+#define IDC_BUTTON_FILE_IMPORT          1002
+#define IDC_BUTTON_MAPSLIST_ADD         1003
+#define IDC_BUTTON_MAPSLIST_EDIT        1004
+#define IDC_BUTTON_MAPSLIST_DELETE      1005
+#define IDC_BUTTON_MAPSLIST_CLEAR       1006
+#define IDC_BUTTON_MAPSLIST_CLEAR2      1007
+#define IDC_BUTTON_MAPSLIST_SETFIELD_0  1007
+#define IDC_CHECK_MAP_USE               1009
+#define IDC_EDIT_MAP_MID                1010
+#define IDC_EDIT_MAP_SID                1011
+#define IDC_EDIT_MAP_FIELD              1012
+#define IDC_EDIT_MAP_NAME               1013
+#define IDC_EDIT_MAP_LEVELFILE          1014
+#define IDC_EDIT_MAP_BGM                1015
+#define IDC_LIST_MAP                    1016
+#define IDC_EDIT_MAP_LOADING            1017
+#define IDC_CHECK_MAP_PEACEZONE         1018
+#define IDC_CHECK_MAP_COMMISSION        1019
+#define IDC_CHECK_MAP_PKZONE            1020
+#define IDC_CHECK_MAP_FREEPK            1021
+#define IDC_CHECK_MAP_ITEMDROP          1022
+#define IDC_CHECK_MAP_MOVE              1023
+#define IDC_CHECK_MAP_RESTART           1024
+#define IDC_CHECK_MAP_PETACTIVITY       1025
+#define IDC_CHECK_MAP_DECEXP            1026
+#define IDC_CHECK_MAP_VEHICLEACTIVITY   1027
+#define IDC_CHECK_MAP_CLUBBATTLEZONE    1028
+#define IDC_CHECK_MAP_INSTANTMAP        1029
+#define IDC_CHECK_MAP_QBOXENABLE        1030
+#define IDC_BUTTON_MAP_SAVE             1031
+#define IDC_BUTTON_MAP_LEVELFILE        1032
+#define IDC_BUTTON_MAP_BGMFILE          1033
+#define IDC_BUTTON_MAP_LOADINGIMAGE     1034
+#define IDC_CHECK_MAP_LUNCHBOXFORBID    1035
+#define IDC_CHECK_MAP_CPRESET           1036
+#define IDC_CHECK_MAP_QBOXENABLE4       1037
+#define IDC_CHECK_MAP_PKMAP             1037
+#define IDC_CHECK_MAP_UIMAPSELECT       1038
+#define IDC_CHECK_MAP_UI_MAP_SELECT     1038
+#define IDC_CHECK_MAP_UI_MAP_INFO       1039
+#define IDC_CHECK_MAP_CLUB_PK_RECORD    1040
+#define IDC_CHECK_MAP_OPEN_PRIVATE_MARKET 1041
+#define IDC_CHECK_MAP_PARTY_SPARRING    1042
+#define IDC_CHECK_MAP_BLOCK_TAXI        1043
+#define IDC_CHECK_MAP_BLOCK_FRIENDCARD  1044
+#define IDC_CHECK_MAP_BLOCK_RECALL      1045
+#define IDC_CHECK_MAP_BLOCK_RECALL2     1046
+#define IDC_CHECK_MAP_BLOCK_TELEPORT    1046
+#define IDC_CHECK_MAP_DISABLE_SYSTEM_BUFFS 1047
+#define IDC_CHECK_MAP_DISABLE_SYSTEM_BUFFS2 1048
+#define IDC_CHECK_MAP_BLOCK_HPPOTION    1048
+
+// Next default values for new objects
+// 
+#ifdef APSTUDIO_INVOKED
+#ifndef APSTUDIO_READONLY_SYMBOLS
+#define _APS_NEXT_RESOURCE_VALUE        129
+#define _APS_NEXT_COMMAND_VALUE         32771
+#define _APS_NEXT_CONTROL_VALUE         1035
+#define _APS_NEXT_SYMED_VALUE           101
+#endif
+#endif

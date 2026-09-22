@@ -1,0 +1,215 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{60855a57-ac7b-4b15-851b-ed0ed9a2c613}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source">
+      <UniqueIdentifier>{fb45120f-352b-428c-9326-20ee9b955bb4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\Editor">
+      <UniqueIdentifier>{a5c2a9dd-03d7-4218-b19a-3ab4bcf24660}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\Editor\Helper">
+      <UniqueIdentifier>{79b19550-0937-432c-9419-22ccc01e5d2a}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="EditorLevel.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="res\EditorLevel.rc2">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="res\EditorLevelDoc.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="..\res\Icon_Tool.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="res\Toolbar.bmp">
+      <Filter>Resource Files</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="EditorLevel.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="EditorLevelDoc.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="EditorLevelView.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="EditorLevelViewD3d.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="MainFrm.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="DlgInsertLeader.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="DlgInsertMember.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="EditorBar.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageBasic.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageCondition.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageCrow.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageEditCrow.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageEditEffect.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageEditGate.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageEditLandMark.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageEffect.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageEtc.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageGate.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageLandMark.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="PageMain.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="SheetWithTab.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="DlgCrowReplace.cpp">
+      <Filter>Source\Editor\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="DlgFindCrow.cpp">
+      <Filter>Source\Editor\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="DlgFindItem.cpp">
+      <Filter>Source\Editor\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="DlgFindMap.cpp">
+      <Filter>Source\Editor\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="DlgFindQuest.cpp">
+      <Filter>Source\Editor\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="DlgFindSkill.cpp">
+      <Filter>Source\Editor\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="GenerateName.cpp">
+      <Filter>Source\Editor\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="stdafx.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="EditorLevel.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorLevelDoc.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorLevelView.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="MainFrm.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="DlgInsertLeader.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="DlgInsertMember.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorBar.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageBasic.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageCondition.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageCrow.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageEditCrow.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageEditEffect.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageEditGate.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageEditLandMark.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageEffect.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageEtc.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageGate.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageLandMark.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="PageMain.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="SheetWithTab.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="DlgCrowReplace.h">
+      <Filter>Source\Editor\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="DlgFindCrow.h">
+      <Filter>Source\Editor\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="DlgFindItem.h">
+      <Filter>Source\Editor\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="DlgFindMap.h">
+      <Filter>Source\Editor\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="DlgFindQuest.h">
+      <Filter>Source\Editor\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="DlgFindSkill.h">
+      <Filter>Source\Editor\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="GenerateName.h">
+      <Filter>Source\Editor\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="stdafx.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="ReadMe.txt" />
+  </ItemGroup>
+</Project>

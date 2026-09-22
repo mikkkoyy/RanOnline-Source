@@ -1,0 +1,38 @@
+#pragma	once
+
+#include "../Lib_Engine/GUInterface/UIGroup.h"
+#include "BasicLineBoxEx.h"
+#include "../Lib_Client/G-Logic/GLCharClient.h"
+
+class	CD3DFontPar;
+class	CBasicTextBox;
+class	CBasicProgressBar;
+class	CBasicTextBoxEx;
+class   GLCharacter;
+
+class	CCrowTargetInfoPlayer : public CUIGroup
+{
+
+public:
+	CCrowTargetInfoPlayer ();
+	virtual	~CCrowTargetInfoPlayer ();
+public:
+	void	CreateSubControl ();
+	CUIControl*	CreateControl ( const char* szControl, WORD wAlignFlag );
+	CBasicLineBoxEx*  m_pTargetBox;
+public:
+	void	SetTargetInfo ( int fNow, int fMax, int fPercent3,int fSchool, CString strClass, int strLevel, CString strPartyMember,CString strPartyM,CString strPartyNew, CString strPartyJoined,CString strParty, CString strGuild, CString strName, STARGETID sTargetID );
+	const	CString& GetTargetName () const			{ return m_strName; }
+public:
+	CString		m_strName;
+private:
+	CBasicTextBox*		m_pNameBox;
+	CBasicTextBox*		m_pSchoolBox;
+	CBasicTextBox*		m_pClassBox;
+	CBasicTextBox*		m_pRebornBox;
+	CBasicTextBox*		m_pGuildBox;
+	CBasicTextBox*		m_pTextBox;
+	CUIControl*			m_pNameBoxDummy;
+private:
+	CD3DFontPar*		m_pFont8;
+};

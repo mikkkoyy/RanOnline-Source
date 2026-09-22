@@ -1,0 +1,54 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{b5cb900f-15af-4c0b-829f-a797bd739f6b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source">
+      <UniqueIdentifier>{58173de7-8ba7-44e2-98ff-15aa3919f66a}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="GameClient2.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="res\GameClient2.rc2">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="res\Icon_Game.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="GameClient2.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="GameClient2HS.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="GameClient2Wnd.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="GameClient2WndD3d.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="stdafx.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="GameClient2.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="GameClient2Wnd.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="stdafx.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="ReadMe.txt" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,333 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{6C0CBB63-CBD7-4AB2-B372-D927998E3218}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>EditorItem</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>GM_Tool</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>..\_Bin\Data</OutDir>
+    <IntDir>$(SolutionDir)_Build\$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetName>GM_Tool</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>..\_Bin\Data</OutDir>
+    <IntDir>$(SolutionDir)_Build\$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetName>GM_ToolD</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>false</IntrinsicFunctions>
+      <SDLCheck>
+      </SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>./;./res;../Lib_Engine;../Lib_Engine/Common;../Lib_Engine/DxCommon;../Lib_Engine/DxCommon9;../Lib_Engine/DxEffect;../Lib_Engine/DxEffect/Char;../Lib_Engine/DxEffect/EffAni;../Lib_Engine/DxEffect/EffKeep;../Lib_Engine/DxEffect/EffProj;../Lib_Engine/DxEffect/Single;../Lib_Engine/DxFrame;../Lib_Engine/DxOctree;../Lib_Engine/Meshs;../Lib_Engine/DxSound;../Lib_Engine/G-Logic;../Lib_Engine/GUInterface;../Lib_Engine/Utils;../Lib_Helper;../Lib_Network;../Lib_Client;../Lib_Client/G-Logic;../Lib_Client/NpcTalk;../Lib_ClientUI/Interface;../Tik/DXInclude;../Tik/DXLib;../Tik/Include;../Tik/Library;../Tik/TbbLib</AdditionalIncludeDirectories>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <OmitFramePointers>true</OmitFramePointers>
+      <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <OutputFile>..\_Bin/Tool/$(TargetName)$(TargetExt)</OutputFile>
+      <AdditionalLibraryDirectories>../Tik/DXInclude;../Tik/DXLib;../Tik/Include;../Tik/Library;../Tik/TbbLib;../_Bin/Data/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+      <AdditionalDependencies>dsound.lib;dinput8.lib;dxerr9.lib;d3dx9.lib;d3d9.lib;d3dxof.lib;dxguid.lib;imm32.lib;libogg.lib;libvorbis_static.lib;libvorbisfile_static.lib;legacy_stdio_definitions.lib;BugTrap.lib;Lib_Client.lib;Lib_ClientUI.lib;Lib_Engine.lib;Lib_Network.lib;Lib_Helper.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>libcmt.lib;libcmtd.lib</IgnoreSpecificDefaultLibraries>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>
+      </SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>./;./Resources;./Sources;../[Lib]__Engine/Sources;../[Lib]__Engine/Sources/Common;../[Lib]__Engine/Sources/DxCommon;../[Lib]__Engine/Sources/DxCommon9;../[Lib]__Engine/Sources/DxEffect;../[Lib]__Engine/Sources/DxMeshs;../[Lib]__Engine/Sources/DxTools;../[Lib]__Engine/Sources/G-Logic;../[Lib]__MfcEx/Sources;../[Lib]__MfcEx/Sources/ExLibs;../[Lib]__NetClient/Sources;../[Lib]__RanClient/Sources;../[Lib]__RanClient/Sources/G-Logic;../[Lib]__RanClient/Sources/G-Logic/Data;../[Lib]__RanClient/Sources/G-Logic/Npc;../[Lib]__RanClient/Sources/G-Logic/Quest;../Dependency/common;../Dependency/directx;../Dependency/lzo;../Dependency/NetGlobal</AdditionalIncludeDirectories>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <OutputFile>..\_Bin/Data/$(TargetName)$(TargetExt)</OutputFile>
+      <AdditionalLibraryDirectories>../Dependency/commonlib;../Dependency/directx/x86;../Dependency/lzo;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+      <AdditionalDependencies>dsound.lib;dinput8.lib;dxerr9.lib;d3dx9.lib;d3d9.lib;d3dxof.lib;dxguid.lib;imm32.lib;libogg.lib;libvorbis_static.lib;libvorbisfile_static.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>libcmt.lib;libcmtd.lib</IgnoreSpecificDefaultLibraries>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <None Include="res\dragitem.cur" />
+    <None Include="res\GMTool.rc2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="GMTool.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\res\Icon_Server.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="CharEditPageActivity.cpp" />
+    <ClCompile Include="CharEditPageBasic.cpp" />
+    <ClCompile Include="CharEditPageCodex.cpp" />
+    <ClCompile Include="CharEditPageCoolTime.cpp" />
+    <ClCompile Include="CharEditPageInven.cpp" />
+    <ClCompile Include="CharEditPageItemFood.cpp" />
+    <ClCompile Include="CharEditPageLocker.cpp" />
+    <ClCompile Include="CharEditPagePutOn.cpp" />
+    <ClCompile Include="CharEditPageQuest.cpp" />
+    <ClCompile Include="CharEditPageSkills.cpp" />
+    <ClCompile Include="CharEditPageSlotAction.cpp" />
+    <ClCompile Include="CharEditPageSlotSkill.cpp" />
+    <ClCompile Include="CharEditTab.cpp" />
+    <ClCompile Include="DlgActivityEdit.cpp" />
+    <ClCompile Include="DlgActivityList.cpp" />
+    <ClCompile Include="DlgCharCopy.cpp" />
+    <ClCompile Include="DlgCharEdit.cpp" />
+    <ClCompile Include="DlgCodexEdit.cpp" />
+    <ClCompile Include="DlgCodexList.cpp" />
+    <ClCompile Include="DlgConfig.cpp" />
+    <ClCompile Include="DlgCrow.cpp" />
+    <ClCompile Include="DlgDatetime.cpp" />
+    <ClCompile Include="DlgEquipmentLockAdd.cpp" />
+    <ClCompile Include="DlgEquipmentLockEdit.cpp" />
+    <ClCompile Include="DlgInvenList.cpp" />
+    <ClCompile Include="DlgItem.cpp" />
+    <ClCompile Include="DlgLockerGoldEdit.cpp" />
+    <ClCompile Include="DlgLogin.cpp" />
+    <ClCompile Include="DlgMap.cpp" />
+    <ClCompile Include="DlgPetEdit.cpp" />
+    <ClCompile Include="DlgPetSkillList.cpp" />
+    <ClCompile Include="DlgPresetItem.cpp" />
+    <ClCompile Include="DlgPresetItemEdit.cpp" />
+    <ClCompile Include="DlgPresetSkill.cpp" />
+    <ClCompile Include="DlgPresetSkillEdit.cpp" />
+    <ClCompile Include="DlgQuest.cpp" />
+    <ClCompile Include="DlgShopItemEdit.cpp" />
+    <ClCompile Include="DlgShopItemList.cpp" />
+    <ClCompile Include="DlgSItemCustomEdit.cpp" />
+    <ClCompile Include="DlgSkill.cpp" />
+    <ClCompile Include="DlgSkillAdd.cpp" />
+    <ClCompile Include="DlgSkillLevelEdit.cpp" />
+    <ClCompile Include="DlgSkillList.cpp" />
+    <ClCompile Include="DlgUserCharacters.cpp" />
+    <ClCompile Include="DlgUserEdit.cpp" />
+    <ClCompile Include="DlgUserItemBank.cpp" />
+    <ClCompile Include="DlgUserLogLogin.cpp" />
+    <ClCompile Include="DlgUserNew.cpp" />
+    <ClCompile Include="DlgVehicleEdit.cpp" />
+    <ClCompile Include="GMTool.cpp" />
+    <ClCompile Include="GMToolDlg.cpp" />
+    <ClCompile Include="LockerPageItem1.cpp" />
+    <ClCompile Include="LockerPageItem2.cpp" />
+    <ClCompile Include="LockerPageItem3.cpp" />
+    <ClCompile Include="LockerPageItem4.cpp" />
+    <ClCompile Include="LockerPageItemP.cpp" />
+    <ClCompile Include="LockerPageMain.cpp" />
+    <ClCompile Include="LockerTab.cpp" />
+    <ClCompile Include="Logic\GMToolConfig.cpp" />
+    <ClCompile Include="Logic\GMToolGlobal.cpp" />
+    <ClCompile Include="Logic\GMToolGlobalDataCheck.cpp" />
+    <ClCompile Include="Logic\GMToolGlobalString.cpp" />
+    <ClCompile Include="Logic\GMToolLogs.cpp" />
+    <ClCompile Include="Logic\GMToolOdbcBase.cpp" />
+    <ClCompile Include="Logic\GMToolOdbcChar.cpp" />
+    <ClCompile Include="Logic\GMToolOdbcCharCopy.cpp" />
+    <ClCompile Include="Logic\GMToolOdbcCharRead.cpp" />
+    <ClCompile Include="Logic\GMToolOdbcCharSave.cpp" />
+    <ClCompile Include="Logic\GMToolOdbcCharUserInven.cpp" />
+    <ClCompile Include="Logic\GMToolOdbcConn.cpp" />
+    <ClCompile Include="Logic\GMToolOdbcEquipmentLock.cpp" />
+    <ClCompile Include="Logic\GMToolOdbcGM.cpp" />
+    <ClCompile Include="Logic\GMToolOdbcHenv.cpp" />
+    <ClCompile Include="Logic\GMToolOdbcPet.cpp" />
+    <ClCompile Include="Logic\GMToolOdbcShop.cpp" />
+    <ClCompile Include="Logic\GMToolOdbcUser.cpp" />
+    <ClCompile Include="Logic\GMToolOdbcVehicle.cpp" />
+    <ClCompile Include="Logic\GMToolPresetItem.cpp" />
+    <ClCompile Include="Logic\GMToolPresetSkill.cpp" />
+    <ClCompile Include="Logic\GMToolShopData.cpp" />
+    <ClCompile Include="PageChar.cpp" />
+    <ClCompile Include="PageEquipmentLock.cpp" />
+    <ClCompile Include="PageItemShop.cpp" />
+    <ClCompile Include="PageMain.cpp" />
+    <ClCompile Include="PagePet.cpp" />
+    <ClCompile Include="PageUser.cpp" />
+    <ClCompile Include="PageVehicle.cpp" />
+    <ClCompile Include="PetEditPageBasic.cpp" />
+    <ClCompile Include="PetEditPageInven.cpp" />
+    <ClCompile Include="PetEditPageSkill.cpp" />
+    <ClCompile Include="PetEditPageSkillSlot.cpp" />
+    <ClCompile Include="PetEditTab.cpp" />
+    <ClCompile Include="SelColorDlg.cpp" />
+    <ClCompile Include="SheetWithTab.cpp" />
+    <ClCompile Include="stdafx.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="VehicleEditPageBasic.cpp" />
+    <ClCompile Include="VehicleEditPageColor.cpp" />
+    <ClCompile Include="VehicleEditPageInven.cpp" />
+    <ClCompile Include="VehicleEditTab.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="CharEditPageActivity.h" />
+    <ClInclude Include="CharEditPageBasic.h" />
+    <ClInclude Include="CharEditPageCodex.h" />
+    <ClInclude Include="CharEditPageCoolTime.h" />
+    <ClInclude Include="CharEditPageInven.h" />
+    <ClInclude Include="CharEditPageItemFood.h" />
+    <ClInclude Include="CharEditPageLocker.h" />
+    <ClInclude Include="CharEditPagePutOn.h" />
+    <ClInclude Include="CharEditPageQuest.h" />
+    <ClInclude Include="CharEditPageSkills.h" />
+    <ClInclude Include="CharEditPageSlotAction.h" />
+    <ClInclude Include="CharEditPageSlotSkill.h" />
+    <ClInclude Include="CharEditTab.h" />
+    <ClInclude Include="DlgActivityEdit.h" />
+    <ClInclude Include="DlgActivityList.h" />
+    <ClInclude Include="DlgCharCopy.h" />
+    <ClInclude Include="DlgCharEdit.h" />
+    <ClInclude Include="DlgCodexEdit.h" />
+    <ClInclude Include="DlgCodexList.h" />
+    <ClInclude Include="DlgConfig.h" />
+    <ClInclude Include="DlgCrow.h" />
+    <ClInclude Include="DlgDatetime.h" />
+    <ClInclude Include="DlgEquipmentLockAdd.h" />
+    <ClInclude Include="DlgEquipmentLockEdit.h" />
+    <ClInclude Include="DlgInvenList.h" />
+    <ClInclude Include="DlgItem.h" />
+    <ClInclude Include="DlgLockerGoldEdit.h" />
+    <ClInclude Include="DlgLogin.h" />
+    <ClInclude Include="DlgMap.h" />
+    <ClInclude Include="DlgPetEdit.h" />
+    <ClInclude Include="DlgPetSkillList.h" />
+    <ClInclude Include="DlgPresetItem.h" />
+    <ClInclude Include="DlgPresetItemEdit.h" />
+    <ClInclude Include="DlgPresetSkill.h" />
+    <ClInclude Include="DlgPresetSkillEdit.h" />
+    <ClInclude Include="DlgQuest.h" />
+    <ClInclude Include="DlgShopItemEdit.h" />
+    <ClInclude Include="DlgShopItemList.h" />
+    <ClInclude Include="DlgSItemCustomEdit.h" />
+    <ClInclude Include="DlgSkill.h" />
+    <ClInclude Include="DlgSkillAdd.h" />
+    <ClInclude Include="DlgSkillLevelEdit.h" />
+    <ClInclude Include="DlgSkillList.h" />
+    <ClInclude Include="DlgUserCharacters.h" />
+    <ClInclude Include="DlgUserEdit.h" />
+    <ClInclude Include="DlgUserItemBank.h" />
+    <ClInclude Include="DlgUserLogLogin.h" />
+    <ClInclude Include="DlgUserNew.h" />
+    <ClInclude Include="DlgVehicleEdit.h" />
+    <ClInclude Include="GMTool.h" />
+    <ClInclude Include="GMToolDlg.h" />
+    <ClInclude Include="GMToolTab.h" />
+    <ClInclude Include="LockerPageItem1.h" />
+    <ClInclude Include="LockerPageItem2.h" />
+    <ClInclude Include="LockerPageItem3.h" />
+    <ClInclude Include="LockerPageItem4.h" />
+    <ClInclude Include="LockerPageItemP.h" />
+    <ClInclude Include="LockerPageMain.h" />
+    <ClInclude Include="LockerTab.h" />
+    <ClInclude Include="Logic\GMToolConfig.h" />
+    <ClInclude Include="Logic\GMToolData.h" />
+    <ClInclude Include="Logic\GMToolGlobal.h" />
+    <ClInclude Include="Logic\GMToolLogs.h" />
+    <ClInclude Include="Logic\GMToolOdbcBase.h" />
+    <ClInclude Include="Logic\GMToolOdbcConn.h" />
+    <ClInclude Include="Logic\GMToolOdbcHenv.h" />
+    <ClInclude Include="Logic\GMToolPresetItem.h" />
+    <ClInclude Include="Logic\GMToolPresetSkill.h" />
+    <ClInclude Include="Logic\GMToolShopData.h" />
+    <ClInclude Include="PageChar.h" />
+    <ClInclude Include="PageEquipmentLock.h" />
+    <ClInclude Include="PageItemShop.h" />
+    <ClInclude Include="PageMain.h" />
+    <ClInclude Include="PagePet.h" />
+    <ClInclude Include="PageUser.h" />
+    <ClInclude Include="PageVehicle.h" />
+    <ClInclude Include="PetEditPageBasic.h" />
+    <ClInclude Include="PetEditPageInven.h" />
+    <ClInclude Include="PetEditPageSkill.h" />
+    <ClInclude Include="PetEditPageSkillSlot.h" />
+    <ClInclude Include="PetEditTab.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="SelColorDlg.h" />
+    <ClInclude Include="SheetWithTab.h" />
+    <ClInclude Include="stdafx.h" />
+    <ClInclude Include="VehicleEditPageBasic.h" />
+    <ClInclude Include="VehicleEditPageColor.h" />
+    <ClInclude Include="VehicleEditPageInven.h" />
+    <ClInclude Include="VehicleEditTab.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="ReadMe.txt" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+  <ProjectExtensions>
+    <VisualStudio>
+      <UserProperties RESOURCE_FILE="GMTool.rc" />
+    </VisualStudio>
+  </ProjectExtensions>
+</Project>

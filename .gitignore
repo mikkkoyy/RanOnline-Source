@@ -1,0 +1,55 @@
+# RanOnline Asura — build / IDE / temp outputs
+_Build/
+_Bin/
+x64/
+Debug/
+Release/
+Win32/
+.ipch/
+.vs/
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+*.ncb
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+build/
+out/
+install_manifest.txt
+CTestTestfile.cmake
+_deps/
+
+# vcpkg
+vcpkg_installed/
+.vcpkg-root
+
+# Compiled objects / libs / exes
+*.obj
+*.pch
+*.pdb
+*.idb
+*.tlog
+*.lastbuildstate
+*.unsuccessfulbuild
+*.lib
+*.exp
+*.dll
+*.exe
+*.ilk
+*.meta
+
+# Original source archive — keep tracked, do not ignore
+!RanOnline*.zip
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{C3B88659-228D-4175-A446-1A2BC0898D49}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>EditorItem</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>Editor_SkinPiece</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>..\_Bin\Data</OutDir>
+    <IntDir>$(SolutionDir)_Build\$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetName>Editor_SkinPiece</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>..\_Bin\Data</OutDir>
+    <IntDir>$(SolutionDir)_Build\$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetName>Editor_SkinPieceD</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>false</IntrinsicFunctions>
+      <SDLCheck>
+      </SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>./;./res;../Lib_Engine;../Lib_Engine/Common;../Lib_Engine/DxCommon;../Lib_Engine/DxCommon9;../Lib_Engine/DxEffect;../Lib_Engine/DxEffect/Char;../Lib_Engine/DxEffect/EffAni;../Lib_Engine/DxEffect/EffKeep;../Lib_Engine/DxEffect/EffProj;../Lib_Engine/DxEffect/Single;../Lib_Engine/DxFrame;../Lib_Engine/DxOctree;../Lib_Engine/Meshs;../Lib_Engine/DxSound;../Lib_Engine/G-Logic;../Lib_Engine/GUInterface;../Lib_Engine/Utils;../Lib_Helper;../Lib_Network;../Lib_Client;../Lib_Client/G-Logic;../Lib_Client/NpcTalk;../Lib_ClientUI/Interface;../Tik/DXInclude;../Tik/DXLib;../Tik/Include;../Tik/Library;../Tik/TbbLib</AdditionalIncludeDirectories>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <OmitFramePointers>true</OmitFramePointers>
+      <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <OutputFile>..\_Bin/Tool/$(TargetName)$(TargetExt)</OutputFile>
+      <AdditionalLibraryDirectories>../Tik/DXInclude;../Tik/DXLib;../Tik/Include;../Tik/Library;../Tik/TbbLib;../_Bin/Data/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+      <AdditionalDependencies>dsound.lib;dinput8.lib;dxerr9.lib;d3dx9.lib;d3d9.lib;d3dxof.lib;dxguid.lib;imm32.lib;libogg.lib;libvorbis_static.lib;libvorbisfile_static.lib;legacy_stdio_definitions.lib;BugTrap.lib;Lib_Client.lib;Lib_ClientUI.lib;Lib_Engine.lib;Lib_Network.lib;Lib_Helper.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>libcmt.lib;libcmtd.lib</IgnoreSpecificDefaultLibraries>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>
+      </SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>./;./Resources;./Sources;../[Lib]__Engine/Sources;../[Lib]__Engine/Sources/Common;../[Lib]__Engine/Sources/DxCommon;../[Lib]__Engine/Sources/DxCommon9;../[Lib]__Engine/Sources/DxEffect;../[Lib]__Engine/Sources/DxMeshs;../[Lib]__Engine/Sources/DxTools;../[Lib]__Engine/Sources/G-Logic;../[Lib]__MfcEx/Sources;../[Lib]__MfcEx/Sources/ExLibs;../[Lib]__NetClient/Sources;../[Lib]__RanClient/Sources;../[Lib]__RanClient/Sources/G-Logic;../[Lib]__RanClient/Sources/G-Logic/Data;../[Lib]__RanClient/Sources/G-Logic/Npc;../[Lib]__RanClient/Sources/G-Logic/Quest;../Dependency/common;../Dependency/directx;../Dependency/lzo;../Dependency/NetGlobal</AdditionalIncludeDirectories>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <OutputFile>..\_Bin/Data/$(TargetName)$(TargetExt)</OutputFile>
+      <AdditionalLibraryDirectories>../Dependency/commonlib;../Dependency/directx/x86;../Dependency/lzo;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+      <AdditionalDependencies>dsound.lib;dinput8.lib;dxerr9.lib;d3dx9.lib;d3d9.lib;d3dxof.lib;dxguid.lib;imm32.lib;libogg.lib;libvorbis_static.lib;libvorbisfile_static.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>libcmt.lib;libcmtd.lib</IgnoreSpecificDefaultLibraries>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <None Include="res\dragitem.cur" />
+    <None Include="res\EditorSkinPiece.rc2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="EditorSkinPiece.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\res\Icon_Tool.ico" />
+    <Image Include="res\EditorSkinPieceDoc.ico" />
+    <Image Include="res\Toolbar.bmp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="EditorBar.cpp" />
+    <ClCompile Include="EditorSkinPiece.cpp" />
+    <ClCompile Include="EditorSkinPieceDoc.cpp" />
+    <ClCompile Include="EditorSkinPieceView.cpp" />
+    <ClCompile Include="EditorSkinPieceViewD3D.cpp" />
+    <ClCompile Include="Global.cpp" />
+    <ClCompile Include="MainFrm.cpp" />
+    <ClCompile Include="PageEff_00_Single.cpp" />
+    <ClCompile Include="PageEff_01_Blur.cpp" />
+    <ClCompile Include="PageEff_02_CloneBlur.cpp" />
+    <ClCompile Include="PageEff_04_Shock.cpp" />
+    <ClCompile Include="PageEff_06_Arrow.cpp" />
+    <ClCompile Include="PageEff_08_Level.cpp" />
+    <ClCompile Include="PageEff_10_Alpha.cpp" />
+    <ClCompile Include="PageEff_11_Neon.cpp" />
+    <ClCompile Include="PageEff_12_Mark.cpp" />
+    <ClCompile Include="PageEff_13_NoAlpha.cpp" />
+    <ClCompile Include="PageEff_14_Reflection2.cpp" />
+    <ClCompile Include="PageEff_15_Ambient.cpp" />
+    <ClCompile Include="PageEff_17_MultiTex.cpp" />
+    <ClCompile Include="PageEff_18_Ghosting.cpp" />
+    <ClCompile Include="PageEff_19_Specular2.cpp" />
+    <ClCompile Include="PageEff_20_Toon.cpp" />
+    <ClCompile Include="PageEff_21_TexDiff.cpp" />
+    <ClCompile Include="PageEff_22_Particle.cpp" />
+    <ClCompile Include="PageEff_23_BonePos.cpp" />
+    <ClCompile Include="PageEff_24_BoneList.cpp" />
+    <ClCompile Include="PageEff_25_UserColor.cpp" />
+    <ClCompile Include="PageEff_26_Normal.cpp" />
+    <ClCompile Include="PageEff_27_Line2Bone.cpp" />
+    <ClCompile Include="PageEff_28_AroundEff.cpp" />
+    <ClCompile Include="PageMain.cpp" />
+    <ClCompile Include="SelColorDlg.cpp" />
+    <ClCompile Include="SheetWithTab.cpp" />
+    <ClCompile Include="stdafx.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="EditorBar.h" />
+    <ClInclude Include="EditorSkinPiece.h" />
+    <ClInclude Include="EditorSkinPieceDoc.h" />
+    <ClInclude Include="EditorSkinPieceView.h" />
+    <ClInclude Include="Global.h" />
+    <ClInclude Include="MainFrm.h" />
+    <ClInclude Include="PageEff_00_Single.h" />
+    <ClInclude Include="PageEff_01_Blur.h" />
+    <ClInclude Include="PageEff_02_CloneBlur.h" />
+    <ClInclude Include="PageEff_04_Shock.h" />
+    <ClInclude Include="PageEff_06_Arrow.h" />
+    <ClInclude Include="PageEff_08_Level.h" />
+    <ClInclude Include="PageEff_10_Alpha.h" />
+    <ClInclude Include="PageEff_11_Neon.h" />
+    <ClInclude Include="PageEff_12_Mark.h" />
+    <ClInclude Include="PageEff_13_NoAlpha.h" />
+    <ClInclude Include="PageEff_14_Reflection2.h" />
+    <ClInclude Include="PageEff_15_Ambient.h" />
+    <ClInclude Include="PageEff_17_MultiTex.h" />
+    <ClInclude Include="PageEff_18_Ghosting.h" />
+    <ClInclude Include="PageEff_19_Specular2.h" />
+    <ClInclude Include="PageEff_20_Toon.h" />
+    <ClInclude Include="PageEff_21_TexDiff.h" />
+    <ClInclude Include="PageEff_22_Particle.h" />
+    <ClInclude Include="PageEff_23_BonePos.h" />
+    <ClInclude Include="PageEff_24_BoneList.h" />
+    <ClInclude Include="PageEff_25_UserColor.h" />
+    <ClInclude Include="PageEff_26_Normal.h" />
+    <ClInclude Include="PageEff_27_Line2Bone.h" />
+    <ClInclude Include="PageEff_28_AroundEff.h" />
+    <ClInclude Include="PageMain.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="SelColorDlg.h" />
+    <ClInclude Include="SheetWithTab.h" />
+    <ClInclude Include="stdafx.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="ReadMe.txt" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+  <ProjectExtensions>
+    <VisualStudio>
+      <UserProperties RESOURCE_FILE="EditorSkinPiece.rc" />
+    </VisualStudio>
+  </ProjectExtensions>
+</Project>

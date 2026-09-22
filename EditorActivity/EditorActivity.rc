@@ -1,0 +1,343 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)\r\n"
+    "LANGUAGE 9, 1\r\n"
+    "#pragma code_page(1252)\r\n"
+    "#include ""res\\EditorActivity.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""     // Standard components\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "../res/Icon_Tool.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_EDITORACTIVITY_DIALOG DIALOGEX 0, 0, 910, 418
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_MINIMIZEBOX | WS_POPUP | 
+    WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "EditorActivity"
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_LIST_ACTIVITY,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | 
+                    WS_BORDER | WS_TABSTOP,1,22,600,371
+    PUSHBUTTON      "Load",IDC_BUTTON_FILE_LOAD,1,6,41,14
+    PUSHBUTTON      "Save",IDC_BUTTON_FILE_SAVE,44,6,41,14
+    PUSHBUTTON      "Add",IDC_BUTTON_ADD,1,395,40,14
+    PUSHBUTTON      "Edit",IDC_BUTTON_EDIT,43,395,40,14
+    PUSHBUTTON      "Delete",IDC_BUTTON_DELETE,85,395,40,14
+    PUSHBUTTON      "Clear",IDC_BUTTON_CLEAR,170,395,40,14
+    EDITTEXT        IDC_EDIT_ID,651,32,40,12,ES_AUTOHSCROLL
+    COMBOBOX        IDC_COMBO_TYPE,651,128,140,155,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_COMBO_NOTIFY,651,85,140,155,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_EDIT_TITLE,692,32,208,12,ES_AUTOHSCROLL
+    LTEXT           "ID/Title",IDC_STATIC,610,34,24,8
+    LTEXT           "Type",IDC_STATIC,610,130,17,8
+    LTEXT           "Notify",IDC_STATIC,610,87,20,8
+    GROUPBOX        "Activity Edit",IDC_STATIC,606,18,302,390
+    CONTROL         "Badge",IDC_CHECK_BADGE,"Button",BS_AUTOCHECKBOX | 
+                    WS_TABSTOP,610,102,36,10
+    EDITTEXT        IDC_EDIT_BADGE,651,100,140,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_REWARD_POINT,651,114,60,12,ES_AUTOHSCROLL
+    LTEXT           "Point",IDC_STATIC,610,116,17,8
+    PUSHBUTTON      "Save",IDC_BUTTON_SAVE,856,391,50,14
+    EDITTEXT        IDC_EDIT_PROGRESS_LEVEL,651,143,60,12,ES_AUTOHSCROLL
+    LTEXT           "Level ",IDC_STATIC,610,145,20,8
+    EDITTEXT        IDC_EDIT_DESC,651,46,249,36,ES_MULTILINE | ES_WANTRETURN | 
+                    WS_VSCROLL
+    LTEXT           "Desc",IDC_STATIC,610,48,16,8
+    PUSHBUTTON      "MobKill",IDC_BUTTON_MOB_KILL,610,157,40,12
+    EDITTEXT        IDC_EDIT_PROGRESS_MOB_KILL_NAME,776,157,125,12,
+                    ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_PROGRESS_MOB_KILL_NUM,734,157,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_MOB_KILL_MID,651,157,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_MOB_KILL_SID,692,157,40,12,
+                    ES_AUTOHSCROLL
+    PUSHBUTTON      "Pk Map",IDC_BUTTON_MAP_KILL,610,171,40,12
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_KILL_NAME,776,171,125,12,
+                    ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_KILL_NUM,734,171,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_KILL_MID,651,171,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_KILL_SID,692,171,40,12,
+                    ES_AUTOHSCROLL
+    PUSHBUTTON      "Go Map",IDC_BUTTON_MAP_REACH,610,185,40,12
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_REACH_NAME,776,185,125,12,
+                    ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_REACH_NUM,733,185,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_REACH_MID,651,185,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_MAP_REACH_SID,692,185,40,12,
+                    ES_AUTOHSCROLL
+    PUSHBUTTON      "Take Item",IDC_BUTTON_TAKE_ITEM,610,200,40,12
+    EDITTEXT        IDC_EDIT_PROGRESS_TAKE_ITEM_NAME,776,200,125,12,
+                    ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_PROGRESS_TAKE_ITEM_NUM,733,200,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_TAKE_ITEM_MID,651,200,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_TAKE_ITEM_SID,692,200,40,12,
+                    ES_AUTOHSCROLL
+    PUSHBUTTON      "Use Item",IDC_BUTTON_USE_ITEM,610,214,40,12
+    EDITTEXT        IDC_EDIT_PROGRESS_USE_ITEM_NAME,776,214,125,12,
+                    ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_PROGRESS_USE_ITEM_NUM,733,214,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_USE_ITEM_MID,651,214,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_USE_ITEM_SID,692,214,40,12,
+                    ES_AUTOHSCROLL
+    COMBOBOX        IDC_COMBO_USE_QBOX,610,229,140,155,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_EDIT_PROGRESS_USE_QBOX,752,229,40,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "Quest",IDC_BUTTON_COMPLETE_QUEST,610,245,40,12
+    EDITTEXT        IDC_EDIT_PROGRESS_COMPLETE_QUEST_NAME,735,245,166,12,
+                    ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_PROGRESS_COMPLETE_QUEST_NUM,693,245,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_COMPLETE_QUEST_ID,651,245,40,12,
+                    ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PROGRESS_ACTIVITY_POINT,651,259,60,12,
+                    ES_AUTOHSCROLL
+    LTEXT           "Reach Point",IDC_STATIC,610,261,39,8
+    EDITTEXT        IDC_EDIT_TOTAL_ACTIVITY,540,395,60,12,ES_AUTOHSCROLL | 
+                    ES_READONLY
+END
+
+IDD_DLG_FIND_CROW DIALOGEX 0, 0, 280, 350
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | 
+    WS_CAPTION | WS_SYSMENU
+CAPTION "Find Crow"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "OK",IDC_BUTTON_OK,209,330,70,12
+    EDITTEXT        IDC_EDIT_CROW_SEARCH,139,7,105,14,ES_AUTOHSCROLL
+    COMBOBOX        IDC_COMBO_CROW_SEARCH,47,7,90,100,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Search Crow",-1,3,9,42,8
+    LTEXT           "Crow",IDC_STATIC_FILTER_INFO,3,23,275,13
+    CONTROL         "",IDC_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | 
+                    LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | 
+                    WS_TABSTOP,0,34,280,295
+    PUSHBUTTON      "Search",IDC_BUTTON_HELPER_SEARCH,247,7,30,12
+END
+
+IDD_DLG_FIND_MAP DIALOGEX 0, 0, 280, 350
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | 
+    WS_CAPTION | WS_SYSMENU
+CAPTION "Find Map"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "OK",IDC_BUTTON_OK,209,330,70,12
+    EDITTEXT        IDC_EDIT_MAP_SEARCH,139,7,105,14,ES_AUTOHSCROLL
+    COMBOBOX        IDC_COMBO_MAP_SEARCH,47,7,90,100,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Search Map",-1,3,9,38,8
+    LTEXT           "Maps",IDC_STATIC_FILTER_INFO,3,23,275,13
+    CONTROL         "",IDC_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | 
+                    LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | 
+                    WS_TABSTOP,0,34,280,295
+    PUSHBUTTON      "Search",IDC_BUTTON_HELPER_SEARCH,247,7,30,12
+END
+
+IDD_DLG_FIND_ITEM DIALOGEX 0, 0, 280, 350
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | 
+    WS_CAPTION | WS_SYSMENU
+CAPTION "Find Item"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "OK",IDC_BUTTON_OK,209,330,70,12
+    EDITTEXT        IDC_EDIT_ITEM_SEARCH,139,7,105,14,ES_AUTOHSCROLL
+    COMBOBOX        IDC_COMBO_ITEM_SEARCH,47,7,90,100,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Search Item",IDC_STATIC,3,9,40,8
+    CONTROL         "",IDC_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | 
+                    LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | 
+                    WS_TABSTOP,0,34,280,295
+    LTEXT           "Items",IDC_STATIC,3,23,19,8
+    PUSHBUTTON      "Search",IDC_BUTTON_HELPER_SEARCH,247,7,30,12
+END
+
+IDD_DLG_FIND_QUEST DIALOGEX 0, 0, 280, 350
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | 
+    WS_CAPTION | WS_SYSMENU
+CAPTION "Find Quest"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | 
+                    LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | 
+                    WS_TABSTOP,0,34,280,295
+    PUSHBUTTON      "OK",IDC_BUTTON_OK,209,330,70,12
+    LTEXT           "Quests",-1,3,23,24,8
+    EDITTEXT        IDC_EDIT_QUEST_SEARCH,139,7,105,14,ES_AUTOHSCROLL
+    COMBOBOX        IDC_COMBO_QUEST_SEARCH,52,7,85,100,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Search Quest",-1,3,9,44,8
+    PUSHBUTTON      "Search",IDC_BUTTON_HELPER_SEARCH,247,7,30,12
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904e4"
+        BEGIN
+            VALUE "CompanyName", "TODO: <Company name>"
+            VALUE "FileDescription", "TODO: <File description>"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "EditorActivity.exe"
+            VALUE "LegalCopyright", "TODO: (c) <Company name>.  All rights reserved."
+            VALUE "OriginalFilename", "EditorActivity.exe"
+            VALUE "ProductName", "TODO: <Product name>"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_DLG_FIND_CROW, DIALOG
+    BEGIN
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 343
+    END
+
+    IDD_DLG_FIND_MAP, DIALOG
+    BEGIN
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 343
+    END
+
+    IDD_DLG_FIND_ITEM, DIALOG
+    BEGIN
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 343
+    END
+
+    IDD_DLG_FIND_QUEST, DIALOG
+    BEGIN
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 343
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE 9, 1
+#pragma code_page(1252)
+#include "res\EditorActivity.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"     // Standard components
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

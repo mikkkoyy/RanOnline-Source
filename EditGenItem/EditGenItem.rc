@@ -1,0 +1,242 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)\r\n"
+    "LANGUAGE 9, 1\r\n"
+    "#pragma code_page(1252)\r\n"
+    "#include ""res\\EditABF.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""         // Standard components\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "../res/Icon_Tool.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX DIALOGEX 0, 0, 235, 55
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | 
+    WS_SYSMENU
+CAPTION "About CrowSaleEdit"
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    ICON            IDR_MAINFRAME,IDC_STATIC,11,17,20,20
+    LTEXT           "CrowSaleEdit v1.0",IDC_STATIC,40,10,119,8,SS_NOPREFIX
+    LTEXT           "Copyright (C) by NRDEV 2019",IDC_STATIC,40,25,119,8
+    DEFPUSHBUTTON   "OK",IDOK,178,7,50,16,WS_GROUP
+END
+
+IDD_GENITEM_DIALOG DIALOGEX 0, 0, 539, 444
+STYLE DS_SETFONT | WS_MINIMIZEBOX | WS_POPUP | WS_VISIBLE | WS_CAPTION | 
+    WS_SYSMENU
+CAPTION "EditGenItem"
+FONT 8, "Tahoma", 400, 0, 0x0
+BEGIN
+    PUSHBUTTON      "New",IDC_BUTTON_SALELIST_ADD,10,141,50,14
+    PUSHBUTTON      "DELETE SELECTION",IDC_BUTTON_SALELIST_DELETE,64,141,83,
+                    14
+    LTEXT           "GenRate",IDC_STATIC,13,32,29,8
+    LTEXT           "Number of Drops",IDC_STATIC,20,123,55,8
+    LTEXT           "Rate",IDC_STATIC,147,123,16,8
+    LTEXT           "Main ID",IDC_STATIC,16,357,25,8
+    LTEXT           "Sub ID",IDC_STATIC,97,356,22,8
+    LTEXT           "Rate",IDC_STATIC,105,239,16,8
+    LTEXT           "GenID",IDC_STATIC,22,239,21,8
+    EDITTEXT        IDC_EDIT_GEN_RATE,51,29,96,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DROPS,78,121,50,14,ES_AUTOHSCROLL | ES_NUMBER
+    EDITTEXT        IDC_EDIT_RATE1,177,120,50,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MID,42,355,50,14,ES_AUTOHSCROLL | ES_NUMBER
+    EDITTEXT        IDC_EDIT_SID,124,354,50,14,ES_AUTOHSCROLL | ES_NUMBER
+    EDITTEXT        IDC_EDIT_GENID,46,237,50,14,ES_AUTOHSCROLL | ES_NUMBER
+    PUSHBUTTON      "Save",IDC_BUTTON_GENITEM_SAVE,104,7,50,14
+    PUSHBUTTON      "Update Genitem",IDC_BUTTON_UPDATE,444,28,71,14
+    PUSHBUTTON      "Add to List",IDC_BUTTON_SALELIST_OK,149,140,119,14
+    GROUPBOX        "Generate Options",IDC_STATIC,8,42,256,98
+    CONTROL         "",IDC_LIST_GENNUM,"SysListView32",LVS_REPORT | 
+                    LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | 
+                    WS_TABSTOP,14,51,243,64
+    EDITTEXT        IDC_EDIT1,269,45,246,342,ES_MULTILINE | ES_AUTOVSCROLL | 
+                    ES_AUTOHSCROLL | ES_READONLY | ES_WANTRETURN | 
+                    WS_VSCROLL
+    EDITTEXT        IDC_EDIT_RATE2,125,236,50,14,ES_AUTOHSCROLL
+    CONTROL         "",IDC_LIST_ITEMSPEC,"SysListView32",LVS_REPORT | 
+                    LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | 
+                    WS_TABSTOP,13,165,244,68
+    CONTROL         "",IDC_LIST_ITEMID,"SysListView32",LVS_REPORT | 
+                    LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | 
+                    WS_TABSTOP,13,285,243,68
+    GROUPBOX        "Item Gen Id",IDC_STATIC,7,156,256,100
+    GROUPBOX        "Item ID ",IDC_STATIC,7,274,256,100
+    PUSHBUTTON      "New",IDC_BUTTON_SPECLIST_ADD,9,258,50,14
+    PUSHBUTTON      "New",IDC_BUTTON_ITEMIDLIST_ADD,7,375,50,14
+    PUSHBUTTON      "DELETE SELECTION",IDC_BUTTON_SPECLIST_DELETE,63,257,83,
+                    14
+    PUSHBUTTON      "DELETE SELECTION",IDC_BUTTON_ITEMIDLIST_DELETE,64,375,
+                    83,14
+    PUSHBUTTON      "Add to List",IDC_BUTTON_SPECLIST_OK,149,257,119,14
+    PUSHBUTTON      "Add to List",IDC_BUTTON_ITEMIDLIST_OK,150,375,119,14
+    EDITTEXT        IDC_EDIT_RATE3,203,353,46,14,ES_AUTOHSCROLL
+    LTEXT           "Rate",IDC_STATIC,185,355,16,8
+    PUSHBUTTON      "Load",IDC_BUTTON_GENITEM_LOAD,43,7,50,14
+    LTEXT           "Raw Data",IDC_STATIC,270,34,32,8
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904e4"
+        BEGIN
+            VALUE "CompanyName", "TODO: <Company name>"
+            VALUE "FileDescription", "TODO: <File description>"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "EditABF.exe"
+            VALUE "LegalCopyright", "TODO: (c) <Company name>.  All rights reserved."
+            VALUE "OriginalFilename", "EditABF.exe"
+            VALUE "ProductName", "TODO: <Product name>"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_ABOUTBOX, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 228
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 48
+    END
+
+    IDD_GENITEM_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 527
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 424
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDS_ABOUTBOX            "&About EditABF..."
+END
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE 9, 1
+#pragma code_page(1252)
+#include "res\EditABF.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"         // Standard components
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

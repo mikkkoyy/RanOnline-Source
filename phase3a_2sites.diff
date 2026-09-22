@@ -1,0 +1,104 @@
+diff --git "a/D:\\FILES\\project\\modernization RanOnline\\Lib_Network\\s_COdbcUserCheck.cpp" "b/C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\phase3a_preview\\s_COdbcUserCheck.cpp"
+index 2912206..7ddbcf3 100644
+--- "a/D:\\FILES\\project\\modernization RanOnline\\Lib_Network\\s_COdbcUserCheck.cpp"	
++++ "b/C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\phase3a_preview\\s_COdbcUserCheck.cpp"
+@@ -351,17 +351,17 @@ int COdbcManager::UserCheck(
+ 	/// ' ╕ª '' ╖╬ ─í╚»╟╪╛▀ ╟╤┤┘.
+ 	/// DB:{?=call user_verify(' ?,'▒▒?≤│≤┐   ?,'61.57.175.205',1,0, ?)}
+ 	/// └º┐═░░└╠ ╣«└┌┐¡ ┴▀░ú┐í ' ░í ╗≡└╘╡╟╛ε └╓└╗░µ┐∞ ┐í╖»░í ╣▀╗²╟╧░╘ ╡╚┤┘.
++	// PHASE2 : the legacy quote escaping is superseded - no value reaches the
++	// statement text any more. Trimming is kept. The comments above are kept
++	// for historical reference.
+ 	CString strUserID = szUsrID;
+ 	strUserID.Trim(_T(" "));
+-	strUserID.Replace(_T("'"), _T("''"));
+ 
+ 	CString strPasswd = szPasswd;
+ 	strPasswd.Trim(_T(" "));
+-	strPasswd.Replace(_T("'"), _T("''"));
+ 
+ 	CString strRandomPasswd = szRandomPasswd;
+ 	strRandomPasswd.Trim(_T(" "));
+-	strRandomPasswd.Replace(_T("'"), _T("''"));
+ 
+ 	TCHAR szRandomNum[10] = {0};
+ 	_itot(nRandomNum, szRandomNum, 10);	
+@@ -379,16 +379,25 @@ int COdbcManager::UserCheck(
+ 	//strTemp << "'" << szRandomNum << "',?)}";
+ 	//strTemp << std::ends;
+ 
+-	_snprintf( szTemp, 512, "{call user_verify('%s','%s','%s',%d,%d,'%s','%s',?)}", 
+-												strUserID.GetString(),
+-												strPasswd.GetString(),
+-												szUsrIP,
+-												nSvrGrp,
+-												nSvrNum,
+-												strRandomPasswd.GetString(),
+-												szRandomNum );
++	// PHASE2 SECURITY FIX : the four string arguments and the two server
++	// numbers (plus the random number rendered as text by the kept _itot
++	// buffer) are no longer interpolated into the call text, they are bound as
++	// parameters 1..7. The trailing ? stays bound as parameter 8 by
++	// COdbcSupervisor::ExecuteSpInt.
++	// Legacy (vulnerable) statement kept for reference :
++	//_snprintf( szTemp, 512, "{call user_verify('%s','%s','%s',%d,%d,'%s','%s',?)}", strUserID.GetString(), strPasswd.GetString(), szUsrIP, nSvrGrp, nSvrNum, strRandomPasswd.GetString(), szRandomNum );
++	StringCchCopy( szTemp, 512, "{call user_verify(?,?,?,?,?,?,?,?)}" );
+ 
+-	int nReturn = m_pUserDB->ExecuteSpInt(szTemp);
++	SP_PARAM pParams[7];
++	pParams[0].SetString( strUserID.GetString() );
++	pParams[1].SetString( strPasswd.GetString() );
++	pParams[2].SetString( szUsrIP );
++	pParams[3].SetInt( nSvrGrp );
++	pParams[4].SetInt( nSvrNum );
++	pParams[5].SetString( strRandomPasswd.GetString() );
++	pParams[6].SetString( szRandomNum );
++
++	int nReturn = m_pUserDB->ExecuteSpInt( szTemp, pParams, 7 );
+ 	//strTemp.freeze( false );	// Note : std::strstream└╟ freeze. ╛╚ ╟╧╕Θ Leak ╣▀╗².
+ 
+ 	return nReturn;
+@@ -962,25 +971,34 @@ int	COdbcManager::GsUserCheck(
+ 	/// ' ╕ª '' ╖╬ ─í╚»╟╪╛▀ ╟╤┤┘.
+ 	/// DB:{?=call user_verify(' ?,'▒▒?≤│≤┐   ?,'61.57.175.205',1,0, ?)}
+ 	/// └º┐═░░└╠ ╣«└┌┐¡ ┴▀░ú┐í ' ░í ╗≡└╘╡╟╛ε └╓└╗░µ┐∞ ┐í╖»░í ╣▀╗²╟╧░╘ ╡╚┤┘.
++	// PHASE2 : the legacy quote escaping is superseded - no value reaches the
++	// statement text any more. Trimming is kept. The comments above are kept
++	// for historical reference.
+ 	CString strUserID = szUsrID;
+ 	strUserID.Trim(_T(" "));
+-	strUserID.Replace(_T("'"), _T("''"));
+ 
+ 	CString strPasswd = szPasswd;
+ 	strPasswd.Trim(_T(" "));
+-	strPasswd.Replace(_T("'"), _T("''"));
+ 
+ 	//std::strstream strTemp;
+ 	TCHAR szTemp[512] = {0};
+ 
+-	_snprintf( szTemp, 512, "{call gs_user_verify('%s','%s','%s',%d,%d,?)}", 
+-												strUserID.GetString(),
+-												strPasswd.GetString(),
+-												szUsrIP,
+-												nSvrGrp,
+-												nSvrNum );
++	// PHASE2 SECURITY FIX : the three string arguments and the two server
++	// numbers are no longer interpolated into the call text, they are bound as
++	// parameters 1..5. The trailing ? stays bound as parameter 6 by
++	// COdbcSupervisor::ExecuteSpInt.
++	// Legacy (vulnerable) statement kept for reference :
++	//_snprintf( szTemp, 512, "{call gs_user_verify('%s','%s','%s',%d,%d,?)}", strUserID.GetString(), strPasswd.GetString(), szUsrIP, nSvrGrp, nSvrNum );
++	StringCchCopy( szTemp, 512, "{call gs_user_verify(?,?,?,?,?,?)}" );
+ 
+-	int nReturn = m_pUserDB->ExecuteSpInt(szTemp);
++	SP_PARAM pParams[5];
++	pParams[0].SetString( strUserID.GetString() );
++	pParams[1].SetString( strPasswd.GetString() );
++	pParams[2].SetString( szUsrIP );
++	pParams[3].SetInt( nSvrGrp );
++	pParams[4].SetInt( nSvrNum );
++
++	int nReturn = m_pUserDB->ExecuteSpInt( szTemp, pParams, 5 );
+ 	//strTemp.freeze( false );	// Note : std::strstream└╟ freeze. ╛╚ ╟╧╕Θ Leak ╣▀╗².
+ 
+ 	return nReturn;

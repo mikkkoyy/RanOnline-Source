@@ -1,0 +1,192 @@
+#ifndef DXPIECEDEFINE_H_
+#define DXPIECEDEFINE_H_
+
+#if _MSC_VER > 1000
+#pragma once
+#endif // _MSC_VER > 1000
+
+//#include "DxPieceDefine.h"
+
+enum EMPIECECHAR
+{
+	PIECE_HEAD		= 0,
+	PIECE_UPBODY	= 1,
+	PIECE_LOBODY	= 2,
+	PIECE_GLOVE		= 3,
+	PIECE_RHAND		= 4,
+	PIECE_LHAND		= 5,
+	PIECE_FOOT		= 6,
+	PIECE_HAIR		= 7,
+	PIECE_HEADGEAR	= 8,
+	PIECE_VEHICLE	= 9,
+
+	//added starting 0x0114 cps
+	PIECE_WING		= 10,
+
+	//added 0x0201
+	PIECE_NECK		= 11,
+	PIECE_WRIST		= 12,
+	PIECE_RING		= 13,
+	PIECE_BELT		= 14,
+	PIECE_EAR_RING	= 15,
+	PIECE_ACCESSORY	= 16,
+
+	//added starting 0x0110 cps enchant effect 
+	PIECE_ENCHANT_UPBODY	= 17,
+	PIECE_ENCHANT_LOBODY	= 18,
+	PIECE_ENCHANT_GLOVE		= 19,
+	PIECE_ENCHANT_FOOT		= 20,
+
+	//extreme reboot shifting weapon
+	PIECE_SHIFT_RWEAPON		= 21,
+	PIECE_SHIFT_LWEAPON		= 22,
+
+	PIECE_REV01		= 23,
+	PIECE_REV02		= 24,
+	PIECE_REV03		= 25,
+	PIECE_SIZE		= 26,
+
+	//for container saving
+	//container dont need the other piece
+	PIECE_SIZE_TO_SAVE	= 17, 
+
+	//last piece to render
+	PIECE_REVERSE_RENDER_LAST = PIECE_SHIFT_LWEAPON,
+
+};
+
+//adjust DxCharPart::Render for new enum type
+enum EMPEACEZONEWEAPON
+{
+	EMPEACE_WEAPON_RSLOT		= 0,
+	EMPEACE_WEAPON_WHAL_SLOT	= 1,
+	EMPEACE_WEAPON_STICK_RSLOT	= 2,
+	EMPEACE_WEAPON_RGUN_SLOT	= 3,
+	EMPEACE_WEAPON_LGUN_SLOT	= 4,
+	EMPEACE_WEAPON_GUN_SLOT		= 5,
+	EMPEACE_WEAPON_RSPEAR_SLOT	= 6,
+	EMPEACE_WEAPON_LSPEAR_SLOT	= 7,
+	EMPEACE_WEAPON_SIDE_SLOT	= 8,
+	EMPEACE_WEAPON_KUNAI_SLOT	= 9,
+	EMPEACE_WEAPON_USER_SLOT	= 10,
+	EMPEACE_WEAPON_WHIP_SLOT	= 11,
+	EMPEACE_WEAPON_BOX_SLOT		= 12,
+	EMPEACE_WEAPON_HAMMER_SLOT	= 13,
+	EMPEACE_WEAPON_SHIELD_SLOT	= 14,
+	EMPEACE_WEAPON_UMBRELLA_SLOT	= 15,
+	EMPEACE_WEAPON_TC_STICK_SLOT	= 16,
+	EMPEACE_WEAPON_SIZE			= 17,
+	//EMPEACE_WEAPON_SIZE		= 3,
+};
+
+namespace SKINTYPE_STRING
+{
+	const TCHAR	m_szWHEREBACKTYPE[EMPEACE_WEAPON_SIZE][64] =
+	{
+		_T("slot_rhand"),
+		_T("whal_slot"),
+		_T("stick_rslot"),
+		_T("r_gun_slot"),
+		_T("l_gun_slot"),
+		_T("gun_slot"),
+		_T("r_spear_slot"),
+		_T("l_spear_slot"),
+		_T("side_slot"),
+		_T("kunai_slot"),
+		_T("user_slot"),
+		_T("whip_slot"),
+		_T("box_slot"),
+		_T("hammer_slot"),
+		_T("shield_slot"),
+		_T("umbrella_slot"),
+		_T("tc_stick_slot"),
+	};
+
+	const TCHAR	m_szPIECETYPE[PIECE_SIZE][64] =
+	{
+		_T("Piece Head"),
+		_T("Piece UpperBody"),
+		_T("Piece LowerBody"),
+		_T("Piece Glove"),
+		_T("Piece RHand"),
+		_T("Piece LHand"),
+		_T("Piece Foot"),
+		_T("Piece Hair"),
+		_T("Piece HeadGear"),
+		_T("Piece Vehicle"),
+		_T("Piece Cape"),
+		_T("Piece Neck"),
+		_T("Piece Wrist"),
+		_T("Piece Ring"),
+		_T("Piece Belt"),
+		_T("Piece EarRing"),
+		_T("Piece Accessory"),
+		_T("Piece Enchant UpBody"),
+		_T("Piece Enchant LoBody"),
+		_T("Piece Enchant Glove"),
+		_T("Piece Enchant Foot"),
+		_T("Piece Shift RWeapon"),
+		_T("Piece Shift LWeapon"),
+		_T("REV03"),
+		_T("REV04"),
+		_T("REV05"),
+	};
+};
+
+enum EMPIECECHAR_0113
+{
+	PIECECHAR_0113_HEAD		= 0,
+	PIECECHAR_0113_UPBODY	= 1,
+	PIECECHAR_0113_LOBODY	= 2,
+	PIECECHAR_0113_GLOVE	= 3,
+	PIECECHAR_0113_RHAND	= 4,
+	PIECECHAR_0113_LHAND	= 5,
+	PIECECHAR_0113_FOOT		= 6,
+	PIECECHAR_0113_HAIR		= 7,
+	PIECECHAR_0113_HEADGEAR	= 8,
+	PIECECHAR_0113_VEHICLE	= 9,
+	PIECECHAR_0113_ENCHANT_UPBODY	= 10,
+	PIECECHAR_0113_ENCHANT_LOBODY	= 11,
+	PIECECHAR_0113_ENCHANT_GLOVE	= 12,
+	PIECECHAR_0113_ENCHANT_FOOT		= 13,
+	PIECECHAR_0113_SHIFT_RWEAPON	= 14,
+	PIECECHAR_0113_SHIFT_LWEAPON	= 15,
+	PIECECHAR_0113_REV01	= 16,
+	PIECECHAR_0113_REV02	= 17,
+	PIECECHAR_0113_REV03	= 18,
+	PIECECHAR_0113_SIZE		= 19,
+};
+
+enum EMPIECECHAR_0116
+{
+	PIECECHAR_0116_HEAD		= 0,
+	PIECECHAR_0116_UPBODY	= 1,
+	PIECECHAR_0116_LOBODY	= 2,
+	PIECECHAR_0116_GLOVE	= 3,
+	PIECECHAR_0116_RHAND	= 4,
+	PIECECHAR_0116_LHAND	= 5,
+	PIECECHAR_0116_FOOT		= 6,
+	PIECECHAR_0116_HAIR		= 7,
+	PIECECHAR_0116_HEADGEAR	= 8,
+	PIECECHAR_0116_VEHICLE	= 9,
+	PIECECHAR_0116_CAPE		= 10,
+	PIECECHAR_0116_ENCHANT_UPBODY	= 11,
+	PIECECHAR_0116_ENCHANT_LOBODY	= 12,
+	PIECECHAR_0116_ENCHANT_GLOVE	= 13,
+	PIECECHAR_0116_ENCHANT_FOOT		= 14,
+	PIECECHAR_0116_SHIFT_RWEAPON	= 15,
+	PIECECHAR_0116_SHIFT_LWEAPON	= 16,
+	PIECECHAR_0116_REV01	= 17,
+	PIECECHAR_0116_REV02	= 18,
+	PIECECHAR_0116_REV03	= 19,
+	PIECECHAR_0116_SIZE		= 20,
+};
+
+//convert piece enum
+EMPIECECHAR PIECE_0113_TO_PIECE( EMPIECECHAR_0113 emPieceVal );
+EMPIECECHAR_0113 PIECE_TO_PIECE_0113( EMPIECECHAR emPieceVal );
+
+EMPIECECHAR PIECE_0116_TO_PIECE( EMPIECECHAR_0116 emPieceVal );
+EMPIECECHAR_0116 PIECE_TO_PIECE_0116( EMPIECECHAR emPieceVal );
+
+#endif // DXPIECEDEFINE_H_

@@ -1,0 +1,649 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)\r\n"
+    "LANGUAGE 9, 1\r\n"
+    "#include ""res\\EditorSkinChar.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""      // Standard components\r\n"
+    "#include ""afxprint.rc""    // printing/print preview resources\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "..//res//Icon_Tool.ico"
+IDR_EditorSkinCharTYPE  ICON                    "res\\EditorSkinCharDoc.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Bitmap
+//
+
+IDR_MAINFRAME           BITMAP                  "res\\Toolbar.bmp"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Toolbar
+//
+
+IDR_MAINFRAME TOOLBAR  16, 15
+BEGIN
+    BUTTON      ID_APP_ABOUT
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MAINFRAME MENU 
+BEGIN
+    POPUP "&File"
+    BEGIN
+        MENUITEM SEPARATOR
+        MENUITEM "E&xit",                       ID_APP_EXIT
+    END
+    POPUP "&View"
+    BEGIN
+        MENUITEM "&Toolbar",                    ID_VIEW_TOOLBAR
+        MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
+        MENUITEM "Editor Toolbar",              32771
+    END
+    POPUP "Render"
+    BEGIN
+        MENUITEM "Debug Info",                  ID_RENDER_DEBUGINFO
+        MENUITEM "Render Plane",                ID_RENDER_PLANE
+        MENUITEM "Render AABB Box",             ID_RENDER_AABBBOX
+        MENUITEM "Render Skeleton",             ID_RENDER_SKELETON
+        MENUITEM SEPARATOR
+        MENUITEM "Attack Stance",               ID_RENDER_ATTACKSTANCE
+        MENUITEM SEPARATOR
+        MENUITEM "Reset Camera",                ID_RENDER_RESETCAMERA
+    END
+    POPUP "Edit Matrix"
+    BEGIN
+        MENUITEM "Matrix Move",                 ID_EDIT_MATRIX_MOVE
+        MENUITEM "Matrix Rotate",               ID_EDIT_MATRIX_ROTATE
+        MENUITEM "Matrix Scale",                ID_EDIT_MATRIX_SCALE
+    END
+    POPUP "ItemLevel"
+    BEGIN
+        MENUITEM SEPARATOR
+        MENUITEM "Disable",                     32781
+        MENUITEM "Level 1 (+1~+2)",             32782
+        MENUITEM "Level 2 (+3~+4)",             32783
+        MENUITEM "Level 3 (+5~+6)",             32784
+        MENUITEM "Level 4 (+7~+8)",             32785
+        MENUITEM "Level 5 (+9)",                32786
+        MENUITEM "Level 6 (+10)",               32787
+        MENUITEM "Level 7 (+11)",               32788
+        MENUITEM "Level 8 (+12)",               32789
+        MENUITEM "Level 9 (+13)",               32790
+        MENUITEM "Level 10 (+14)",              32791
+        MENUITEM "Level 11 (+15)",              32792
+    END
+    POPUP "&Help"
+    BEGIN
+        MENUITEM "&About EditorSkinChar...",    ID_APP_ABOUT
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Accelerator
+//
+
+IDR_MAINFRAME ACCELERATORS 
+BEGIN
+    "N",            ID_FILE_NEW,            VIRTKEY, CONTROL
+    "O",            ID_FILE_OPEN,           VIRTKEY, CONTROL
+    "S",            ID_FILE_SAVE,           VIRTKEY, CONTROL
+    "P",            ID_FILE_PRINT,          VIRTKEY, CONTROL
+    "Z",            ID_EDIT_UNDO,           VIRTKEY, CONTROL
+    "X",            ID_EDIT_CUT,            VIRTKEY, CONTROL
+    "C",            ID_EDIT_COPY,           VIRTKEY, CONTROL
+    "V",            ID_EDIT_PASTE,          VIRTKEY, CONTROL
+    VK_BACK,        ID_EDIT_UNDO,           VIRTKEY, ALT
+    VK_DELETE,      ID_EDIT_CUT,            VIRTKEY, SHIFT
+    VK_INSERT,      ID_EDIT_COPY,           VIRTKEY, CONTROL
+    VK_INSERT,      ID_EDIT_PASTE,          VIRTKEY, SHIFT
+    VK_F6,          ID_NEXT_PANE,           VIRTKEY 
+    VK_F6,          ID_PREV_PANE,           VIRTKEY, SHIFT
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX DIALOGEX 0, 0, 170, 62
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About EditorSkinChar"
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    ICON            IDR_MAINFRAME,IDC_STATIC,14,14,20,20
+    LTEXT           "EditorSkinChar, Version 1.0",IDC_STATIC,42,14,114,8,SS_NOPREFIX
+    LTEXT           "Copyright (C) DevLordX",IDC_STATIC,42,26,114,8
+    DEFPUSHBUTTON   "OK",IDOK,113,41,50,14,WS_GROUP
+END
+
+IDD_DLG_MAIN DIALOGEX 0, 0, 384, 400
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "Static",IDC_STATIC_TOOL,7,3,370,390
+END
+
+IDD_PAGE_CHF DIALOGEX 0, 0, 370, 390
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION
+CAPTION "Page CHF"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Load",IDC_BUTTON_CHF_LOAD,27,2,25,12
+    PUSHBUTTON      "Save",IDC_BUTTON_CHF_SAVE,53,2,25,12
+    EDITTEXT        IDC_EDIT_CHF_FILENAME,80,2,236,12,ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "New",IDC_BUTTON_CHF_NEW,1,2,25,12
+    PUSHBUTTON      "Dummy Load",IDC_BUTTON_CHF_TEST,318,2,49,12
+    CONTROL         "",IDC_LIST_CHF_ANIM,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,184,17,185,323
+    CONTROL         "",IDC_LIST_CHF_PIECE,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,2,114,180,246
+    PUSHBUTTON      "Set Piece",IDC_BUTTON_CHF_PIECE_CPS,1,362,40,12
+    PUSHBUTTON      "Reset",IDC_BUTTON_CHF_PIECE_RESET,151,362,30,12
+    PUSHBUTTON      "Play",IDC_BUTTON_CHF_ANIM_PLAY,185,342,25,12
+    PUSHBUTTON      "Delete",IDC_BUTTON_CHF_ANIM_DELETE,308,342,30,12
+    PUSHBUTTON      "Clear",IDC_BUTTON_CHF_ANIM_CLEAR,339,342,30,12
+    PUSHBUTTON      "Add Cfg",IDC_BUTTON_CHF_ANIM_ADDCFG,277,342,30,12
+    PUSHBUTTON      "Stop",IDC_BUTTON_CHF_ANIM_STOP,211,342,25,12
+    PUSHBUTTON      "Skeleton",IDC_BUTTON_CHF_SKELETON,2,19,35,12
+    EDITTEXT        IDC_EDIT_CHF_SKELETON,38,19,140,12,ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_CHF_SCALE,38,41,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_CHF_HEIGHT,38,55,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_CHF_RADIUS,38,69,40,12,ES_AUTOHSCROLL
+    LTEXT           "Scale",IDC_STATIC,5,43,18,8
+    LTEXT           "Height",IDC_STATIC,5,57,22,8
+    LTEXT           "Radius",IDC_STATIC,5,71,22,8
+    PUSHBUTTON      "Apply",IDC_BUTTON_CHF_APPLY,136,94,40,12
+    GROUPBOX        "Basic",IDC_STATIC,2,32,177,79,BS_RIGHT
+    CONTROL         "WorldObject",IDC_CHECK_CHF_WORLDOBJECT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,39,85,56,10
+    PUSHBUTTON      "Set ABL",IDC_BUTTON_CHF_PIECE_ABL,43,362,40,12
+    EDITTEXT        IDC_EDIT_ANI_INSERT_CHF,186,362,150,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "Insert",IDC_BUTTON_ANI_INSERT_CHF,339,362,30,12
+    PUSHBUTTON      "Set VCF",IDC_BUTTON_CHF_PIECE_VCF,86,362,40,12
+END
+
+IDD_PAGE_ABF DIALOGEX 0, 0, 370, 390
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION
+CAPTION "Page ABF"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Load",IDC_BUTTON_ABF_LOAD,27,2,25,12
+    PUSHBUTTON      "Save",IDC_BUTTON_ABF_SAVE,53,2,25,12
+    EDITTEXT        IDC_EDIT_ABF_FILENAME,80,2,289,12,ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "New",IDC_BUTTON_ABF_NEW,1,2,25,12
+    CONTROL         "",IDC_LIST_ABF_ANIM,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,184,17,185,323
+    CONTROL         "",IDC_LIST_ABF_PIECE,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,2,114,180,246
+    PUSHBUTTON      "Set Piece",IDC_BUTTON_ABF_PIECE_CPS,1,362,40,12
+    PUSHBUTTON      "Reset",IDC_BUTTON_ABF_PIECE_RESET,151,362,30,12
+    PUSHBUTTON      "Play",IDC_BUTTON_ABF_ANIM_PLAY,185,342,25,12
+    PUSHBUTTON      "Delete",IDC_BUTTON_ABF_ANIM_DELETE,308,342,30,12
+    PUSHBUTTON      "Clear",IDC_BUTTON_ABF_ANIM_CLEAR,339,342,30,12
+    PUSHBUTTON      "Add Cfg",IDC_BUTTON_ABF_ANIM_ADDCFG,277,342,30,12
+    PUSHBUTTON      "Stop",IDC_BUTTON_ABF_ANIM_STOP,211,342,25,12
+    PUSHBUTTON      "Skeleton",IDC_BUTTON_ABF_SKELETON,2,19,35,12
+    EDITTEXT        IDC_EDIT_ABF_SKELETON,38,19,140,12,ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_ABF_SCALE,38,41,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_ABF_HEIGHT,38,55,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_ABF_RADIUS,38,69,40,12,ES_AUTOHSCROLL
+    LTEXT           "Scale",IDC_STATIC,5,43,18,8
+    LTEXT           "Height",IDC_STATIC,5,57,22,8
+    LTEXT           "Radius",IDC_STATIC,5,71,22,8
+    PUSHBUTTON      "Apply",IDC_BUTTON_ABF_APPLY,136,94,40,12
+    GROUPBOX        "Basic",IDC_STATIC,2,32,177,79,BS_RIGHT
+    CONTROL         "WorldObject",IDC_CHECK_ABF_WORLDOBJECT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,39,85,56,10
+    EDITTEXT        IDC_EDIT_ANI_INSERT_ABF,186,362,150,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "Insert",IDC_BUTTON_ANI_INSERT_ABF,339,362,30,12
+END
+
+IDD_PAGE_ABL DIALOGEX 0, 0, 370, 390
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION
+CAPTION "Page ABL"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Load",IDC_BUTTON_ABL_LOAD,27,2,25,12
+    PUSHBUTTON      "Save",IDC_BUTTON_ABL_SAVE,53,2,25,12
+    EDITTEXT        IDC_EDIT_ABL_FILENAME,80,2,289,12,ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "New",IDC_BUTTON_ABL_NEW,1,2,25,12
+    PUSHBUTTON      "Skeleton",IDC_ABL_BUTTON_SKELETON,10,30,55,12
+    PUSHBUTTON      "Bone Data",IDC_ABL_BUTTON_BONEDATA,10,45,55,12
+    PUSHBUTTON      "Mask Piece",IDC_ABL_BUTTON_MASKP,10,59,55,12
+    EDITTEXT        IDC_ABL_EDIT_SKELETON,67,30,150,12,ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_ABL_EDIT_BONEDATA,67,45,150,12,ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_ABL_EDIT_MASKP,67,59,150,12,ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "Bone Link",IDC_ABL_BUTTON_BONELINK,6,131,50,12
+    EDITTEXT        IDC_ABL_EDIT_BONELINK,57,131,126,12,ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "Matrix Edit",IDC_ABL_BUTTON_EDITMAT_1,6,147,50,12
+    PUSHBUTTON      "Matrix Edit",IDC_ABL_BUTTON_EDITMAT_2,189,147,50,12
+    PUSHBUTTON      "Matrix Reset",IDC_ABL_BUTTON_RESET_MAT01,58,147,50,12
+    PUSHBUTTON      "Matrix Reset",IDC_ABL_BUTTON_RESET_MAT02,241,147,50,12
+    PUSHBUTTON      "X",IDC_ABL_BUTTON_MASKP_RESET,219,59,17,12
+    COMBOBOX        IDC_ABL_COMBO_STRIKE,67,80,127,100,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_ABL_COMBO_PTYPE,67,96,127,100,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_ABL_COMBO_SLOTB,237,131,127,100,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Play Anim",IDC_ABL_BUTTON_ANIM_PLAY,3,236,45,12
+    PUSHBUTTON      "Stop Anim",IDC_ABL_BUTTON_ANIM_STOP,3,250,45,12
+    LTEXT           "Piece Strike",IDC_STATIC,13,82,38,8
+    LTEXT           "Piece Type",IDC_STATIC,13,98,36,8
+    LTEXT           "Weapon Slot",IDC_STATIC,192,134,42,8
+    GROUPBOX        "Bone Link",IDC_STATIC,2,120,183,110
+    GROUPBOX        "Slot Link",IDC_STATIC,186,120,183,110
+    EDITTEXT        IDC_EDIT_MATRIX_TRANS_X_1,56,164,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_TRANS_Y_1,98,164,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_TRANS_Z_1,140,164,40,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "Manual Edit",IDC_ABL_BUTTON_MANUAL_MAT1,110,147,50,12
+    EDITTEXT        IDC_EDIT_MATRIX_ROTATE_X_1,56,179,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_ROTATE_Y_1,98,179,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_ROTATE_Z_1,140,179,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_SCALE_X_1,56,194,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_SCALE_Y_1,98,194,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_SCALE_Z_1,140,194,40,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "Test",IDC_ABL_BUTTON_TEST_MAT_1,86,211,30,12
+    PUSHBUTTON      "Save",IDC_ABL_BUTTON_SAVE_MAT_1,118,211,30,12
+    PUSHBUTTON      "Cancel",IDC_ABL_BUTTON_CANCEL_MAT_1,149,211,30,12
+    LTEXT           "Translation",IDC_STATIC,10,166,36,8
+    LTEXT           "Rotation",IDC_STATIC,10,181,28,8
+    LTEXT           "Scale",IDC_STATIC,10,196,18,8
+    PUSHBUTTON      "Manual Edit",IDC_ABL_BUTTON_MANUAL_MAT2,293,147,50,12
+    EDITTEXT        IDC_EDIT_MATRIX_TRANS_X_2,240,164,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_TRANS_Y_2,282,164,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_TRANS_Z_2,324,164,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_ROTATE_X_2,240,179,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_ROTATE_Y_2,282,179,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_ROTATE_Z_2,324,179,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_SCALE_X_2,240,193,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_SCALE_Y_2,282,193,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_SCALE_Z_2,324,193,40,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "Test",IDC_ABL_BUTTON_TEST_MAT_2,270,211,30,12
+    PUSHBUTTON      "Save",IDC_ABL_BUTTON_SAVE_MAT_2,302,211,30,12
+    PUSHBUTTON      "Cancel",IDC_ABL_BUTTON_CANCEL_MAT_2,334,211,30,12
+    LTEXT           "Translation",IDC_STATIC,194,166,36,8
+    LTEXT           "Rotation",IDC_STATIC,194,181,28,8
+    LTEXT           "Scale",IDC_STATIC,194,196,18,8
+END
+
+IDD_PAGE_VCF DIALOGEX 0, 0, 370, 390
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION
+CAPTION "Page VCF"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Load",IDC_BUTTON_VCF_LOAD,27,2,25,12
+    PUSHBUTTON      "Save",IDC_BUTTON_VCF_SAVE,53,2,25,12
+    EDITTEXT        IDC_EDIT_VCF_FILENAME,80,2,212,12,ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "New",IDC_BUTTON_VCF_NEW,1,2,25,12
+    CONTROL         "",IDC_LIST_VCF_ANIM,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,184,190,185,150
+    CONTROL         "",IDC_LIST_VCF_PIECE,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,184,17,180,155
+    PUSHBUTTON      "Set Piece",IDC_BUTTON_VCF_PIECE_CPS,185,173,40,12
+    PUSHBUTTON      "Reset",IDC_BUTTON_VCF_PIECE_RESET,227,173,30,12
+    PUSHBUTTON      "Play",IDC_BUTTON_VCF_ANIM_PLAY,185,342,25,12
+    PUSHBUTTON      "Delete",IDC_BUTTON_VCF_ANIM_DELETE,308,342,30,12
+    PUSHBUTTON      "Clear",IDC_BUTTON_VCF_ANIM_CLEAR,339,342,30,12
+    PUSHBUTTON      "Add Cfg",IDC_BUTTON_VCF_ANIM_ADDCFG,277,342,30,12
+    PUSHBUTTON      "Stop",IDC_BUTTON_VCF_ANIM_STOP,211,342,25,12
+    PUSHBUTTON      "Skeleton",IDC_BUTTON_VCF_SKELETON,2,17,35,12
+    EDITTEXT        IDC_EDIT_VCF_SKELETON,38,17,140,12,ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_VCF_SCALE,38,43,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_VCF_HEIGHT,38,57,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_VCF_RADIUS,38,71,40,12,ES_AUTOHSCROLL
+    LTEXT           "Scale",IDC_STATIC,5,45,18,8
+    LTEXT           "Height",IDC_STATIC,5,59,22,8
+    LTEXT           "Radius",IDC_STATIC,5,73,22,8
+    PUSHBUTTON      "Apply",IDC_BUTTON_VCF_APPLY,138,109,40,12
+    GROUPBOX        "Basic",IDC_STATIC,2,30,180,95,BS_LEFT
+    CONTROL         "WorldObject",IDC_CHECK_VCF_WORLDOBJECT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,39,86,56,10
+    PUSHBUTTON      "Update Bone",IDC_VCF_BUTTON_BONE_1,4,136,50,12
+    EDITTEXT        IDC_VCF_EDIT_BONE_1,55,136,124,12,ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "Matrix Edit",IDC_VCF_BUTTON_EDITMAT_1,4,150,50,12
+    PUSHBUTTON      "Matrix Reset",IDC_VCF_BUTTON_RESET_MAT_1,56,150,50,12
+    GROUPBOX        "Front",IDC_STATIC,2,126,180,88
+    PUSHBUTTON      "Update Bone",IDC_VCF_BUTTON_BONE_2,4,225,50,12
+    EDITTEXT        IDC_VCF_EDIT_BONE_2,55,225,124,12,ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "Matrix Edit",IDC_VCF_BUTTON_EDITMAT_2,4,240,50,12
+    PUSHBUTTON      "Matrix Reset",IDC_VCF_BUTTON_RESET_MAT_2,56,240,50,12
+    GROUPBOX        "Back",IDC_STATIC,2,215,180,88
+    PUSHBUTTON      "Test CHF",IDC_BUTTON_VCF_TEST_SKIN,294,2,34,12
+    PUSHBUTTON      "Play",IDC_BUTTON_VCF_TEST_SKIN_P,329,2,20,12
+    PUSHBUTTON      "Stop",IDC_BUTTON_VCF_TEST_SKIN_S,349,2,20,12
+    EDITTEXT        IDC_EDIT_ANI_INSERT_VCF,186,362,150,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "Insert",IDC_BUTTON_ANI_INSERT_VCF,339,362,30,12
+    EDITTEXT        IDC_EDIT_MATRIX_TRANS_X_VCF_1,53,167,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_TRANS_Y_VCF_1,95,167,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_TRANS_Z_VCF_1,137,167,40,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "Manual Edit",IDC_VCF_BUTTON_MANUAL_MAT1,107,150,50,12
+    EDITTEXT        IDC_EDIT_MATRIX_ROTATE_X_VCF_1,53,182,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_ROTATE_Y_VCF_1,95,182,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_ROTATE_Z_VCF_1,137,182,40,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "Test",IDC_VCF_BUTTON_TEST_MAT_1,82,197,30,12
+    PUSHBUTTON      "Save",IDC_VCF_BUTTON_SAVE_MAT_1,114,197,30,12
+    PUSHBUTTON      "Cancel",IDC_VCF_BUTTON_CANCEL_MAT_1,146,197,30,12
+    LTEXT           "Translation",IDC_STATIC,7,169,36,8
+    LTEXT           "Rotation",IDC_STATIC,7,184,28,8
+    PUSHBUTTON      "Manual Edit",IDC_VCF_BUTTON_MANUAL_MAT2,107,240,50,12
+    EDITTEXT        IDC_EDIT_MATRIX_TRANS_X_VCF_2,53,256,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_TRANS_Y_VCF_2,95,256,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_TRANS_Z_VCF_2,137,256,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_ROTATE_X_VCF_2,53,271,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_ROTATE_Y_VCF_2,95,271,40,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_MATRIX_ROTATE_Z_VCF_2,137,271,40,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "Test",IDC_VCF_BUTTON_TEST_MAT_2,82,286,30,12
+    PUSHBUTTON      "Save",IDC_VCF_BUTTON_SAVE_MAT_2,114,286,30,12
+    PUSHBUTTON      "Cancel",IDC_VCF_BUTTON_CANCEL_MAT_2,146,286,30,12
+    LTEXT           "Translation",IDC_STATIC,8,258,36,8
+    LTEXT           "Rotation",IDC_STATIC,8,273,28,8
+END
+
+IDD_DLG_ANI_SELECT DIALOGEX 0, 0, 199, 268
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Select ANI"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,90,247,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,142,247,50,14
+    CONTROL         "",IDC_LIST_SELECT_ANIM,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,7,7,185,237
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "DevLordX"
+            VALUE "FileDescription", "EditorSkinChar"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "EditorSkinChar.exe"
+            VALUE "LegalCopyright", "(c) DevLordX.  All rights reserved."
+            VALUE "OriginalFilename", "EditorSkinChar.exe"
+            VALUE "ProductName", "RanOnline"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_ABOUTBOX, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 163
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 55
+    END
+
+    IDD_DLG_MAIN, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 377
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 393
+    END
+
+    IDD_PAGE_CHF, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 389
+    END
+
+    IDD_PAGE_ABF, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 389
+    END
+
+    IDD_PAGE_ABL, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 389
+    END
+
+    IDD_PAGE_VCF, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 389
+    END
+
+    IDD_DLG_ANI_SELECT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 192
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 261
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDP_OLE_INIT_FAILED     "OLE initialization failed.  Make sure that the OLE libraries are the correct version."
+END
+
+STRINGTABLE 
+BEGIN
+    IDR_MAINFRAME           "EditorSkinChar\n\nEditorSkinChar\n\n\nEditorSkinChar.Document\nEditorSkinChar.Document"
+END
+
+STRINGTABLE 
+BEGIN
+    AFX_IDS_APP_TITLE       "EditorSkinChar"
+    AFX_IDS_IDLEMESSAGE     "Ready"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_INDICATOR_EXT        "EXT"
+    ID_INDICATOR_CAPS       "CAP"
+    ID_INDICATOR_NUM        "NUM"
+    ID_INDICATOR_SCRL       "SCRL"
+    ID_INDICATOR_OVR        "OVR"
+    ID_INDICATOR_REC        "REC"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_FILE_NEW             "Create a new document\nNew"
+    ID_FILE_OPEN            "Open an existing document\nOpen"
+    ID_FILE_CLOSE           "Close the active document\nClose"
+    ID_FILE_SAVE            "Save the active document\nSave"
+    ID_FILE_SAVE_AS         "Save the active document with a new name\nSave As"
+    ID_FILE_PAGE_SETUP      "Change the printing options\nPage Setup"
+    ID_FILE_PRINT_SETUP     "Change the printer and printing options\nPrint Setup"
+    ID_FILE_PRINT           "Print the active document\nPrint"
+    ID_FILE_PRINT_DIRECT    "Print the active document using current options\nQuick Print"
+    ID_FILE_PRINT_PREVIEW   "Display full pages\nPrint Preview"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_APP_ABOUT            "Display program information, version number and copyright\nAbout"
+    ID_APP_EXIT             "Quit the application; prompts to save documents\nExit"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_FILE_MRU_FILE1       "Open this document"
+    ID_FILE_MRU_FILE2       "Open this document"
+    ID_FILE_MRU_FILE3       "Open this document"
+    ID_FILE_MRU_FILE4       "Open this document"
+    ID_FILE_MRU_FILE5       "Open this document"
+    ID_FILE_MRU_FILE6       "Open this document"
+    ID_FILE_MRU_FILE7       "Open this document"
+    ID_FILE_MRU_FILE8       "Open this document"
+    ID_FILE_MRU_FILE9       "Open this document"
+    ID_FILE_MRU_FILE10      "Open this document"
+    ID_FILE_MRU_FILE11      "Open this document"
+    ID_FILE_MRU_FILE12      "Open this document"
+    ID_FILE_MRU_FILE13      "Open this document"
+    ID_FILE_MRU_FILE14      "Open this document"
+    ID_FILE_MRU_FILE15      "Open this document"
+    ID_FILE_MRU_FILE16      "Open this document"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_NEXT_PANE            "Switch to the next window pane\nNext Pane"
+    ID_PREV_PANE            "Switch back to the previous window pane\nPrevious Pane"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_WINDOW_SPLIT         "Split the active window into panes\nSplit"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_EDIT_CLEAR           "Erase the selection\nErase"
+    ID_EDIT_CLEAR_ALL       "Erase everything\nErase All"
+    ID_EDIT_COPY            "Copy the selection and put it on the Clipboard\nCopy"
+    ID_EDIT_CUT             "Cut the selection and put it on the Clipboard\nCut"
+    ID_EDIT_FIND            "Find the specified text\nFind"
+    ID_EDIT_PASTE           "Insert Clipboard contents\nPaste"
+    ID_EDIT_REPEAT          "Repeat the last action\nRepeat"
+    ID_EDIT_REPLACE         "Replace specific text with different text\nReplace"
+    ID_EDIT_SELECT_ALL      "Select the entire document\nSelect All"
+    ID_EDIT_UNDO            "Undo the last action\nUndo"
+    ID_EDIT_REDO            "Redo the previously undone action\nRedo"
+END
+
+STRINGTABLE 
+BEGIN
+    ID_VIEW_TOOLBAR         "Show or hide the toolbar\nToggle ToolBar"
+    ID_VIEW_STATUS_BAR      "Show or hide the status bar\nToggle Status Bar"
+END
+
+STRINGTABLE 
+BEGIN
+    AFX_IDS_SCSIZE          "Change the window size"
+    AFX_IDS_SCMOVE          "Change the window position"
+    AFX_IDS_SCMINIMIZE      "Reduce the window to an icon"
+    AFX_IDS_SCMAXIMIZE      "Enlarge the window to full size"
+    AFX_IDS_SCNEXTWINDOW    "Switch to the next document window"
+    AFX_IDS_SCPREVWINDOW    "Switch to the previous document window"
+    AFX_IDS_SCCLOSE         "Close the active window and prompts to save the documents"
+END
+
+STRINGTABLE 
+BEGIN
+    AFX_IDS_SCRESTORE       "Restore the window to normal size"
+    AFX_IDS_SCTASKLIST      "Activate Task List"
+END
+
+STRINGTABLE 
+BEGIN
+    AFX_IDS_PREVIEW_CLOSE   "Close print preview mode\nCancel Preview"
+END
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE 9, 1
+#include "res\EditorSkinChar.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"      // Standard components
+#include "afxprint.rc"    // printing/print preview resources
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+
