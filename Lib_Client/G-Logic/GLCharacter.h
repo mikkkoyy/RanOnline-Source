@@ -206,6 +206,7 @@ protected:
 	GLMSG::SNETPC_GOTO	m_sLastMsgMoveSend;
 
 	SREACTION			m_sREACTION;
+	bool				m_bAutoAttack;
 
 protected:
 	float				m_fIdleTime;
@@ -544,6 +545,8 @@ public:
 	BOOL IsVALID_STORAGE ( DWORD dwChannel );
 
 	STARGETID GetTargetID () { return m_sTargetID; }
+
+	void ReqToggleAutoAttack ();
 
 
 public:

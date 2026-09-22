@@ -301,6 +301,7 @@ GLCharacter::GLCharacter () :
 	m_emOldQuestionType(QUESTION_NONE),
 
 	m_dwGaeaID(0),
+	m_bAutoAttack(FALSE),
 
 	m_wInvenPosX1(0),
 	m_wInvenPosY1(0),
@@ -2948,7 +2949,15 @@ HRESULT GLCharacter::PlayerUpdate ( float fTime, float fElapsedTime )
 		ReqTogglePeaceMode ();
 	}
 
-	//	Note : ����, â��, �ŷ�â, ��޹ڽ��� Ȱ��ȭ�� �ɸ��� ���� ���.
+	{
+		DWORD dwKeyV = dxInputDev.GetKeyState ( DIK_V );
+		if ( dwKeyV&DXKEY_UP )
+		{
+			ReqToggleAutoAttack ();
+		}
+	}
+
+	//	Note : , â, ŷâ, ޹ڽ Ȱȭ ɸ   .
 	//
 	BOOL bCharMoveBlock = CInnerInterface::GetInstance().IsCharMoveBlock ();
 	if ( bCharMoveBlock )
@@ -4295,6 +4304,24 @@ HRESULT GLCharacter::FrameMove ( float fTime, float fElapsedTime )
 			{
 				ReservedAction ( fTime );
 			}
+
+			//	Note : auto attack.
+			if ( m_bAutoAttack )
+			{
+				GLCOPY* pAutoTarget = GLGaeaClient::GetInstance().GetCopyActor ( m_sTargetID );
+				if ( pAutoTarget && !pAutoTarget->IsACTION(GLAT_DIE) && !pAutoTarget->IsACTION(GLAT_FALLING)
+					 && !IsSTATE(EM_ACT_DIE) )
+				{
+					if ( !IsACTION(GLAT_ATTACK) && !IsACTION(GLAT_SKILL) )
+					{
+						StartAttackProc ();
+					}
+				}
+				else
+				{
+					m_bAutoAttack = false;
+				}
+			}
 		}
 
 		if( m_bRunBot ) FrameMoveBot( fTime, fElapsedTime );
@@ -5152,6 +5179,11 @@ EMELEMENT GLCharacter::GET_ITEM_ELMT ()
 	}
 
 	return emELEMENT;
+}
+
+void GLCharacter::ReqToggleAutoAttack ()
+{
+	m_bAutoAttack = !m_bAutoAttack;
 }
 
 void GLCharacter::StartAttackProc ()

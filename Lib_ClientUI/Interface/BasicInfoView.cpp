@@ -128,7 +128,7 @@ void CBasicInfoView::SetHP ( DWORD wNOW, DWORD wMAX )
 		m_wHPBACK = wNOW;
 
 		CString strTemp;
-		strTemp.Format ( "%d", wNOW );
+		strTemp.Format ( "%d/%d", wNOW, wMAX );
 		m_pHPText->SetOneLineText ( strTemp, NS_UITEXTCOLOR::WHITE );
 
 		const float fPercent = float(wNOW) / float(wMAX);
@@ -145,7 +145,7 @@ void CBasicInfoView::SetMP ( DWORD wNOW, DWORD wMAX )
 		m_wMPBACK = wNOW;
 
 		CString strTemp;
-		strTemp.Format ( "%d", wNOW );
+		strTemp.Format ( "%d/%d", wNOW, wMAX );
 		m_pMPText->SetOneLineText ( strTemp, NS_UITEXTCOLOR::WHITE );
 
 		const float fPercent = float(wNOW) / float(wMAX);
@@ -162,7 +162,7 @@ void CBasicInfoView::SetSP ( DWORD wNOW, DWORD wMAX )
 		m_wSPBACK = wNOW;
         
 		CString strTemp;
-		strTemp.Format ( "%d", wNOW );
+		strTemp.Format ( "%d/%d", wNOW, wMAX );
 		m_pSPText->SetOneLineText ( strTemp, NS_UITEXTCOLOR::WHITE );
 
 		const float fPercent = float(wNOW) / float(wMAX);
