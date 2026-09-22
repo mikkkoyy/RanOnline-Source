@@ -1,206 +1,152 @@
 @echo off
 setlocal EnableExtensions
 
-title RAN Online - Update GitHub Repository
-
-REM ============================================================
-REM RAN Online Repository Updater
-REM Local source:
-REM D:\FILES\project\modernization RanOnline
-REM GitHub:
-REM https://github.com/mikkkoyy/RanOnline-Source.git
-REM ============================================================
+title RAN Online - GitHub Update
 
 set "REPO=D:\FILES\project\modernization RanOnline"
 set "REMOTE=https://github.com/mikkkoyy/RanOnline-Source.git"
 set "BRANCH=main"
-
-echo.
-echo ============================================================
-echo   RAN ONLINE REPOSITORY UPDATE
-echo ============================================================
-echo.
-echo Local : %REPO%
-echo Remote: %REMOTE%
-echo Branch: %BRANCH%
-echo.
-
-REM ------------------------------------------------------------
-REM Check Git
-REM ------------------------------------------------------------
-where git >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Git was not found in PATH.
-    echo Install Git or add Git to PATH.
-    echo.
-    pause
-    exit /b 1
-)
-
-REM ------------------------------------------------------------
-REM Check repository directory
-REM ------------------------------------------------------------
-if not exist "%REPO%\" (
-    echo [ERROR] Repository directory does not exist:
-    echo %REPO%
-    echo.
-    pause
-    exit /b 1
-)
-
-cd /d "%REPO%"
-
-REM ------------------------------------------------------------
-REM Initialize Git if this is not already a repository
-REM ------------------------------------------------------------
-if not exist ".git\" (
-    echo [INFO] Git repository not initialized.
-    echo [INFO] Initializing...
-    echo.
-
-    git init
-
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] git init failed.
-        pause
-        exit /b 1
-    )
-)
-
-REM ------------------------------------------------------------
-REM Ensure branch is main
-REM ------------------------------------------------------------
-git branch -M %BRANCH%
-
-REM ------------------------------------------------------------
-REM Configure GitHub remote
-REM ------------------------------------------------------------
-git remote get-url origin >nul 2>&1
-
-if errorlevel 1 (
-    echo [INFO] Adding GitHub remote...
-    git remote add origin "%REMOTE%"
-
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] Could not add GitHub remote.
-        pause
-        exit /b 1
-    )
-) else (
-    echo [INFO] Updating GitHub remote...
-    git remote set-url origin "%REMOTE%"
-
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] Could not update GitHub remote.
-        pause
-        exit /b 1
-    )
-)
-
-echo.
-echo ============================================================
-echo   CURRENT STATUS
-echo ============================================================
-echo.
-
-git status --short
-
-echo.
-echo ============================================================
-echo   STAGING FILES
-echo ============================================================
-echo.
-
-git add .
-
-if errorlevel 1 (
-    echo.
-    echo [ERROR] git add failed.
-    pause
-    exit /b 1
-)
-
-echo.
-echo ============================================================
-echo   FILES READY TO COMMIT
-echo ============================================================
-echo.
-
-git status --short
-
-echo.
-echo ============================================================
-echo   COMMIT
-echo ============================================================
-echo.
-
 set "COMMIT_MSG=Update RAN Online source"
 
-set /p "CUSTOM_MSG=Commit message [%COMMIT_MSG%]: "
+echo.
+echo ========================================
+echo       RAN ONLINE GITHUB UPDATE
+echo ========================================
+echo.
 
-if not "%CUSTOM_MSG%"=="" (
-    set "COMMIT_MSG=%CUSTOM_MSG%"
+where git >nul 2>&1
+if errorlevel 1 goto :error_git
+
+if not exist "%REPO%\" goto :error_repo
+
+cd /d "%REPO%" || goto :error_repo
+
+if not exist ".git\" (
+    git init >nul 2>&1 || goto :error_git
 )
 
-git diff --cached --quiet
+git branch -M "%BRANCH%" >nul 2>&1
 
+git remote get-url origin >nul 2>&1
 if errorlevel 1 (
-    git commit -m "%COMMIT_MSG%"
+    git remote add origin "%REMOTE%" >nul 2>&1
+) else (
+    git remote set-url origin "%REMOTE%" >nul 2>&1
+)
+
+if errorlevel 1 goto :error_remote
+
+echo [1/5] Checking GitHub...
+git ls-remote --heads origin "%BRANCH%" >nul 2>&1
+if errorlevel 1 goto :error_github
+
+echo [2/5] Fetching...
+git fetch origin "%BRANCH%" >nul 2>&1
+if errorlevel 1 goto :error_fetch
+
+for /f "delims=" %%A in ('git rev-parse --verify HEAD 2^>nul') do set "LOCAL_HEAD=%%A"
+for /f "delims=" %%A in ('git rev-parse --verify origin/%BRANCH% 2^>nul') do set "REMOTE_HEAD=%%A"
+
+if defined LOCAL_HEAD if defined REMOTE_HEAD (
+    git merge-base --is-ancestor "%REMOTE_HEAD%" "%LOCAL_HEAD%" >nul 2>&1
 
     if errorlevel 1 (
-        echo.
-        echo [ERROR] Commit failed.
-        pause
-        exit /b 1
+        git merge-base --is-ancestor "%LOCAL_HEAD%" "%REMOTE_HEAD%" >nul 2>&1
+
+        if not errorlevel 1 goto :error_behind
+
+        goto :error_diverged
     )
-) else (
-    echo [INFO] No file changes to commit.
 )
 
-echo.
-echo ============================================================
-echo   PUSH TO GITHUB
-echo ============================================================
-echo.
+echo [3/5] Staging...
+git add -A
+if errorlevel 1 goto :error_stage
 
-git push -u origin %BRANCH%
-
+git diff --cached --quiet
 if errorlevel 1 (
-    echo.
-    echo [ERROR] Push failed.
-    echo.
-    echo Possible causes:
-    echo   - GitHub authentication is not configured
-    echo   - Repository permissions are missing
-    echo   - Network problem
-    echo   - Remote repository contains commits not present locally
-    echo.
-    pause
-    exit /b 1
+    echo [4/5] Committing...
+    git commit -m "%COMMIT_MSG%" >nul 2>&1
+    if errorlevel 1 goto :error_commit
+) else (
+    echo [4/5] No changes to commit.
 )
 
-echo.
-echo ============================================================
-echo   UPDATE COMPLETE
-echo ============================================================
-echo.
-echo Repository:
-echo %REMOTE%
-echo.
-echo Local source:
-echo %REPO%
-echo.
-echo Branch:
-echo %BRANCH%
-echo.
-echo GitHub has been updated successfully.
-echo.
+echo [5/5] Pushing...
+git push -u origin "%BRANCH%" >nul 2>&1
+if errorlevel 1 goto :error_push
 
-git status
-
+echo.
+echo ========================================
+echo             UPDATE COMPLETE
+echo ========================================
+echo.
+echo Repository updated successfully.
 echo.
 pause
 exit /b 0
+
+
+:error_git
+echo.
+echo [ERROR] Git is not available.
+pause
+exit /b 1
+
+:error_repo
+echo.
+echo [ERROR] Repository folder not found:
+echo %REPO%
+pause
+exit /b 1
+
+:error_remote
+echo.
+echo [ERROR] Could not configure GitHub remote.
+pause
+exit /b 1
+
+:error_github
+echo.
+echo [ERROR] Cannot access GitHub repository.
+pause
+exit /b 1
+
+:error_fetch
+echo.
+echo [ERROR] GitHub fetch failed.
+pause
+exit /b 1
+
+:error_behind
+echo.
+echo [BLOCKED] GitHub has commits not present locally.
+echo Pull/reconcile the changes before updating.
+pause
+exit /b 2
+
+:error_diverged
+echo.
+echo [BLOCKED] Local and GitHub histories have diverged.
+echo Resolve the histories manually. No force-push was performed.
+pause
+exit /b 2
+
+:error_stage
+echo.
+echo [ERROR] Failed to stage files.
+pause
+exit /b 1
+
+:error_commit
+echo.
+echo [ERROR] Commit failed.
+pause
+exit /b 1
+
+:error_push
+echo.
+echo [ERROR] Push failed.
+echo Check GitHub authentication and permissions.
+pause
+exit /b 1
