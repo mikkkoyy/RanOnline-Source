@@ -97,7 +97,7 @@
       <ConformanceMode>false</ConformanceMode>
       <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>./;./Sources;./Sources/Common;./Sources/DxCommon;./Sources/DxCommon9;./Sources/DxEffect;./Sources/DxOctree;./Sources/Meshs;./Sources/DxTools;./Sources/G-Logic;./Sources/Hash;./Sources/NaviMesh;./Sources/TextTexture;../Lib_EngineSound/Sources;../Lib_Helper/Sources;../Lib_Helper/Sources/DaumParam;../Lib_Helper/Sources/ExLibs;../Lib_Helper/Sources/RanOnlineLanchClipboard;../Tik/common;../Tik/directx</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>./;./Common;./DxCommon;./DxCommon9;./DxEffect;./DxEffect/Char;./DxEffect/EffAni;./DxEffect/EffKeep;./DxEffect/EffProj;./DxEffect/Single;./DxFrame;./DxOctree;./Meshs;./DxSound;./G-Logic;./GUInterface;./Hash;./NaviMesh;./TextTexture;./Utils;../Lib_Helper;../Lib_ClientUI/Interface;../Tik/DXInclude;../Tik/DXLib;../Tik/Include;../Tik/Library;../Tik/TbbLib;../Tik/Lua</AdditionalIncludeDirectories>
       <MinimalRebuild>false</MinimalRebuild>
     </ClCompile>
     <Link>

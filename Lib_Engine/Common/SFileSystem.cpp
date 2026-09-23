@@ -6,7 +6,11 @@
 #define new DEBUG_NEW
 #endif
 
+#ifdef _DEBUG
+#pragma comment(lib, "../../RanOnline-Build/Debug/Lib_ZLib/ZLibD.lib")
+#else
 #pragma comment(lib, "../../RanOnline-Build/Release/Lib_ZLib/Lib_ZLib.lib")
+#endif
 
 ////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////
