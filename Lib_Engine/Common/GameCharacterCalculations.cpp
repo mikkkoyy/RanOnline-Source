@@ -185,4 +185,201 @@ namespace GameCharacterCalculations
         GameUInt32 dwDX = static_cast<GameUInt32>(std::abs(nOld - static_cast<int>(dwNow)));
         return dwDX;
     }
+
+    // ========================================================================
+    // Table-driven character calculations (Stage 2B/2C)
+    //
+    // These are deterministic pure calculations extracted from GLOGICEX
+    // (Lib_Client/G-Logic/GLogicEx.cpp) and GLCONST_CHAR
+    // (Lib_Client/G-Logic/GLogicData.cpp, GLogicDataLoad.cpp).
+    //
+    // The table data is loaded at runtime from configuration files by
+    // GLCONST_CHAR. The portable module receives const pointers via
+    // CharacterCalculationTables and does NOT own or load the data.
+    //
+    // All formulas, constants, clamping, integer widths, and signedness
+    // are preserved byte-for-byte / behavior-for-behavior.
+    // ========================================================================
+
+    // ---------------------------------------------------------------------------
+    // GetExpRate
+    //
+    // Original: GLCONST_CHAR::GETEXP_RATE
+    //
+    // int nDiffLev = nDefenserLev - nAttackerLev;
+    // int nResultIndex = nDiffLev + EXPTABLE_RANGE_BASE;
+    // if (nResultIndex >= EXPTABLE_RANGE) nResultIndex = EXPTABLE_RANGE-1;
+    // else if (nResultIndex < 0) nResultIndex = 0;
+    // return fEXP_RATE_TABLE[nResultIndex];
+    // ---------------------------------------------------------------------------
+    float GetExpRate(
+        const CharacterCalculationTables& tables,
+        int nAttackerLev,
+        int nDefenserLev)
+    {
+        const int EXPTABLE_RANGE = 61;
+        const int EXPTABLE_RANGE_BASE = 30;
+
+        int nDiffLev = nDefenserLev - nAttackerLev;
+        int nResultIndex = nDiffLev + EXPTABLE_RANGE_BASE;
+
+        if (nResultIndex >= EXPTABLE_RANGE)
+            nResultIndex = EXPTABLE_RANGE - 1;
+        else if (nResultIndex < 0)
+            nResultIndex = 0;
+
+        return tables.pExpRateTable[nResultIndex];
+    }
+
+    // ---------------------------------------------------------------------------
+    // AttackExp
+    //
+    // Original: GLOGICEX::GLATTACKEXP
+    //
+    // double fRate = static_cast<float>(dwDamage) / static_cast<double>(dwMaxHP);
+    // if (fRate > 1.0f) fRate = 1.0f;
+    // float fExpRate = GETEXP_RATE(nAttackerLev, nDefenserLev);
+    // int nExp = int(dwBonusExp * fExpRate * fRate);
+    // return (nExp < 0) ? 0 : nExp;
+    //
+    // NOTE: The original divides float by double. This is preserved exactly.
+    // No divide-by-zero guard exists in the original; if dwMaxHP is 0 the
+    // behavior is undefined (infinity/NaN). This is documented, not changed.
+    // ---------------------------------------------------------------------------
+    int AttackExp(
+        const CharacterCalculationTables& tables,
+        int nAttackerLev,
+        int nDefenserLev,
+        GameUInt32 dwDamage,
+        GameUInt32 dwMaxHP,
+        GameUInt32 dwBonusExp)
+    {
+        double fRate = static_cast<float>(dwDamage) / static_cast<double>(dwMaxHP);
+        if (fRate > 1.0f)
+            fRate = 1.0f;
+
+        float fExpRate = GetExpRate(tables, nAttackerLev, nDefenserLev);
+        int nExp = static_cast<int>(dwBonusExp * fExpRate * fRate);
+
+        return (nExp < 0) ? 0 : nExp;
+    }
+
+    // ---------------------------------------------------------------------------
+    // KillExp
+    //
+    // Original: GLOGICEX::GLKILLEXP
+    //
+    // float fExpRate = GETEXP_RATE(nAttackerLev, nDefenserLev);
+    // int nExp = int(dwBonusExp * fExpRate * fKILL_EXP_RATE);
+    // return (nExp < 0) ? 0 : nExp;
+    // ---------------------------------------------------------------------------
+    int KillExp(
+        const CharacterCalculationTables& tables,
+        int nAttackerLev,
+        int nDefenserLev,
+        GameUInt32 dwBonusExp)
+    {
+        float fExpRate = GetExpRate(tables, nAttackerLev, nDefenserLev);
+        int nExp = static_cast<int>(dwBonusExp * fExpRate * tables.fKillExpRate);
+
+        return (nExp < 0) ? 0 : nExp;
+    }
+
+    // ---------------------------------------------------------------------------
+    // DieDecExp
+    //
+    // Original: GLOGICEX::GLDIE_DECEXP
+    //
+    // WORD wSTEP = wACTLEV / 10;
+    // if (wSTEP >= DIE_DECEXP_NUM) wSTEP = DIE_DECEXP_NUM-1;
+    // return fDIE_DECEXP[wSTEP];
+    // ---------------------------------------------------------------------------
+    float DieDecExp(
+        const CharacterCalculationTables& tables,
+        GameUInt16 wACTLEV)
+    {
+        const int DIE_DECEXP_NUM = 30;
+
+        GameUInt16 wSTEP = static_cast<GameUInt16>(wACTLEV / 10);
+        if (wSTEP >= DIE_DECEXP_NUM)
+            wSTEP = DIE_DECEXP_NUM - 1;
+
+        return tables.pDieDecExp[wSTEP];
+    }
+
+    // ---------------------------------------------------------------------------
+    // DieRecoveryExp
+    //
+    // Original: GLOGICEX::GLDIE_RECOVERYEXP
+    // ---------------------------------------------------------------------------
+    float DieRecoveryExp(
+        const CharacterCalculationTables& tables,
+        GameUInt16 wACTLEV)
+    {
+        const int DIE_DECEXP_NUM = 30;
+
+        GameUInt16 wSTEP = static_cast<GameUInt16>(wACTLEV / 10);
+        if (wSTEP >= DIE_DECEXP_NUM)
+            wSTEP = DIE_DECEXP_NUM - 1;
+
+        return tables.pDieRecoveryExp[wSTEP];
+    }
+
+    // ---------------------------------------------------------------------------
+    // DieExpMoney
+    //
+    // Original: GLOGICEX::GLDIE_EXPMONEY
+    // ---------------------------------------------------------------------------
+    float DieExpMoney(
+        const CharacterCalculationTables& tables,
+        GameUInt16 wACTLEV)
+    {
+        const int DIE_DECEXP_NUM = 30;
+
+        GameUInt16 wSTEP = static_cast<GameUInt16>(wACTLEV / 10);
+        if (wSTEP >= DIE_DECEXP_NUM)
+            wSTEP = DIE_DECEXP_NUM - 1;
+
+        return tables.pExpRateMoney[wSTEP];
+    }
+
+    // ---------------------------------------------------------------------------
+    // NeedExp
+    //
+    // Original: GLOGICEX::GLNEEDEXP
+    //
+    // if (wLev >= MAX_LEVEL) return 0;
+    // return lnEXP_MAX_TABLE[wLev];
+    // ---------------------------------------------------------------------------
+    GameInt64 NeedExp(
+        const CharacterCalculationTables& tables,
+        GameUInt16 wLev)
+    {
+        const int MAX_LEVEL = 300;
+
+        if (wLev >= MAX_LEVEL)
+            return 0;
+
+        return tables.pExpMaxTable[wLev];
+    }
+
+    // ---------------------------------------------------------------------------
+    // NeedExp2
+    //
+    // Original: GLOGICEX::GLNEEDEXP2
+    //
+    // if (wLev >= MAX_LEVEL) return 0;
+    // return lnEXP_MAX_TABLE_2nd[wLev];
+    // ---------------------------------------------------------------------------
+    GameInt64 NeedExp2(
+        const CharacterCalculationTables& tables,
+        GameUInt16 wLev)
+    {
+        const int MAX_LEVEL = 300;
+
+        if (wLev >= MAX_LEVEL)
+            return 0;
+
+        return tables.pExpMaxTable2nd[wLev];
+    }
 }

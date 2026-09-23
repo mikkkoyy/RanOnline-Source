@@ -16,6 +16,11 @@
 
 namespace GLOGICEX
 {
+	// ---------------------------------------------------------------------------
+	// Adapter: build the portable CharacterCalculationTables from the
+	// existing GLCONST_CHAR runtime data. This lives in the legacy layer
+	// and does NOT pull GLCONST_CHAR into the portable module.
+	// ---------------------------------------------------------------------------
 	//	Note : 주위 환경에 따른 빛 / 어둠  캐릭터의 어드/디스 판단.
 	EM_BRIGHT_FB GLSPACEGAP ( const EMBRIGHT emACTOR, const EMBRIGHT emRECEP, const EMBRIGHT emSPACE )
 	{
@@ -61,72 +66,125 @@ namespace GLOGICEX
 	//	Note : 공격 수행시에 습득하는 경험치 습득량.
 	int GLATTACKEXP ( int nAttackerLev, int nDefenserLev, DWORD dwDamage, DWORD dwMaxHP, DWORD dwBonusExp )
 	{
-		using namespace GLCONST_CHAR;
+		GameCharacterCalculations::CharacterCalculationTables tables;
+		tables.pExpRateTable      = GLCONST_CHAR::fEXP_RATE_TABLE;
+		tables.fKillExpRate      = GLCONST_CHAR::fKILL_EXP_RATE;
+		tables.pDieDecExp        = GLCONST_CHAR::fDIE_DECEXP;
+		tables.pDieRecoveryExp   = GLCONST_CHAR::fDIE_RECOVERYEXP;
+		tables.pExpRateMoney     = GLCONST_CHAR::fEXP_RATE_MONEY;
+		tables.pExpMaxTable      = GLCONST_CHAR::lnEXP_MAX_TABLE;
+		tables.pExpMaxTable2nd   = GLCONST_CHAR::lnEXP_MAX_TABLE_2nd;
 
-		double fRate = static_cast<float>(dwDamage) / static_cast<double>(dwMaxHP);
-		if ( fRate > 1.0f )		fRate = 1.0f;
-
-		float fExpRate = GLCONST_CHAR::GETEXP_RATE ( nAttackerLev, nDefenserLev );
-		int nExp = int ( dwBonusExp * fExpRate * fRate );
-
-		return ( ( nExp < 0 ) ? 0 : nExp );
+		return GameCharacterCalculations::AttackExp(
+			tables,
+			nAttackerLev,
+			nDefenserLev,
+			dwDamage,
+			dwMaxHP,
+			dwBonusExp);
 	}
 
-	//	Note : 상대를 죽였을 경우 경험치 습득량.
-	int	GLKILLEXP ( int nAttackerLev, int nDefenserLev, DWORD dwBonusExp )
+//	Note : 상대를 죽였을 경우 경험치 습득량.
+	int GLKILLEXP ( int nAttackerLev, int nDefenserLev, DWORD dwBonusExp )
 	{
-		float fExpRate = GLCONST_CHAR::GETEXP_RATE ( nAttackerLev, nDefenserLev );
-		int nExp = int ( dwBonusExp * fExpRate * GLCONST_CHAR::fKILL_EXP_RATE );
+	 GameCharacterCalculations::CharacterCalculationTables tables;
+		tables.pExpRateTable      = GLCONST_CHAR::fEXP_RATE_TABLE;
+		tables.fKillExpRate      = GLCONST_CHAR::fKILL_EXP_RATE;
+		tables.pDieDecExp        = GLCONST_CHAR::fDIE_DECEXP;
+		tables.pDieRecoveryExp   = GLCONST_CHAR::fDIE_RECOVERYEXP;
+		tables.pExpRateMoney     = GLCONST_CHAR::fEXP_RATE_MONEY;
+		tables.pExpMaxTable      = GLCONST_CHAR::lnEXP_MAX_TABLE;
+		tables.pExpMaxTable2nd   = GLCONST_CHAR::lnEXP_MAX_TABLE_2nd;
 
-		return ( ( nExp < 0 ) ? 0 : nExp );
+		return GameCharacterCalculations::KillExp(
+			tables,
+			nAttackerLev,
+			nDefenserLev,
+			dwBonusExp);
 	}
 
 	//	죽었을때 경험치 감소.
 	float GLDIE_DECEXP ( WORD wACTLEV )
 	{
-		WORD wSTEP = ( wACTLEV / 10 );
-		if ( wSTEP >= GLCONST_CHAR::DIE_DECEXP_NUM )	wSTEP = GLCONST_CHAR::DIE_DECEXP_NUM-1;
+	 GameCharacterCalculations::CharacterCalculationTables tables;
+		tables.pExpRateTable      = GLCONST_CHAR::fEXP_RATE_TABLE;
+		tables.fKillExpRate      = GLCONST_CHAR::fKILL_EXP_RATE;
+		tables.pDieDecExp        = GLCONST_CHAR::fDIE_DECEXP;
+		tables.pDieRecoveryExp   = GLCONST_CHAR::fDIE_RECOVERYEXP;
+		tables.pExpRateMoney     = GLCONST_CHAR::fEXP_RATE_MONEY;
+		tables.pExpMaxTable      = GLCONST_CHAR::lnEXP_MAX_TABLE;
+		tables.pExpMaxTable2nd   = GLCONST_CHAR::lnEXP_MAX_TABLE_2nd;
 
-		return GLCONST_CHAR::fDIE_DECEXP[wSTEP];
+		return GameCharacterCalculations::DieDecExp(
+			tables,
+			wACTLEV);
 	}
 	
 	//	경험치 복구 비율
 	float GLDIE_RECOVERYEXP ( WORD wACTLEV )
 	{
-		WORD wSTEP = ( wACTLEV / 10 );
-		if ( wSTEP >= GLCONST_CHAR::DIE_DECEXP_NUM )	wSTEP = GLCONST_CHAR::DIE_DECEXP_NUM-1;
+	 GameCharacterCalculations::CharacterCalculationTables tables;
+		tables.pExpRateTable      = GLCONST_CHAR::fEXP_RATE_TABLE;
+		tables.fKillExpRate      = GLCONST_CHAR::fKILL_EXP_RATE;
+		tables.pDieDecExp        = GLCONST_CHAR::fDIE_DECEXP;
+		tables.pDieRecoveryExp   = GLCONST_CHAR::fDIE_RECOVERYEXP;
+		tables.pExpRateMoney     = GLCONST_CHAR::fEXP_RATE_MONEY;
+		tables.pExpMaxTable      = GLCONST_CHAR::lnEXP_MAX_TABLE;
+		tables.pExpMaxTable2nd   = GLCONST_CHAR::lnEXP_MAX_TABLE_2nd;
 
-		return GLCONST_CHAR::fDIE_RECOVERYEXP[wSTEP];
+		return GameCharacterCalculations::DieRecoveryExp(
+			tables,
+			wACTLEV);
 	}
 
 	//  경험치1당 돈
 	float GLDIE_EXPMONEY ( WORD wACTLEV )
 	{
-		WORD wSTEP = ( wACTLEV / 10 );
-		if ( wSTEP >= GLCONST_CHAR::DIE_DECEXP_NUM )	wSTEP = GLCONST_CHAR::DIE_DECEXP_NUM-1;
+	 GameCharacterCalculations::CharacterCalculationTables tables;
+		tables.pExpRateTable      = GLCONST_CHAR::fEXP_RATE_TABLE;
+		tables.fKillExpRate      = GLCONST_CHAR::fKILL_EXP_RATE;
+		tables.pDieDecExp        = GLCONST_CHAR::fDIE_DECEXP;
+		tables.pDieRecoveryExp   = GLCONST_CHAR::fDIE_RECOVERYEXP;
+		tables.pExpRateMoney     = GLCONST_CHAR::fEXP_RATE_MONEY;
+		tables.pExpMaxTable      = GLCONST_CHAR::lnEXP_MAX_TABLE;
+		tables.pExpMaxTable2nd   = GLCONST_CHAR::lnEXP_MAX_TABLE_2nd;
 
-		return GLCONST_CHAR::fEXP_RATE_MONEY[wSTEP];
+		return GameCharacterCalculations::DieExpMoney(
+			tables,
+			wACTLEV);
 	}
 
 	//	Note : 래밸업 하기 위해서 필요한 경험치 총량.
 	LONGLONG GLNEEDEXP ( WORD wLev )
 	{
-		if ( wLev >= MAX_LEVEL )	
-			return 0;
+	 GameCharacterCalculations::CharacterCalculationTables tables;
+		tables.pExpRateTable      = GLCONST_CHAR::fEXP_RATE_TABLE;
+		tables.fKillExpRate      = GLCONST_CHAR::fKILL_EXP_RATE;
+		tables.pDieDecExp        = GLCONST_CHAR::fDIE_DECEXP;
+		tables.pDieRecoveryExp   = GLCONST_CHAR::fDIE_RECOVERYEXP;
+		tables.pExpRateMoney     = GLCONST_CHAR::fEXP_RATE_MONEY;
+		tables.pExpMaxTable      = GLCONST_CHAR::lnEXP_MAX_TABLE;
+		tables.pExpMaxTable2nd   = GLCONST_CHAR::lnEXP_MAX_TABLE_2nd;
 
-		return GLCONST_CHAR::lnEXP_MAX_TABLE[wLev];
-
-		//WORD wLev1 = wLev+1;
-		//WORD wLev2 = wLev+2;
-		//return static_cast<int> ( ( wLev1*wLev + pow(wLev2,2) * ( wLev1 + GLCONST_CHAR::fLVL_EXP_G ) ) * GLCONST_CHAR::fLVL_EXP_S );
+		return GameCharacterCalculations::NeedExp(
+			tables,
+			wLev);
 	}
 
 	LONGLONG GLNEEDEXP2 ( WORD wLev )
 	{
-		if ( wLev >= MAX_LEVEL )	
-			return 0;
+	 GameCharacterCalculations::CharacterCalculationTables tables;
+		tables.pExpRateTable      = GLCONST_CHAR::fEXP_RATE_TABLE;
+		tables.fKillExpRate      = GLCONST_CHAR::fKILL_EXP_RATE;
+		tables.pDieDecExp        = GLCONST_CHAR::fDIE_DECEXP;
+		tables.pDieRecoveryExp   = GLCONST_CHAR::fDIE_RECOVERYEXP;
+		tables.pExpRateMoney     = GLCONST_CHAR::fEXP_RATE_MONEY;
+		tables.pExpMaxTable      = GLCONST_CHAR::lnEXP_MAX_TABLE;
+		tables.pExpMaxTable2nd   = GLCONST_CHAR::lnEXP_MAX_TABLE_2nd;
 
-		return GLCONST_CHAR::lnEXP_MAX_TABLE_2nd[wLev];
+		return GameCharacterCalculations::NeedExp2(
+			tables,
+			wLev);
 	}
 
 	BOOL CHECKSTATEBLOW ( float fACTRATE, WORD wACTLEVEL, WORD wLEVEL, WORD wRESIST )

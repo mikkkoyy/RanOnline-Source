@@ -133,6 +133,145 @@ namespace GameCharacterCalculations
         GameUInt32& dwNow,
         GameUInt32 dwMax,
         int nValue);
+
+    // ========================================================================
+    // Table-driven character calculations (Stage 2B/2C)
+    //
+    // These tables are loaded at runtime from configuration files
+    // (default.charclass, exptable_max.bin, exptable_max_2nd.bin) by
+    // GLCONST_CHAR. The portable module receives const pointers to this
+    // data via CharacterCalculationTables. It does NOT own or load the
+    // data itself, and it does NOT depend on GLCONST_CHAR.
+    //
+    // Compile-time sizes (verified from GLogicData.h):
+    //   EXPTABLE_RANGE       = 61   (level differences -30..+30)
+    //   EXPTABLE_RANGE_BASE  = 30   (offset into the exp-rate table)
+    //   DIE_DECEXP_NUM       = 30   (death tables, indexed by level/10)
+    //   MAX_LEVEL            = 300  (level EXP tables)
+    // ========================================================================
+
+    struct CharacterCalculationTables
+    {
+        // EXP rate table indexed by (defenserLev - attackerLev + 30),
+        // clamped to [0, 60]. 61 entries.
+        const float* pExpRateTable;      // EXPTABLE_RANGE = 61
+
+        // Kill EXP rate scalar.
+        float fKillExpRate;
+
+        // Death EXP reduction table, indexed by (level / 10),
+        // clamped to [0, 29]. 30 entries.
+        const float* pDieDecExp;         // DIE_DECEXP_NUM = 30
+
+        // Death EXP recovery table, indexed by (level / 10),
+        // clamped to [0, 29]. 30 entries.
+        const float* pDieRecoveryExp;    // DIE_DECEXP_NUM = 30
+
+        // EXP-to-money table, indexed by (level / 10),
+        // clamped to [0, 29]. 30 entries.
+        const float* pExpRateMoney;      // DIE_DECEXP_NUM = 30
+
+        // Normal level EXP table, indexed by level [0, MAX_LEVEL-1].
+        // 300 entries.
+        const GameInt64* pExpMaxTable;       // MAX_LEVEL = 300
+
+        // Second level EXP table, indexed by level [0, MAX_LEVEL-1].
+        // 300 entries.
+        const GameInt64* pExpMaxTable2nd;    // MAX_LEVEL = 300
+    };
+
+    // ---------------------------------------------------------------------------
+    // EXP rate lookup.
+    //
+    // Legacy: GLCONST_CHAR::GETEXP_RATE
+    //
+    // nResultIndex = (nDefenserLev - nAttackerLev) + EXPTABLE_RANGE_BASE
+    // clamped to [0, EXPTABLE_RANGE-1]
+    // ---------------------------------------------------------------------------
+    float GetExpRate(
+        const CharacterCalculationTables& tables,
+        int nAttackerLev,
+        int nDefenserLev);
+
+    // ---------------------------------------------------------------------------
+    // Attack EXP calculation.
+    //
+    // Legacy: GLOGICEX::GLATTACKEXP
+    //
+    // fRate = dwDamage / dwMaxHP, upper-clamped to 1.0
+    // nExp = int(dwBonusExp * GetExpRate * fRate)
+    // negative result -> 0
+    // ---------------------------------------------------------------------------
+    int AttackExp(
+        const CharacterCalculationTables& tables,
+        int nAttackerLev,
+        int nDefenserLev,
+        GameUInt32 dwDamage,
+        GameUInt32 dwMaxHP,
+        GameUInt32 dwBonusExp);
+
+    // ---------------------------------------------------------------------------
+    // Kill EXP calculation.
+    //
+    // Legacy: GLOGICEX::GLKILLEXP
+    //
+    // nExp = int(dwBonusExp * GetExpRate * fKillExpRate)
+    // negative result -> 0
+    // ---------------------------------------------------------------------------
+    int KillExp(
+        const CharacterCalculationTables& tables,
+        int nAttackerLev,
+        int nDefenserLev,
+        GameUInt32 dwBonusExp);
+
+    // ---------------------------------------------------------------------------
+    // Death EXP reduction.
+    //
+    // Legacy: GLOGICEX::GLDIE_DECEXP
+    //
+    // wSTEP = wACTLEV / 10, upper-clamped to DIE_DECEXP_NUM-1 (29)
+    // ---------------------------------------------------------------------------
+    float DieDecExp(
+        const CharacterCalculationTables& tables,
+        GameUInt16 wACTLEV);
+
+    // ---------------------------------------------------------------------------
+    // Death EXP recovery.
+    //
+    // Legacy: GLOGICEX::GLDIE_RECOVERYEXP
+    // ---------------------------------------------------------------------------
+    float DieRecoveryExp(
+        const CharacterCalculationTables& tables,
+        GameUInt16 wACTLEV);
+
+    // ---------------------------------------------------------------------------
+    // EXP-to-money.
+    //
+    // Legacy: GLOGICEX::GLDIE_EXPMONEY
+    // ---------------------------------------------------------------------------
+    float DieExpMoney(
+        const CharacterCalculationTables& tables,
+        GameUInt16 wACTLEV);
+
+    // ---------------------------------------------------------------------------
+    // Level EXP requirement.
+    //
+    // Legacy: GLOGICEX::GLNEEDEXP
+    //
+    // wLev >= MAX_LEVEL (300) -> 0, otherwise direct table lookup
+    // ---------------------------------------------------------------------------
+    GameInt64 NeedExp(
+        const CharacterCalculationTables& tables,
+        GameUInt16 wLev);
+
+    // ---------------------------------------------------------------------------
+    // Second level EXP requirement.
+    //
+    // Legacy: GLOGICEX::GLNEEDEXP2
+    // ---------------------------------------------------------------------------
+    GameInt64 NeedExp2(
+        const CharacterCalculationTables& tables,
+        GameUInt16 wLev);
 }
 
 // Convenience aliases in the global namespace for minimal friction
