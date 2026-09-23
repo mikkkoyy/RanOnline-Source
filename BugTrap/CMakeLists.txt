@@ -56,7 +56,7 @@ target_include_directories(Lib_BugTrap PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/res
     $<$<CONFIG:Debug>:
         ${CMAKE_CURRENT_SOURCE_DIR}/Sources
-        ${CMAKE_SOURCE_DIR}/Lib_ZLib/Sources
+        ${CMAKE_SOURCE_DIR}/Lib_ZLib
     >
     $<$<CONFIG:Release>:
         ${CMAKE_SOURCE_DIR}/Lib_ZLib
