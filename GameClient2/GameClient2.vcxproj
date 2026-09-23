@@ -90,7 +90,7 @@
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>libcmt.lib;libcmtd.lib</IgnoreSpecificDefaultLibraries>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
-      <AdditionalLibraryDirectories>../Tik/DXInclude;../Tik/DXLib;../Tik/Include;../Tik/Library;../Tik/TbbLib;../Tik/HS;../_Bin/Data;$(SolutionDir)..\RanOnline-Build\Release\Lib_BugTrap;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>../Tik/DXInclude;../Tik/DXLib;../Tik/Include;../Tik/Library;../Tik/TbbLib;../Tik/HS;../_Bin/Data;$(SolutionDir)..\RanOnline-Build\Release\Lib_BugTrap;$(SolutionDir)..\RanOnline-Build\Release\Lib_Helper;$(SolutionDir)..\RanOnline-Build\Release\Lib_Engine;$(SolutionDir)..\RanOnline-Build\Release\Lib_Network;$(SolutionDir)..\RanOnline-Build\Release\Lib_Client;$(SolutionDir)..\RanOnline-Build\Release\Lib_ClientUI;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
       <AdditionalDependencies>dsound.lib;dinput8.lib;dxerr9.lib;d3dx9.lib;d3d9.lib;d3dxof.lib;dxguid.lib;imm32.lib;libogg.lib;libvorbis_static.lib;libvorbisfile_static.lib;version.lib;legacy_stdio_definitions.lib;d3d11.lib;dxgi.lib;BugTrap.lib;Lib_Helper.lib;Lib_Engine.lib;Lib_Network.lib;Lib_Client.lib;Lib_ClientUI.lib;HShield.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>

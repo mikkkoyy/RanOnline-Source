@@ -8,10 +8,10 @@
 
 
 #ifdef _DEBUG
-#pragma comment("../../_Bin/Data/Lib_ZLibD.lib")
+#pragma comment("../../RanOnline-Build/Debug/Lib_ZLib/ZLibD.lib")
 #define new DEBUG_NEW
 #else
-#pragma comment("../../_Bin/Data/Lib_ZLib.lib")
+#pragma comment("../../RanOnline-Build/Release/Lib_ZLib/Lib_ZLib.lib")
 #endif
 
 //////////////////////////////////////////////////////////////////////
