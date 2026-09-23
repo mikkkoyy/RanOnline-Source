@@ -23,6 +23,7 @@
 
 #include "GameClient2.h"
 #include "GameClient2Wnd.h"
+#include "RendererTypes.h"
 
 #include "D3DFont.h"
 #include "BlockProg.h"
@@ -570,8 +571,14 @@ HRESULT CGameClient2Wnd::Render()
 	DxFogMan::GetInstance().RenderFogSB ( m_pd3dDevice );
 	colorClear = DxFogMan::GetInstance().GetFogColor();
 
+	RendererColor rcClear;
+	rcClear.r = ( ( ( colorClear >> 16 ) & 0xFF ) / 255.0f );
+	rcClear.g = ( ( ( colorClear >> 8 ) & 0xFF ) / 255.0f );
+	rcClear.b = ( ( colorClear & 0xFF ) / 255.0f );
+	rcClear.a = ( ( ( colorClear >> 24 ) & 0xFF ) / 255.0f );
+
 	// Clear the viewport
-	m_pRenderer->Clear ( colorClear );
+	m_pRenderer->Clear ( rcClear );
 
 	// Begin the scene
 	if( m_pRenderer->BeginScene () )

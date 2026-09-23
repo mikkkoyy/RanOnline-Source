@@ -155,6 +155,7 @@
     <ClInclude Include="DxRendererDX9.h" />
     <ClInclude Include="DxRendererDX11.h" />
     <ClInclude Include="IRenderer.h" />
+    <ClInclude Include="RendererTypes.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.txt" />

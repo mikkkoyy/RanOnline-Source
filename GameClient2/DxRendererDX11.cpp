@@ -119,14 +119,14 @@ void DxRendererDX11::Shutdown ()
 	m_bValid = false;
 }
 
-void DxRendererDX11::Clear ( D3DCOLOR Color )
+void DxRendererDX11::Clear ( const RendererColor& Color )
 {
 	if ( !m_pd3dDevice || !m_pRenderTarget ) return;
-	float color[4];
-	color[0] = ( ( ( Color >> 16 ) & 0xFF ) / 255.0f );
-	color[1] = ( ( ( Color >> 8 ) & 0xFF ) / 255.0f );
-	color[2] = ( ( Color & 0xFF ) / 255.0f );
-	color[3] = ( ( ( Color >> 24 ) & 0xFF ) / 255.0f );
+	float color [4];
+	color [0] = Color.r;
+	color [1] = Color.g;
+	color [2] = Color.b;
+	color [3] = Color.a;
 	m_pContext->ClearRenderTargetView ( m_pRenderTarget, color );
 }
 

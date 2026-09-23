@@ -25,10 +25,15 @@ void DxRendererDX9::Shutdown ()
 	m_bValid = false;
 }
 
-void DxRendererDX9::Clear ( D3DCOLOR Color )
+void DxRendererDX9::Clear ( const RendererColor& Color )
 {
 	if ( !m_pd3dDevice ) return;
-	m_pd3dDevice->Clear ( 0L, NULL, D3DCLEAR_TARGET|D3DCLEAR_ZBUFFER, Color, 1.0f, 0L );
+	D3DCOLOR color = D3DCOLOR_ARGB (
+		static_cast<BYTE> ( Color.a * 255.0f ),
+		static_cast<BYTE> ( Color.r * 255.0f ),
+		static_cast<BYTE> ( Color.g * 255.0f ),
+		static_cast<BYTE> ( Color.b * 255.0f ) );
+	m_pd3dDevice->Clear ( 0L, NULL, D3DCLEAR_TARGET|D3DCLEAR_ZBUFFER, color, 1.0f, 0L );
 }
 
 bool DxRendererDX9::BeginScene ()

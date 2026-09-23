@@ -14,7 +14,7 @@ public:
 	void Shutdown ();
 
 	// IRenderer
-	virtual void Clear ( D3DCOLOR Color ) override;
+	virtual void Clear ( const RendererColor& Color ) override;
 	virtual bool BeginScene () override;
 	virtual void EndScene () override;
 	virtual bool IsValid () const override;
