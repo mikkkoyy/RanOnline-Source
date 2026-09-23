@@ -17,6 +17,15 @@
 #include "../../Lib_Engine/G-Logic/GLOGIC.h"
 #include "../../Lib_Engine/G-Logic/GLPeriod.h"
 
+//
+//	Note : Renderer / tool side dependency.
+//
+//	The skill data itself (GLSKILL, see GLSkillData.h) never depends on DirectX.
+//	Only the manager below drives renderer resources, therefore the renderer
+//	headers are included here and not in the skill data header.
+//
+#include "../../Lib_Engine/Meshs/DxSkinAniMan.h"
+
 /*ABL system, Juver, 2017/05/29 */
 #include "../../Lib_Engine/Meshs/DxAttBoneData.h"
 #include "../../Lib_Engine/Meshs/DxAttBoneLink.h"
@@ -792,6 +801,13 @@ const char* GLSKILL::GetDesc()
 
 //---------------------------------------------------------------------------
 //---------------------------------------------------------------------------
+//
+//	Note : Renderer / tool boundary.
+//
+//	The renderer device and the animation resources belong to the manager side of
+//	the boundary ; the portable skill data (GLSKILL) is owned below but never
+//	requires a DirectX device to exist.
+//
 GLSkillMan::GLSkillMan () 
 	: m_pd3dDevice(NULL)
 	, m_bModify(false)
@@ -814,7 +830,13 @@ HRESULT GLSkillMan::OneTimeSceneInit ()
 	return S_OK;
 }
 
-HRESULT GLSkillMan::InitDeviceObjects ( LPDIRECT3DDEVICEQ pd3dDevice )
+//
+//	Note : Renderer boundary.
+//
+//	The device pointer handed over by the renderer is only stored by the manager,
+//	the portable skill data never sees it.
+//
+HRESULT GLSkillMan::InitDeviceObjects ( GLSkillDeviceHandle pd3dDevice )
 {
 	m_pd3dDevice = pd3dDevice;
 

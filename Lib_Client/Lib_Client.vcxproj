@@ -514,6 +514,7 @@
     <ClInclude Include="G-Logic\GLQuestStep.h" />
     <ClInclude Include="G-Logic\GLSchoolFreePK.h" />
     <ClInclude Include="G-Logic\GLSkill.h" />
+    <ClInclude Include="G-Logic\GLSkillData.h" />
     <ClInclude Include="G-Logic\GLSkillApply.h" />
     <ClInclude Include="G-Logic\GLSkillBasic.h" />
     <ClInclude Include="G-Logic\GLSkillDefine.h" />

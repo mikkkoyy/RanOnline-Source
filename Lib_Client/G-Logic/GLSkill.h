@@ -5,75 +5,46 @@
 #pragma once
 #endif // _MSC_VER > 1000
 
-#include "./GLItemDef.h"
-#include "./GLCharDefine.h"
+//
+//	GLSkill.h
+//
+//	Renderer / tool boundary for the skill data (GLSkillMan).
+//
+//	The portable skill data (GLSKILL) lives in GLSkillData.h and does not know
+//	about any renderer.  This header adds the manager, which owns everything that
+//	is not portable :
+//
+//		* the DirectX device handle the client hands over to the manager
+//		* the animation / resource setup the skill data is validated against
+//		* the editor (CWnd based) CSV import / export entry points
+//
+//	A DirectX device is therefore only required here, and only for the renderer
+//	dependent part of the manager - never merely to hold skill data.
+//
 
-#include "../../Lib_Engine/Common/basestream.h"
-#include "../../Lib_Engine/G-Logic/GLDefine.h"
+#include "./GLSkillData.h"
+
+//
+//	Note : Renderer / tool side dependency.
+//
+//	Because this header is the renderer / tool side of the boundary it keeps the
+//	animation / resource header available, exactly as before, for the consumers
+//	that need the animation metadata next to the skill manager (the skill editor
+//	and the skill UI).  The portable skill data header GLSkillData.h does not
+//	include it.
+//
 #include "../../Lib_Engine/Meshs/DxSkinAniMan.h"
 
-#include "./GLSkillBasic.h"
-#include "./GLSkillApply.h"
-#include "./GLSkillLearn.h"
-#include "./GLSkillExData.h"
-#include "./GLSkillSpecial.h"
-
-#define CHECK_FLAG_SKILL(dwBitFlag, iRealValue) (dwBitFlag & (1 << iRealValue) ? true : false)
-
-struct GLSKILL
-{
-	enum
-	{
-		VERSION			= 0x0100,
-
-		FILE_SBASIC			= 1,
-		FILE_SAPPLY			= 2,
-		FILE_SLEARN			= 3,
-		FILE_SEXT_DATA		= 4,
-		FILE_SPECIAL_SKILL = 5,
-
-		FILE_END_DATA	= 0xEDEDEDED,
-	};
-
-	SKILL::SSKILLBASIC	  m_sBASIC;
-	SKILL::SAPPLY		  m_sAPPLY;
-	SKILL::SLEARN		  m_sLEARN;
-	SKILL::SEXT_DATA	  m_sEXT_DATA;
-	SKILL::SSPECIAL_SKILL m_sSPECIAL_SKILL;
-
-	GLSKILL ()
-	{
-	}
-
-	BOOL SaveFile ( CSerialFile &SFile );
-	BOOL LoadFile ( basestream &SFile, bool bPastLoad );
-
-	static VOID SaveCsvHead ( std::fstream &SFile );
-	VOID SaveCsv ( std::fstream &SFile );
-	VOID LoadCsv ( CStringArray &StrArray, int iLine );
-	VOID LoadCsv_oldj ( CStringArray &StrArray, int iLine );
-	GLSKILL*		GetSecondSkill();
-
-	GLSKILL& operator= ( GLSKILL &value )
-	{
-		m_sBASIC		 = value.m_sBASIC;
-		m_sAPPLY		 = value.m_sAPPLY;
-		m_sLEARN		 = value.m_sLEARN;
-		m_sEXT_DATA		 = value.m_sEXT_DATA;
-		m_sSPECIAL_SKILL = value.m_sSPECIAL_SKILL;
-
-		return *this;
-	}
-
-	bool	IsSkillFact ();		//	지속성 스킬
-	const char* GetName();
-    const std::string GetNameStr() const;
-	const char* GetDesc();
-
-	inline SNATIVEID	GetId() const { return m_sBASIC.GetId(); };
-
-};
-typedef GLSKILL* PGLSKILL;
+//
+//	Note : Opaque renderer handle.
+//
+//	GLSkillMan only stores the device pointer handed over by the renderer, it never
+//	dereferences it, so the DirectX declaration itself is not needed to declare the
+//	skill manager.  LPDIRECT3DDEVICEQ expands to IDirect3DDevice9*, therefore
+//	existing callers keep working unchanged.
+//
+struct IDirect3DDevice9;
+typedef IDirect3DDevice9* GLSkillDeviceHandle;
 
 class GLSkillMan
 {
@@ -97,7 +68,7 @@ protected:
 	bool				m_bModify;
 	PGLSKILL			m_pSkills[EMSKILLCLASS_NSIZE][MAX_CLASSSKILL];
 
-	LPDIRECT3DDEVICEQ	m_pd3dDevice;
+	GLSkillDeviceHandle	m_pd3dDevice;
 
 public:
 	PGLSKILL GetData ( const WORD wClass, const WORD Index );
@@ -118,7 +89,7 @@ public:
 
 public:
 	HRESULT OneTimeSceneInit ();
-	HRESULT InitDeviceObjects ( LPDIRECT3DDEVICEQ pd3dDevice );
+	HRESULT InitDeviceObjects ( GLSkillDeviceHandle pd3dDevice );
 	HRESULT DeleteDeviceObjects ();
 	HRESULT FinalCleanup ();
 
@@ -144,6 +115,7 @@ public:
 public:
 	static GLSkillMan& GetInstance();
 };
+
 
 
 
