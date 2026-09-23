@@ -115,6 +115,7 @@
     <ClInclude Include="Common\ByteCryptDefVer2.h" />
     <ClInclude Include="Common\ByteStream.h" />
     <ClInclude Include="Common\CFileFind.h" />
+    <ClInclude Include="Common\GameTypes.h" />
     <ClInclude Include="Common\charset.h" />
     <ClInclude Include="Common\CList.h" />
     <ClInclude Include="Common\cmacro.h" />
