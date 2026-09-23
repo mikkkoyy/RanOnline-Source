@@ -165,7 +165,10 @@ BOOL CGameClient2Wnd::Create()
 
 	if ( FAILED( CD3DApplication::Create ( m_hWnd, m_hWnd, AfxGetInstanceHandle() ) ) )
 		return FALSE;
-	
+
+	m_pRenderer = new DxRendererDX9 ();
+	m_pRenderer->Initialize ( m_pd3dDevice );
+
 	m_bCreated = TRUE;
 	g_hWnd = m_hWnd;
 
@@ -177,6 +180,13 @@ void CGameClient2Wnd::PostNcDestroy()
 	::UnregisterClass( AfxGetAppName(), AfxGetInstanceHandle() ); 
 
 	Cleanup3DEnvironment();
+
+	if ( m_pRenderer )
+	{
+		m_pRenderer->Shutdown ();
+		delete m_pRenderer;
+		m_pRenderer = NULL;
+	}
 
 	CWnd::PostNcDestroy();
 

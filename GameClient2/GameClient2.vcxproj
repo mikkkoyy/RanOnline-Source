@@ -140,6 +140,7 @@
     <ClCompile Include="GameClient2HS.cpp" />
     <ClCompile Include="GameClient2Wnd.cpp" />
     <ClCompile Include="GameClient2WndD3d.cpp" />
+    <ClCompile Include="DxRendererDX9.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
@@ -150,6 +151,8 @@
     <ClInclude Include="GameClient2Wnd.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="stdafx.h" />
+    <ClInclude Include="DxRendererDX9.h" />
+    <ClInclude Include="IRenderer.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.txt" />

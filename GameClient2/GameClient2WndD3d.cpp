@@ -571,10 +571,10 @@ HRESULT CGameClient2Wnd::Render()
 	colorClear = DxFogMan::GetInstance().GetFogColor();
 
 	// Clear the viewport
-	hr = m_pd3dDevice->Clear( 0L, NULL, D3DCLEAR_TARGET|D3DCLEAR_ZBUFFER,colorClear, 1.0f, 0L );
+	m_pRenderer->Clear ( colorClear );
 
 	// Begin the scene
-	if( SUCCEEDED(hr=m_pd3dDevice->BeginScene()) )
+	if( m_pRenderer->BeginScene () )
 	{
 		DxLightMan::GetInstance()->Render ( m_pd3dDevice );
 
@@ -641,11 +641,11 @@ HRESULT CGameClient2Wnd::Render()
 
 		RenderText();
 
-		m_pd3dDevice->EndScene();
+		m_pRenderer->EndScene ();
 
 		return S_OK;
 	}else{
-		m_pd3dDevice->EndScene();
+		m_pRenderer->EndScene ();
 	}
 
 	PROFILE_END2("Render");
