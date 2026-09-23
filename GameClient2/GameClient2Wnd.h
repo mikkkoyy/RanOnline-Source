@@ -6,7 +6,7 @@
 #pragma once
 
 #include "D3DApp.h"
-#include "IRenderer.h"
+#include "DxRendererDX9.h"
 
 
 /*hackshield implementation, Juver, 2018/06/21 */
@@ -39,7 +39,7 @@ private:
 public:
 	LPDIRECT3DDEVICEQ GetD3dDevice ()	{ return m_pd3dDevice; }
 
-	IRenderer*	m_pRenderer;
+	DxRendererDX9*	m_pRenderer;
 
 public:
 	HRESULT InitDeviceObjects();

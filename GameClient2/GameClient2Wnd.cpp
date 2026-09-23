@@ -30,6 +30,7 @@ HWND g_hWnd(NULL);
 
 CGameClient2Wnd::CGameClient2Wnd() :
 	CD3DApplication(),
+	m_pRenderer(NULL),
 	m_bCreated(FALSE),
 	m_wndSizeX(1024),
 	m_wndSizeY(768),
