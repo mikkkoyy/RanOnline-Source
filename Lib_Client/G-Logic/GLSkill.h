@@ -40,8 +40,9 @@
 //
 //	GLSkillMan only stores the device pointer handed over by the renderer, it never
 //	dereferences it, so the DirectX declaration itself is not needed to declare the
-//	skill manager.  LPDIRECT3DDEVICEQ expands to IDirect3DDevice9*, therefore
-//	existing callers keep working unchanged.
+//	skill manager.  The DirectX device macro used by the client expands to a
+//	pointer to this forward declared struct, therefore existing callers keep
+//	working unchanged.
 //
 struct IDirect3DDevice9;
 typedef IDirect3DDevice9* GLSkillDeviceHandle;
