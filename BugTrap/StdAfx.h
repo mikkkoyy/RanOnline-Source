@@ -92,7 +92,7 @@ struct _IMAGELIST { }; // unresolved typeref token
 #endif
 #else
 #ifdef _DEBUG
-#pragma comment(lib, "Lib_ZLibD.lib")
+#pragma comment(lib, "ZLibD.lib")
 #else
 #pragma comment(lib, "Lib_ZLib.lib")
 #endif
