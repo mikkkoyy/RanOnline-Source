@@ -97,7 +97,7 @@
       <ConformanceMode>false</ConformanceMode>
       <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>./;./Sources;./Sources/DaumParam;./Sources/ExLibs;./Sources/RanOnlineLanchClipboard;../Lib_Engine/Sources/Common;../Lib_Engine/Sources/DxCommon;../Lib_Engine/Sources/DxCommon9;../Lib_Engine/Sources/DxTools;../Lib_Engine/Sources/G-Logic;../Dependency/common;../Dependency/directx;../Dependency/lzo</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>./;./Sources;./Sources/DaumParam;./Sources/ExLibs;./Sources/RanOnlineLanchClipboard;../Lib_Engine/Sources/Common;../Lib_Engine/Sources/DxCommon;../Lib_Engine/Sources/DxCommon9;../Lib_Engine/Sources/DxTools;../Lib_Engine/Sources/G-Logic;../Dependency/common;../Dependency/directx;../Dependency/lzo;../Tik/DXInclude</AdditionalIncludeDirectories>
       <MinimalRebuild>false</MinimalRebuild>
     </ClCompile>
     <Link>
