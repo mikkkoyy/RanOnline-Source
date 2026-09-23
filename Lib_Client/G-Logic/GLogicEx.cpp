@@ -19,36 +19,20 @@ namespace GLOGICEX
 	//	Note : 주위 환경에 따른 빛 / 어둠  캐릭터의 어드/디스 판단.
 	EM_BRIGHT_FB GLSPACEGAP ( const EMBRIGHT emACTOR, const EMBRIGHT emRECEP, const EMBRIGHT emSPACE )
 	{
-		if ( emACTOR==emRECEP )		return BFB_AVER;
-
-		if ( emSPACE==BRIGHT_LIGHT )
-		{
-			if ( emACTOR==BRIGHT_LIGHT && emRECEP==BRIGHT_DARK )	return BFB_ADV;
-			if ( emACTOR==BRIGHT_DARK && emRECEP==BRIGHT_LIGHT )	return BFB_DIS;
-		}
-		else
-		{
-			if ( emACTOR==BRIGHT_LIGHT && emRECEP==BRIGHT_DARK )	return BFB_DIS;
-			if ( emACTOR==BRIGHT_DARK && emRECEP==BRIGHT_LIGHT )	return BFB_ADV;
-		}
-
-		return BFB_AVER;
+		return static_cast<EM_BRIGHT_FB>(
+		 GameCharacterCalculations::SpaceGap(
+			 static_cast<GameCharacterCalculations::GameBright>(emACTOR),
+			 static_cast<GameCharacterCalculations::GameBright>(emRECEP),
+			 static_cast<GameCharacterCalculations::GameBright>(emSPACE)));
 	}
 
 	//	Note : 공격 성공율 계산.
 	int GLHITRATE ( const int nHit, const int nAvoid, const EM_BRIGHT_FB bFB )
 	{
-		//	Note : 성공율 상수.
-		const int nBirght[3] = { -10, 0, 10 };
-		enum { MAX_HIT = 99, MIN_HIT = 20, BASIC = 100,  };
-
-		int hitRate;
-		hitRate = BASIC + nHit - nAvoid + nBirght[bFB];
-
-		if ( hitRate > MAX_HIT )			hitRate = MAX_HIT;
-		else if ( hitRate < MIN_HIT )		hitRate = MIN_HIT;
-
-		return hitRate;
+		return GameCharacterCalculations::HitRate(
+			nHit,
+			nAvoid,
+			static_cast<GameCharacterCalculations::GameBrightFB>(bFB));
 	}
 
 	// Note : Strock TRUE/FALSE 산출.	예) 적이 공격 동작시 취소가 되어 다시 동작을 취해야 한다.
@@ -67,10 +51,11 @@ namespace GLOGICEX
 	//	Note : 방어력 , 주위 환경 속성에 따라 계산.
 	int GLDEFENSE ( const int nDEFENSE, const EMBRIGHT emACTOR, const EMBRIGHT emRecep, const EMBRIGHT emSPACE )
 	{
-		float fFactor[BFB_SIZE] = { 0.8f, 1.0f, 1.2f };
-		EM_BRIGHT_FB brightFB = GLSPACEGAP ( emACTOR, emRecep, emSPACE );
-
-		return int(nDEFENSE*fFactor[brightFB]);
+		return GameCharacterCalculations::Defense(
+			nDEFENSE,
+			static_cast<GameCharacterCalculations::GameBright>(emACTOR),
+			static_cast<GameCharacterCalculations::GameBright>(emRecep),
+			static_cast<GameCharacterCalculations::GameBright>(emSPACE));
 	}
 
 	//	Note : 공격 수행시에 습득하는 경험치 습득량.
@@ -157,7 +142,11 @@ namespace GLOGICEX
 
 	float SKILLDELAY ( DWORD dwSKILL_GRADE, WORD wSKILL_LEV, WORD wCHAR_LEVEL, float fDelay )
 	{
-		return static_cast<float>(dwSKILL_GRADE*wSKILL_LEV)/static_cast<float>(wCHAR_LEVEL) + fDelay;
+		return GameCharacterCalculations::SkillDelay(
+			dwSKILL_GRADE,
+			wSKILL_LEV,
+			wCHAR_LEVEL,
+			fDelay);
 	}
 
 	float WEATHER_ELEMENT_POW ( EMELEMENT emElement, DWORD dwWeather, BOOL bWeatherActive )
