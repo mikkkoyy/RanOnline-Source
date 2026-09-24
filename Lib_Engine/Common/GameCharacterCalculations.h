@@ -135,6 +135,62 @@ namespace GameCharacterCalculations
         int nValue);
 
     // ========================================================================
+    // Stage 2E — RNG-dependent character calculations.
+    //
+    // These functions accept a caller-supplied normalized random value
+    // in [0.0, 1.0]. The portable layer does NOT generate randomness;
+    // the legacy layer supplies it from RANDOM_POS, seqrandom::getpercent(),
+    // or any future RNG source.
+    //
+    // See GameRandom.h for the probability primitives these consume.
+    // ========================================================================
+
+    // ---------------------------------------------------------------------------
+    // CheckShock — shock/stun probability check.
+    //
+    // Legacy: GLOGICEX::CHECKSHOCK
+    //
+    // enum { CLEANHIT_RATE = 1, CRITICALHIT_RATE = 5, MIN_DXLEVEL = 5, MIN_DAMAGE = 6 };
+    // int nDXLEV = nDEFLEV - nACTLEV;
+    // if ( (-MIN_DXLEVEL) > nDXLEV )   return FALSE;
+    // if ( (nACTLEV+MIN_DAMAGE) > nDamage ) return FALSE;
+    // if ( bCritical ) return (CRITICALHIT_RATE > (RANDOM_POS*100));
+    // return (CLEANHIT_RATE > (RANDOM_POS*100));
+    //
+    // Equivalent to GameRandom::CheckProbability(rate, randomValue).
+    // ---------------------------------------------------------------------------
+    bool CheckShock(
+        int nACTLEV,
+        int nDEFLEV,
+        int nDamage,
+        bool bCritical,
+        float randomValue);
+
+    // ---------------------------------------------------------------------------
+    // CheckStateBlow — state-blow (ailment) probability check.
+    //
+    // Legacy: GLOGICEX::CHECKSTATEBLOW
+    //
+    // int nDXLEVEL = int(wLEVEL - wACTLEVEL);
+    // int nINDEX = nDXLEVEL + nStateBlowLevelBase;
+    // if (nINDEX < 0) nINDEX = 0;
+    // if (nINDEX >= nStateBlowLevelSize) nINDEX = nStateBlowLevelSize-1;
+    // return (RANDOM_POS*100.0f) < (fACTRATE - fACTRATE * 0.01f * wRESIST * 0.6f
+    //                                + nStateBlowLevel[nINDEX]);
+    //
+    // Equivalent to GameRandom::CheckProbability(threshold, randomValue).
+    // ---------------------------------------------------------------------------
+    bool CheckStateBlow(
+        float fACTRATE,
+        GameUInt16 wACTLEVEL,
+        GameUInt16 wLEVEL,
+        GameUInt16 wRESIST,
+        const int* pStateBlowLevel,
+        int nStateBlowLevelBase,
+        int nStateBlowLevelSize,
+        float randomValue);
+
+    // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //
     // These tables are loaded at runtime from configuration files
