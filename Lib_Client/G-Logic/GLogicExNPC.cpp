@@ -741,9 +741,9 @@ void GLCROWLOGIC::UPDATE_DATA ( float fTime, float fElapsedTime, BOOL bClient )
 	if ( m_pCrowData->IsRecVisible() )	m_bRECVISIBLE = true;
 
 	//	방어력. 변화율 반영.
-	m_nSUM_DEFENSE = int ( m_nSUM_DEFENSE * m_fDefenseRate );
-	//	방어력이 - 값을 가지지 않게.
-	if ( m_nSUM_DEFENSE < 0 )			m_nSUM_DEFENSE = 1;
+	m_nSUM_DEFENSE = GameCharacterCalculations::ApplyDefenseRate(
+		m_nSUM_DEFENSE,
+		m_fDefenseRate);
 
 	m_sSUMRESIST.LIMIT();
 
