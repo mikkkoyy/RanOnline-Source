@@ -117,6 +117,7 @@
     <ClInclude Include="Common\CFileFind.h" />
     <ClInclude Include="Common\GameTypes.h" />
 	<ClInclude Include="Common\GameCharacterCalculations.h" />
+    <ClInclude Include="Common\GameInput.h" />
     <ClInclude Include="Common\GameSerializationTypes.h" />
     <ClInclude Include="Common\GameRandom.h" />
     <ClInclude Include="Common\charset.h" />
@@ -486,6 +487,7 @@
     <ClCompile Include="Common\ByteCrypt.cpp" />
     <ClCompile Include="Common\ByteStream.cpp" />
 	<ClCompile Include="Common\GameCharacterCalculations.cpp" />
+    <ClCompile Include="Common\GameInput.cpp" />
     <ClCompile Include="Common\CFileFind.cpp" />
     <ClCompile Include="Common\charset.cpp" />
     <ClCompile Include="Common\CommonWeb.cpp" />

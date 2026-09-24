@@ -1171,4 +1171,91 @@ _RETURN:
 }
 
 
+// ---------------------------------------------------------------------------
+// GameInput::IInputDevice implementation.
+//
+// These thin adapters expose the existing DirectInput/Win32 state through the
+// portable GameInput contract. The platform-specific code lives in the
+// methods above; this layer only translates the legacy scan-code / mouse-key
+// representation into the portable GameKey / GameMouseState representation.
+// No DirectInput, Win32, or MFC types are exposed through the contract.
+// ---------------------------------------------------------------------------
+
+// --- Lifecycle ---
+
+void DxInputDevice::Initialize(void* windowHandle)
+{
+	if ( windowHandle != NULL )
+	{
+		m_hWnd = reinterpret_cast<HWND>(windowHandle);
+	}
+}
+
+void DxInputDevice::Shutdown()
+{
+	DeleteDeviceObjects();
+}
+
+void DxInputDevice::Update(float time, float elapsedTime,
+                           bool defaultWindow, bool inGame)
+{
+	FrameMove( time, elapsedTime,
+	           static_cast<BOOL>(defaultWindow),
+	           static_cast<BOOL>(inGame) );
+}
+
+// --- Keyboard ---
+
+GameInput::GameKeyState DxInputDevice::GetKeyState(GameKey key) const
+{
+	return static_cast<GameInput::GameKeyState>(
+		m_KeyState[static_cast<BYTE>(key)]);
+}
+
+bool DxInputDevice::IsKeyDown(GameKey key) const
+{
+	return ( GetKeyState(key) & GameInput::GameKeyState::Downed )
+	       == GameInput::GameKeyState::Downed;
+}
+
+bool DxInputDevice::IsKeyReleased(GameKey key) const
+{
+	return ( GetKeyState(key) & GameInput::GameKeyState::Up )
+	       == GameInput::GameKeyState::Up;
+}
+
+// --- Mouse ---
+
+GameInput::GameMouseState DxInputDevice::GetMouseState() const
+{
+ GameInput::GameMouseState state;
+	state.x = m_MouseLocateX;
+	state.y = m_MouseLocateY;
+	state.dx = m_MouseMoveDX;
+	state.dy = m_MouseMoveDY;
+	state.dz = m_MouseMoveDZ;
+
+	for ( int i = 0; i < 8; ++i )
+	{
+		state.buttons[i] = static_cast<GameInput::GameKeyState>(m_MouseState[i]);
+	}
+
+	return state;
+}
+
+void DxInputDevice::GetMouseMove(int& dx, int& dy, int& dz) const
+{
+	dx = m_MouseMoveDX;
+	dy = m_MouseMoveDY;
+	dz = m_MouseMoveDZ;
+}
+
+void DxInputDevice::GetMouseLocate(int& x, int& y, int& z) const
+{
+	x = m_MouseLocateX;
+	y = m_MouseLocateY;
+	z = m_MouseLocateZ;
+}
+
+
 

@@ -16,6 +16,7 @@
 #include <set>
 
 #include "dinput.h"
+#include "../Common/GameInput.h"
 
 //	Note : 마우스와 키보드의 키 상태를 알아보기 위해서 사용되는 플래그들이다.
 //		마우스의경우 DXKEY_PRESSED, DXKEY_DRAG 모두 마우스 버튼이 눌러져 있는 상태를
@@ -89,7 +90,7 @@ enum DX_MOUSEKEYS
 //	static DxJoystickDevice& GetInstance();
 //};
 
-class DxInputDevice
+class DxInputDevice : public GameInput::IInputDevice
 {
 public:
 	enum
