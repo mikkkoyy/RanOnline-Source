@@ -4572,8 +4572,7 @@ DWORD GLCHARLOGIC::GET_PK_LEVEL ()
 		m_nBright,
 		pkPoints,
 		static_cast<GameUInt32>(pkStateCount));
-}
-}
+	}
 
 
 float GLCHARLOGIC::GET_PK_DECEXP_RATE ()

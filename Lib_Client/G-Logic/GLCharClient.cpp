@@ -1268,7 +1268,7 @@ float GLCharClient::GETMOVE_ITEM ()
 	// The portable layer does NOT depend on GLCONST_CHAR.
 	return GameCharacterCalculations::ItemMoveVelocityRatio(
 		m_fITEM_MOVE,
-	,GLCONST_CHAR::cCONSTCLASS[m_CHARINDEX].fRUNVELO);
+	GLCONST_CHAR::cCONSTCLASS[m_CHARINDEX].fRUNVELO);
 }
 
 float GLCharClient::GetMoveVelo ()
