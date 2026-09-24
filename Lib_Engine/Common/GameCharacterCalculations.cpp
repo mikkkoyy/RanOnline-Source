@@ -564,6 +564,29 @@ namespace GameCharacterCalculations
         return 1000 / percentHP - 10 + levelDifference;
     }
 
+    // ---------------------------------------------------------------------------
+    // RandomDamageRange
+    //
+    // Legacy: GLogixExPC.cpp:1668,1997 and GLogicExNPC.cpp:283
+    //
+    // int nDAMAGE_NOW = int(gdDamage.dwLow +
+    //     (gdDamage.dwHigh - gdDamage.dwLow) * RANDOM_POS);
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic floating-point interpolation and integer truncation.
+    // The caller supplies the random value (RANDOM_POS, 0.0-1.0).
+    // ---------------------------------------------------------------------------
+    GameInt32 RandomDamageRange(
+        GameUInt32 lowDamage,
+        GameUInt32 highDamage,
+        float randomValue)
+    {
+        return static_cast<GameInt32>(
+            static_cast<float>(lowDamage) +
+            (static_cast<float>(highDamage) -
+             static_cast<float>(lowDamage)) * randomValue);
+    }
+
     // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //

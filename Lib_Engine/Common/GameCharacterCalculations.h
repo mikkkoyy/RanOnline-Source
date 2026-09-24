@@ -402,6 +402,27 @@ namespace GameCharacterCalculations
         GameInt32 attackerLevel,
         GameInt32 targetLevel);
 
+    // ---------------------------------------------------------------------------
+    // RandomDamageRange — random damage interpolation within [low, high].
+    //
+    // Legacy: GLogixExPC.cpp:1668,1997 and GLogicExNPC.cpp:283
+    //
+    // int nDAMAGE_NOW = int(gdDamage.dwLow +
+    //     (gdDamage.dwHigh - gdDamage.dwLow) * RANDOM_POS);
+    //
+    // The caller is responsible for:
+    //   - obtaining lowDamage and highDamage (precomputed damage range)
+    //   - supplying the random value (RANDOM_POS, 0.0-1.0) from the legacy RNG
+    //   - all surrounding damage pipeline (nExtFORCE, defense, critical, etc.)
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic floating-point interpolation and integer truncation.
+    // ---------------------------------------------------------------------------
+    GameInt32 RandomDamageRange(
+        GameUInt32 lowDamage,
+        GameUInt32 highDamage,
+        float randomValue);
+
     // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //

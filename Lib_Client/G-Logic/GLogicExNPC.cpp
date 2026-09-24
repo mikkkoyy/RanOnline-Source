@@ -280,7 +280,8 @@ DWORD GLCROWLOGIC::CALCDAMAGE ( int& rResultDAMAGE, const DWORD dwGaeaID, const 
 
 	//	대미지 최대 최소값 사이의 랜덤 대미지 결정.
 	int  nDAMAGE_NOW = 0;
-	nDAMAGE_NOW = int ( gdDamage.wLow + (gdDamage.wHigh-gdDamage.wLow)*RANDOM_POS );
+	nDAMAGE_NOW = GameCharacterCalculations::RandomDamageRange(
+		gdDamage.wLow, gdDamage.wHigh, RANDOM_POS);
 
 	int nDAMAGE_OLD = ( nDAMAGE_NOW + nExtFORCE );
 	

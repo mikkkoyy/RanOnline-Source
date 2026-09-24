@@ -1665,7 +1665,8 @@ DWORD GLCHARLOGIC::CALCDAMAGE_20060328(
 
 		//new damage low
 		//int nDAMAGE_NOW = 0;
-		int nDAMAGE_NOW = int(gdDamage.dwLow + (gdDamage.dwHigh - gdDamage.dwLow) * RANDOM_POS);
+		int nDAMAGE_NOW = GameCharacterCalculations::RandomDamageRange(
+			gdDamage.dwLow, gdDamage.dwHigh, RANDOM_POS);
 		int nDAMAGE_OLD = (nDAMAGE_NOW + nExtFORCE); // 보정치 합산
 
 		//new damage random
@@ -1993,7 +1994,8 @@ DWORD GLCHARLOGIC::CALCDAMAGE_2004(
 
 	//	대미지 최대 최소값 사이의 랜덤 대미지 결정.
 	int  nDAMAGE_NOW = 0;
-	nDAMAGE_NOW = int ( gdDamage.dwLow + (gdDamage.dwHigh-gdDamage.dwLow)*RANDOM_POS );
+	nDAMAGE_NOW = GameCharacterCalculations::RandomDamageRange(
+		gdDamage.dwLow, gdDamage.dwHigh, RANDOM_POS);
 	int nDAMAGE_OLD = ( nDAMAGE_NOW + nExtFORCE );	//	보정치 합산.
 
 	//	최저 수용 대미지 산출.
