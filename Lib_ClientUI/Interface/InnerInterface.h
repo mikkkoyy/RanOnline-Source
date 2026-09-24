@@ -28,6 +28,8 @@ class	CBasicSkillTray;
 class	CBasicVarTextBox;
 class	CBasicTextBox;
 class	CBlockProgramAlarm;	
+class	CAutoPilotButton;
+class	CAutoSystem;
 class	CBusWindow;	
 class	CCharacterWindow;	
 class	CChatMacroWindow;	
@@ -411,8 +413,10 @@ private: //	��ϵǴ� ��� ��Ʈ��
 	CNameDisplayMan*			m_pNameDisplayMan;				
 	CPartyModalWindow*			m_pPartyModalWindow;			
 	CPartyWindow*				m_pPartyWindow;			
-	CPetRebirthDialogue*		m_pPetRebirthDialogue;// Monster7j				
-	CPetWindow*					m_pPetWindow;	
+	CPetRebirthDialogue*		m_pPetRebirthDialogue;// Monster7j
+	CAutoPilotButton*			m_pAutoPilotButton;
+	CAutoSystem*				m_pAutoSystem;
+	CPetWindow*					m_pPetWindow;
 	CPrivateMarketMake*			m_pPrivateMarketMake;			
 	CPrivateMarketSellWindow*	m_pPrivateMarketSellWindow;				
 	CPrivateMarketShowMan*		m_pPrivateMarketShowMan;				
@@ -651,7 +655,7 @@ private:
 
 	void ResetControl();
 
-private:
+ private:
 	bool m_bFirstVNGainSysCall;
 
 public:

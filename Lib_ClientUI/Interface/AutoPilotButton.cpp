@@ -1,5 +1,5 @@
 #include "StdAfx.h"
-#include "./BasicButton.h"
+#include "./BasicTextButton.h"
 #include "./InnerInterface.h"
 #include "AutoPilotButton.h"
 #include "./GameTextControl.h"
@@ -17,8 +17,10 @@ CAutoPilotButton::~CAutoPilotButton(void)
 void CAutoPilotButton::CreateSubControl()
 {
 
-	m_pAutoPilotButton = new CBasicButton;
-	m_pAutoPilotButton->CreateSub(this, "AUTOPILOT_BUTTON_IMAGE", UI_FLAG_DEFAULT, AUTOPILOT_BUTTON);
+	m_pAutoPilotButton = new CBasicTextButton;
+	m_pAutoPilotButton->CreateSub(this, "BASIC_TEXT_BUTTON14", UI_FLAG_DEFAULT, AUTOPILOT_BUTTON);
+	m_pAutoPilotButton->CreateBaseButton("AUTOPILOT_BUTTON", CBasicTextButton::SIZE14, CBasicButton::CLICK_FLIP, "AutoPilot");
+	m_pAutoPilotButton->SetGeneralButton();
 	m_pAutoPilotButton->SetUseGlobalAction(TRUE);
 	m_pAutoPilotButton->SetVisibleSingle(FALSE);
 	RegisterControl(m_pAutoPilotButton);

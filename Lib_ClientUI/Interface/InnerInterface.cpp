@@ -38,6 +38,8 @@
 #include "GatherGauge.h"
 #include "CdmRankingDisplay.h"
 #include "DialogueWindowRenewal.h"
+#include "AutoPilotButton.h"
+#include "AutoSystem.h"
 
 #include "CharacterWindow/CharacterWindow.h"
 #include "../../Lib_Engine/GUInterface/NSGUI.h"
@@ -247,8 +249,10 @@ void CInnerInterface::ResetControl()
 	m_pMiniMap = NULL;
 	m_pChat = NULL;
 	m_pQuestWindow = NULL;
-	m_pQuestAlarm = NULL;	
-	m_pFriendWindow = NULL;	
+	m_pQuestAlarm = NULL;
+	m_pAutoPilotButton = NULL;
+	m_pAutoSystem = NULL;
+	m_pFriendWindow = NULL;
 	m_pSkillWindowToTray = NULL;	
 	//m_pInventoryWindow = NULL;
 	m_pInventoryUI = NULL;

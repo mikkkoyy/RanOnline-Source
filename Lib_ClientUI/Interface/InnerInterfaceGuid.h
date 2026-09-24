@@ -313,4 +313,5 @@ enum	ET_UIGUID_INNER	//	��Ʈ�� ID
 	//	NOTE
 	//		ID�� ��
 	MODAL_WINDOW,
+	AUTOSYSTEM_WINDOW,
 };

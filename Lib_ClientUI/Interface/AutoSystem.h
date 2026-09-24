@@ -2,17 +2,19 @@
 
 #include "../Lib_Engine/GUInterface/UIGroup.h"
 class CBasicTextButton;
+class CBasicLineBox;
 
-class CAutoPilotButton : public CUIGroup
+class CAutoSystem : public CUIGroup
 {
 public:
-	CAutoPilotButton(void);
-	~CAutoPilotButton(void);
+	CAutoSystem(void);
+	~CAutoSystem(void);
 
 public:
 	enum
 	{
-		AUTOPILOT_BUTTON = NO_ID + 1,
+		AUTO_COMBAT_BUTTON = NO_ID + 1,
+		AUTO_POT_LOOT_BUTTON,
 	};
 
 public:
@@ -24,8 +26,7 @@ public:
 	virtual	void	Update(int x, int y, BYTE LB, BYTE MB, BYTE RB, int nScroll, float fElapsedTime, BOOL bFirstControl);
 
 private:
-	CBasicTextButton* m_pAutoPilotButton;
-	LPDIRECT3DDEVICEQ	m_pd3dDevice;
-
+	CBasicLineBox*	m_pBackground;
+	CBasicTextButton*	m_pAutoCombatButton;
+	CBasicTextButton*	m_pAutoPotLootButton;
 };
-

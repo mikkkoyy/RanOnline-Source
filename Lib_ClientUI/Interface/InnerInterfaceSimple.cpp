@@ -15,6 +15,8 @@
 #include "BonusTimeDisplay.h"
 #include "BusWindow.h"
 #include "BlockProgramAlarm.h"
+#include "AutoPilotButton.h"
+#include "AutoSystem.h"
 #include "ClubWindow.h"
 #include "ClubMake.h"
 #include "ConftDisplayMan.h"
@@ -4059,7 +4061,24 @@ HRESULT CInnerInterface::InitDeviceObjects ( LPDIRECT3DDEVICEQ pd3dDevice )
 
 		m_pBlockProgramAlarmDummy = new CUIControl;
 		m_pBlockProgramAlarmDummy->Create ( BLOCK_PROGRAM_ALARM_DUMMY, "BLOCK_PROGRAM_ALARM", UI_FLAG_CENTER_X | UI_FLAG_CENTER_Y );
-        RegisterControl ( m_pBlockProgramAlarmDummy );
+         RegisterControl ( m_pBlockProgramAlarmDummy );
+	}
+
+	{	//	Auto System entry button
+		m_pAutoPilotButton = new CAutoPilotButton;
+		m_pAutoPilotButton->Create ( AUTOPILOT_BUTTON, "AUTOPILOT_BUTTON_IMAGE", UI_FLAG_RIGHT | UI_FLAG_BOTTOM );
+		m_pAutoPilotButton->CreateSubControl ();
+		RegisterControl ( m_pAutoPilotButton );
+		ShowGroupFocus ( AUTOPILOT_BUTTON );
+		HideGroup ( AUTOPILOT_BUTTON );
+	}
+
+	{	//	Auto System window
+		m_pAutoSystem = new CAutoSystem;
+		m_pAutoSystem->Create ( AUTOSYSTEM_WINDOW, "AUTOSYSTEM_WINDOW", UI_FLAG_CENTER_X | UI_FLAG_CENTER_Y );
+		m_pAutoSystem->CreateSubControl ();
+		m_pAutoSystem->SetVisibleSingle ( FALSE );
+		RegisterControl ( m_pAutoSystem );
 	}
 
 	{		
