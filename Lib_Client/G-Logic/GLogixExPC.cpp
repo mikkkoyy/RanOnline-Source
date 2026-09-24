@@ -3038,8 +3038,14 @@ float GLCHARLOGIC::GETATTVELO ()
 
 float GLCHARLOGIC::GETMOVEVELO ()
 {
-	float fMOVE = m_fSTATE_MOVE + m_fSKILL_MOVE + m_fOPTION_MOVE + m_sSUMITEM.fIncR_MoveSpeed;
-	return fMOVE<0.0f?0.0f:fMOVE;
+	// Legacy layer resolves m_fSTATE_MOVE, m_fSKILL_MOVE, m_fOPTION_MOVE,
+	// and m_sSUMITEM.fIncR_MoveSpeed before delegating.
+	// The portable layer does NOT depend on GLCHARLOGIC.
+	return GameCharacterCalculations::MoveVelocityModifier(
+		m_fSTATE_MOVE,
+		m_fSKILL_MOVE,
+		m_fOPTION_MOVE,
+		m_sSUMITEM.fIncR_MoveSpeed);
 }
 
 float GLCHARLOGIC::GETATT_ITEM ()

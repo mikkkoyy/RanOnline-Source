@@ -848,6 +848,38 @@ namespace GameCharacterCalculations
         bool differentMap,
         float shopBuyRate,
         bool applyShopRate);
+
+    // ---------------------------------------------------------------------------
+    // MoveVelocityModifier — movement velocity modifier.
+    //
+    // Legacy: GLCHARLOGIC::GETMOVEVELO() (GLogixExPC.cpp:3039) and
+    //         GLCROWLOGIC::GETMOVEVELO() (GLogicExNPC.cpp:769)
+    //
+    // PC:   float fMOVE = m_fSTATE_MOVE + m_fSKILL_MOVE + m_fOPTION_MOVE
+    //                           + m_sSUMITEM.fIncR_MoveSpeed;
+    //       return fMOVE < 0.0f ? 0.0f : fMOVE;
+    //
+    // NPC:  float fMOVE = m_fSTATE_MOVE + m_fSKILL_MOVE;
+    //       return fMOVE < 0.0f ? 0.0f : fMOVE;
+    //
+    // The caller is responsible for:
+    //   - obtaining stateMove (m_fSTATE_MOVE)
+    //   - obtaining skillMove (m_fSKILL_MOVE)
+    //   - obtaining optionMove (m_fOPTION_MOVE; 0.0f for NPC)
+    //   - obtaining itemMoveRate (m_sSUMITEM.fIncR_MoveSpeed; 0.0f for NPC)
+    //   - all surrounding movement pipeline
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic addition and negative clamp.
+    //
+    // NOTE: This is NOT the same calculation as MoveVelocity(), which multiplies
+    // the base run/walk velocity by this modifier. Keep both functions separate.
+    // ---------------------------------------------------------------------------
+    float MoveVelocityModifier(
+        float stateMove,
+        float skillMove,
+        float optionMove,
+        float itemMoveRate);
 }
 
 // Convenience aliases in the global namespace for minimal friction

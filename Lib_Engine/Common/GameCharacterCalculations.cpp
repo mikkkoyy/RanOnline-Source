@@ -1084,4 +1084,38 @@ namespace GameCharacterCalculations
 
         return charge;
     }
+
+    // ---------------------------------------------------------------------------
+    // MoveVelocityModifier
+    //
+    // Legacy: GLCHARLOGIC::GETMOVEVELO() (GLogixExPC.cpp:3039) and
+    //         GLCROWLOGIC::GETMOVEVELO() (GLogicExNPC.cpp:769)
+    //
+    // PC:   float fMOVE = m_fSTATE_MOVE + m_fSKILL_MOVE + m_fOPTION_MOVE
+    //                           + m_sSUMITEM.fIncR_MoveSpeed;
+    //       return fMOVE < 0.0f ? 0.0f : fMOVE;
+    //
+    // NPC:  float fMOVE = m_fSTATE_MOVE + m_fSKILL_MOVE;
+    //       return fMOVE < 0.0f ? 0.0f : fMOVE;
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic addition and negative clamp.
+    //
+    // NOTE: This is NOT the same calculation as MoveVelocity(), which multiplies
+    // the base run/walk velocity by this modifier. Keep both functions separate.
+    // ---------------------------------------------------------------------------
+    float MoveVelocityModifier(
+        float stateMove,
+        float skillMove,
+        float optionMove,
+        float itemMoveRate)
+    {
+        const float fMOVE =
+            stateMove +
+            skillMove +
+            optionMove +
+            itemMoveRate;
+
+        return fMOVE < 0.0f ? 0.0f : fMOVE;
+    }
 }

@@ -768,8 +768,14 @@ float GLCROWLOGIC::GETATTVELO ()
 
 float GLCROWLOGIC::GETMOVEVELO ()
 {
-	float fMOVE = m_fSTATE_MOVE + m_fSKILL_MOVE;
-	return fMOVE<0.0f?0.0f:fMOVE;
+	// Legacy layer resolves m_fSTATE_MOVE and m_fSKILL_MOVE before delegating.
+	// The portable layer does NOT depend on GLCROWLOGIC.
+	// NPC has no option/item movement fields; pass 0.0f for both.
+	return GameCharacterCalculations::MoveVelocityModifier(
+		m_fSTATE_MOVE,
+		m_fSKILL_MOVE,
+		0.0f,
+		0.0f);
 }
 
 void GLCROWLOGIC::SETACTIVESKILL ( SNATIVEID skill_id, WORD wLevel )
