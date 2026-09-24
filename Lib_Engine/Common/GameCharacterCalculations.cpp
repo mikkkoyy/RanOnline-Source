@@ -587,6 +587,25 @@ namespace GameCharacterCalculations
              static_cast<float>(lowDamage)) * randomValue);
     }
 
+    // ---------------------------------------------------------------------------
+    // ApplyStateDamage
+    //
+    // Legacy: GLogixExPC.cpp:1684,2008 and GLogicExNPC.cpp:294
+    //
+    // rResultDAMAGE = int(rResultDAMAGE * fSTATE_DAMAGE);
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic floating-point multiplication and integer truncation.
+    // The caller supplies the state damage multiplier (fSTATE_DAMAGE).
+    // ---------------------------------------------------------------------------
+    GameInt32 ApplyStateDamage(
+        GameInt32 damage,
+        float stateDamage)
+    {
+        return static_cast<GameInt32>(
+            static_cast<float>(damage) * stateDamage);
+    }
+
     // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //

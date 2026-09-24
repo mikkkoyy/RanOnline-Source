@@ -423,6 +423,25 @@ namespace GameCharacterCalculations
         GameUInt32 highDamage,
         float randomValue);
 
+    // ---------------------------------------------------------------------------
+    // ApplyStateDamage — state damage multiplier.
+    //
+    // Legacy: GLogixExPC.cpp:1684,2008 and GLogicExNPC.cpp:294
+    //
+    // rResultDAMAGE = int(rResultDAMAGE * fSTATE_DAMAGE);
+    //
+    // The caller is responsible for:
+    //   - obtaining rResultDAMAGE (post-armor damage, pre-state)
+    //   - obtaining fSTATE_DAMAGE (state damage multiplier)
+    //   - all surrounding damage pipeline (armor, critical, reflection, etc.)
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic floating-point multiplication and integer truncation.
+    // ---------------------------------------------------------------------------
+    GameInt32 ApplyStateDamage(
+        GameInt32 damage,
+        float stateDamage);
+
     // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //

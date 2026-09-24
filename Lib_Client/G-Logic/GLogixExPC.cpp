@@ -1681,7 +1681,8 @@ DWORD GLCHARLOGIC::CALCDAMAGE_20060328(
 		else
 			ResultDamage = int((float) nDAMAGE_OLD * GLCONST_CHAR::fLOW_SEED_DAMAGE * RANDOM_POS);
 
-		rResultDAMAGE = int(ResultDamage*fSTATE_DAMAGE);
+		rResultDAMAGE = GameCharacterCalculations::ApplyStateDamage(
+			ResultDamage, fSTATE_DAMAGE);
 
 		/* old damage random
 		//	최저 수용 대미지 산출.
@@ -2003,7 +2004,8 @@ DWORD GLCHARLOGIC::CALCDAMAGE_2004(
 
 	if ( nNetDAMAGE > 0 )	rResultDAMAGE = int ( nDAMAGE_OLD - nDEFENSE );
 	else					rResultDAMAGE = int ( (nDAMAGE_OLD*GLCONST_CHAR::fLOW_SEED_DAMAGE)*RANDOM_POS );
-	rResultDAMAGE = int(rResultDAMAGE*fSTATE_DAMAGE);
+	rResultDAMAGE = GameCharacterCalculations::ApplyStateDamage(
+		rResultDAMAGE, fSTATE_DAMAGE);
 
 	//	방어구 대미지 흡수율 반영.
 	float fRATE = ( 1.0f - nDEFAULT_DEFENSE*nITEM_DEFENSE / GLCONST_CHAR::fDAMAGE_DEC_RATE );
