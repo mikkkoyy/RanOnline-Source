@@ -3029,8 +3029,9 @@ void GLCHARLOGIC::UPDATE_DATA ( float fTime, float fElapsedTime, BOOL bClient, f
 float GLCHARLOGIC::GETATTVELO ()
 {
 	//	return m_fATTVELO<0.0f?0.0f:m_fATTVELO;
-	float fATTVELO = m_fATTVELO + m_sSUMITEM.fIncR_AtkSpeed;
-	return fATTVELO<0.0f?0.0f:fATTVELO;
+	return GameCharacterCalculations::AttackVelocity(
+		m_fATTVELO,
+		m_sSUMITEM.fIncR_AtkSpeed);
 }
 
 float GLCHARLOGIC::GETMOVEVELO ()

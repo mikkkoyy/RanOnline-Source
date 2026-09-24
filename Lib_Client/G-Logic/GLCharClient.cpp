@@ -1239,9 +1239,10 @@ BOOL GLCharClient::IsCollisionVolume ()
 
 float GLCharClient::GETATTVELO ()
 {
-//	return m_fATTVELO<0.0f?0.0f:m_fATTVELO;
-	float fATTVELO = m_fATTVELO + m_fITEMATTVELO_R;
-	return fATTVELO<0.0f?0.0f:fATTVELO;
+	//	return m_fATTVELO<0.0f?0.0f:m_fATTVELO;
+	return GameCharacterCalculations::AttackVelocity(
+		m_fATTVELO,
+		m_fITEMATTVELO_R);
 }
 
 float GLCharClient::GETMOVEVELO ()

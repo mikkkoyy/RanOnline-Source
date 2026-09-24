@@ -335,6 +335,30 @@ namespace GameCharacterCalculations
         return -1;
     }
 
+    // ---------------------------------------------------------------------------
+    // AttackVelocity
+    //
+    // Legacy: GLCHARLOGIC::GETATTVELO(), GLCharClient::GETATTVELO(),
+    //         GLCROWLOGIC::GETATTVELO(), GLSUMMON::GETATTVELO().
+    //
+    // PC:   float fATTVELO = m_fATTVELO + m_sSUMITEM.fIncR_AtkSpeed;
+    //       return fATTVELO < 0.0f ? 0.0f : fATTVELO;
+    // NPC:  return m_fATTVELO < 0.0f ? 0.0f : m_fATTVELO;
+    // Client: float fATTVELO = m_fATTVELO + m_fITEMATTVELO_R;
+    //         return fATTVELO < 0.0f ? 0.0f : fATTVELO;
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic floating-point addition and negative clamp.
+    // The caller supplies the item attack velocity rate (0.0f for NPC).
+    // ---------------------------------------------------------------------------
+    float AttackVelocity(
+        float baseAttackVelocity,
+        float itemAttackVelocityRate)
+    {
+        const float result = baseAttackVelocity + itemAttackVelocityRate;
+        return result < 0.0f ? 0.0f : result;
+    }
+
     // ========================================================================
     // Stage 2F-3 — Weather power calculations.
     //

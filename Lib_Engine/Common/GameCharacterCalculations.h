@@ -240,6 +240,31 @@ namespace GameCharacterCalculations
         const float* patternRates,
         GameSizeT patternCount);
 
+    // ---------------------------------------------------------------------------
+    // AttackVelocity — attack animation speed calculation.
+    //
+    // Legacy: GLCHARLOGIC::GETATTVELO(), GLCharClient::GETATTVELO(),
+    //         GLCROWLOGIC::GETATTVELO(), GLSUMMON::GETATTVELO().
+    //
+    // PC:   float fATTVELO = m_fATTVELO + m_sSUMITEM.fIncR_AtkSpeed;
+    //       return fATTVELO < 0.0f ? 0.0f : fATTVELO;
+    // NPC:  return m_fATTVELO < 0.0f ? 0.0f : m_fATTVELO;
+    // Client: float fATTVELO = m_fATTVELO + m_fITEMATTVELO_R;
+    //         return fATTVELO < 0.0f ? 0.0f : fATTVELO;
+    //
+    // The caller is responsible for:
+    //   - obtaining baseAttackVelocity (m_fATTVELO, already resolved)
+    //   - obtaining itemAttackVelocityRate (m_sSUMITEM.fIncR_AtkSpeed for
+    //     PC, m_fITEMATTVELO_R for client, 0.0f for NPC)
+    //   - all surrounding animation/timing pipeline (fSkinAniElap, m_fattTIMER)
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic floating-point addition and negative clamp.
+    // ---------------------------------------------------------------------------
+    float AttackVelocity(
+        float baseAttackVelocity,
+        float itemAttackVelocityRate);
+
     // ========================================================================
     // Stage 2F-3 — Weather power calculations.
     //

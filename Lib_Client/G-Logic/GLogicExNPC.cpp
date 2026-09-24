@@ -760,7 +760,10 @@ void GLCROWLOGIC::UPDATE_DATA ( float fTime, float fElapsedTime, BOOL bClient )
 
 float GLCROWLOGIC::GETATTVELO ()
 {
-	return m_fATTVELO<0.0f?0.0f:m_fATTVELO;
+	// NPC has no equipment item attack velocity modifier.
+	return GameCharacterCalculations::AttackVelocity(
+		m_fATTVELO,
+		0.0f);
 }
 
 float GLCROWLOGIC::GETMOVEVELO ()

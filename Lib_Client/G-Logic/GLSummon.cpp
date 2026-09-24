@@ -909,7 +909,10 @@ void GLSUMMON::UPDATE_DATA ( float fTime, float fElapsedTime, BOOL bClient )
 
 float GLSUMMON::GETATTVELO ()
 {
-	return m_fATTVELO<0.0f?0.0f:m_fATTVELO;
+	// Summon has no equipment item attack velocity modifier.
+	return GameCharacterCalculations::AttackVelocity(
+		m_fATTVELO,
+		0.0f);
 }
 
 float GLSUMMON::GETMOVEVELO ()
