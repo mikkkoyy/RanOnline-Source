@@ -69,13 +69,19 @@ namespace GameCharacterCalculations
     //
     // Legacy: GLOGICEX::GLHITRATE
     //
-    // Formula: BASIC(100) + nHit - nAvoid + nBirght[bFB]
+    // Formula: BASIC(100) + nHit - nAvoid + brightnessModifier
     // Clamped to [MIN_HIT(20), MAX_HIT(99)].
+    //
+    // The brightness modifier is the caller's already-resolved value from
+    // the legacy EM_BRIGHT_FB table { -10, 0, 10 } (BFB_DIS, BFB_AVER,
+    // BFB_ADV). It is passed as a plain GameInt32 so the portable layer
+    // does NOT depend on EM_BRIGHT_FB or GLSPACEGAP. The caller computes
+    // the modifier via SpaceGap() and passes the resolved integer.
     // ---------------------------------------------------------------------------
-    int HitRate(
-        int nHit,
-        int nAvoid,
-        GameBrightFB bFB);
+    GameInt32 HitRate(
+        GameInt32 nHit,
+        GameInt32 nAvoid,
+        GameInt32 brightnessModifier);
 
     // ---------------------------------------------------------------------------
     // Defense calculation.

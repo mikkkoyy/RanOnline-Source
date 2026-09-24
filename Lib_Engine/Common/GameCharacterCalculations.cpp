@@ -56,17 +56,23 @@ namespace GameCharacterCalculations
     // enum { MAX_HIT = 99, MIN_HIT = 20, BASIC = 100 };
     // hitRate = BASIC + nHit - nAvoid + nBirght[bFB];
     // clamped to [MIN_HIT, MAX_HIT].
+    //
+    // The brightness modifier is the caller's already-resolved value from
+    // the legacy EM_BRIGHT_FB table { -10, 0, 10 }. It is passed as a plain
+    // GameInt32 so the portable layer does NOT depend on EM_BRIGHT_FB or
+    // GLSPACEGAP. The caller computes the modifier via SpaceGap() and
+    // passes the resolved integer.
     // ---------------------------------------------------------------------------
-    int HitRate(
-        int nHit,
-        int nAvoid,
-        GameBrightFB bFB)
+    GameInt32 HitRate(
+        GameInt32 nHit,
+        GameInt32 nAvoid,
+        GameInt32 brightnessModifier)
     {
         const int nBirght[3] = { -10, 0, 10 };
         enum { MAX_HIT = 99, MIN_HIT = 20, BASIC = 100 };
 
         int hitRate;
-        hitRate = BASIC + nHit - nAvoid + nBirght[static_cast<int>(bFB)];
+        hitRate = BASIC + nHit - nAvoid + nBirght[static_cast<int>(brightnessModifier)];
 
         if (hitRate > MAX_HIT)
             hitRate = MAX_HIT;
