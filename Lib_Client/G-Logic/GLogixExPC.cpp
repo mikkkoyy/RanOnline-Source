@@ -1595,8 +1595,10 @@ DWORD GLCHARLOGIC::CALCDAMAGE_20060328(
 	}
 
 	//	공격력. 변화율 반영.
-	gdDamage.dwLow  = DWORD ( gdDamage.dwLow  * m_fDamageRate );
-	gdDamage.dwHigh = DWORD ( gdDamage.dwHigh * m_fDamageRate );
+	gdDamage.dwLow  = GameCharacterCalculations::ApplyDamageRate(
+		gdDamage.dwLow, m_fDamageRate);
+	gdDamage.dwHigh = GameCharacterCalculations::ApplyDamageRate(
+		gdDamage.dwHigh, m_fDamageRate);
 
 	//	Note : 추가 보정치 산출.
 	int nExtFORCE = 0;
@@ -1951,8 +1953,10 @@ DWORD GLCHARLOGIC::CALCDAMAGE_2004(
 	}
 
 	//	공격력. 변화율 반영.
-	gdDamage.dwLow = DWORD ( gdDamage.dwLow * m_fDamageRate );
-	gdDamage.dwHigh = DWORD ( gdDamage.dwHigh * m_fDamageRate );
+	gdDamage.dwLow = GameCharacterCalculations::ApplyDamageRate(
+		gdDamage.dwLow, m_fDamageRate);
+	gdDamage.dwHigh = GameCharacterCalculations::ApplyDamageRate(
+		gdDamage.dwHigh, m_fDamageRate);
 
 	/*if ( m_fDamageRate >= 1.0f )
 	{
@@ -2995,8 +2999,10 @@ void GLCHARLOGIC::UPDATE_DATA ( float fTime, float fElapsedTime, BOOL bClient, f
 	else						m_gdDAMAGE_PHYSIC.VAR_PARAM ( m_wSUM_PA );	//	근접 공격.
 
 	//	공격력. 변화율 반영.
-	m_gdDAMAGE_PHYSIC.dwLow = DWORD ( m_gdDAMAGE_PHYSIC.dwLow * m_fDamageRate );
-	m_gdDAMAGE_PHYSIC.dwHigh = DWORD ( m_gdDAMAGE_PHYSIC.dwHigh * m_fDamageRate );
+	m_gdDAMAGE_PHYSIC.dwLow = GameCharacterCalculations::ApplyDamageRate(
+		m_gdDAMAGE_PHYSIC.dwLow, m_fDamageRate);
+	m_gdDAMAGE_PHYSIC.dwHigh = GameCharacterCalculations::ApplyDamageRate(
+		m_gdDAMAGE_PHYSIC.dwHigh, m_fDamageRate);
 
 	// todo for negative effects
 	if ( m_gdDAMAGE_PHYSIC.dwLow >= 50000 )	m_gdDAMAGE_PHYSIC.dwLow = 1;

@@ -606,6 +606,34 @@ namespace GameCharacterCalculations
             static_cast<float>(damage) * stateDamage);
     }
 
+    // ---------------------------------------------------------------------------
+    // ApplyDamageRate
+    //
+    // Legacy: GLogixExPC.cpp:1598-1599,1954-1955,3002-3003 and
+    //         GLogicExNPC.cpp:257-258
+    //
+    // PC:  gdDamage.dwLow  = DWORD ( gdDamage.dwLow  * m_fDamageRate );
+    //      gdDamage.dwHigh = DWORD ( gdDamage.dwHigh * m_fDamageRate );
+    // NPC: gdDamage.wLow  = int ( gdDamage.wLow  * m_fDamageRate );
+    //      gdDamage.wHigh = int ( gdDamage.wHigh * m_fDamageRate );
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic floating-point multiplication and integer truncation.
+    // The caller supplies the damage rate multiplier (m_fDamageRate).
+    //
+    // NOTE: The return type is GameUInt32 to safely represent both DWORD-sized
+    // (PC) and WORD-sized (NPC) damage values. The NPC caller casts back to
+    // WORD via static_cast<decltype(gdDamage.wLow)> to preserve the original
+    // destination-field conversion behavior.
+    // ---------------------------------------------------------------------------
+    GameUInt32 ApplyDamageRate(
+        GameUInt32 damage,
+        float damageRate)
+    {
+        return static_cast<GameUInt32>(
+            static_cast<float>(damage) * damageRate);
+    }
+
     // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //

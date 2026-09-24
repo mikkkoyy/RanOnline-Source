@@ -254,8 +254,10 @@ DWORD GLCROWLOGIC::CALCDAMAGE ( int& rResultDAMAGE, const DWORD dwGaeaID, const 
 	}
 
 	//	공격력. 변화율 반영.
-	gdDamage.wLow = int ( gdDamage.wLow * m_fDamageRate );
-	gdDamage.wHigh = int ( gdDamage.wHigh * m_fDamageRate );
+	gdDamage.wLow = static_cast<decltype(gdDamage.wLow)>(
+	 GameCharacterCalculations::ApplyDamageRate(gdDamage.wLow, m_fDamageRate));
+	gdDamage.wHigh = static_cast<decltype(gdDamage.wHigh)>(
+	 GameCharacterCalculations::ApplyDamageRate(gdDamage.wHigh, m_fDamageRate));
 
 	//	Note : 추가 보정치 산출.
 	int nExtFORCE = 0;
