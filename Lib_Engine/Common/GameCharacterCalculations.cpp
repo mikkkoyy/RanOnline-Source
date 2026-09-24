@@ -330,6 +330,155 @@ namespace GameCharacterCalculations
     }
 
     // ========================================================================
+    // Stage 2F-3 — Weather power calculations.
+    //
+    // Minimal portable element/state-blow enums. Numeric values match the
+    // legacy EMELEMENT and EMSTATE_BLOW enums exactly (verified from
+    // Lib_Client/G-Logic/GLCharDefine.h). The portable layer does NOT
+    // import GLCharDefine.h.
+    //
+    // Weather flag constants (verified from GLPeriod.h:56-68 FGWEATHER):
+    //   FGW_RAIN   = 0x0001
+    //   FGW_SNOW   = 0x0002
+    //   FGW_LEAVES = 0x0004
+    // These are re-defined locally so the portable module does NOT need
+    // to include GLPeriod.h (which pulls in CTime, D3DXVector2, etc.).
+    // ========================================================================
+
+    namespace
+    {
+        constexpr GameUInt32 kWeatherRain   = 0x0001u;
+        constexpr GameUInt32 kWeatherSnow   = 0x0002u;
+        constexpr GameUInt32 kWeatherLeaves = 0x0004u;
+    }
+
+    // ---------------------------------------------------------------------------
+    // StateBlowToElement
+    //
+    // Legacy: STATE_TO_ELEMENT(emBlow) inline switch in GLCharDefine.h:942-957
+    //
+    // case EMBLOW_NUMB:   return EMELEMENT_ELECTRIC;
+    // case EMBLOW_STUN:   return EMELEMENT_STUN;
+    // case EMBLOW_STONE:  return EMELEMENT_STONE;
+    // case EMBLOW_BURN:   return EMELEMENT_FIRE;
+    // case EMBLOW_FROZEN: return EMELEMENT_ICE;
+    // case EMBLOW_MAD:    return EMELEMENT_MAD;
+    // case EMBLOW_POISON: return EMELEMENT_POISON;
+    // case EMBLOW_CURSE:  return EMELEMENT_CURSE;
+    // default:            return EMELEMENT_SPIRIT;
+    // ---------------------------------------------------------------------------
+    GameElement StateBlowToElement(GameStateBlow blow)
+    {
+        switch (blow)
+        {
+        case GameStateBlow::Numb:   return GameElement::Electric;
+        case GameStateBlow::Stun:   return GameElement::Stun;
+        case GameStateBlow::Stone:  return GameElement::Stone;
+        case GameStateBlow::Burn:   return GameElement::Fire;
+        case GameStateBlow::Frozen: return GameElement::Ice;
+        case GameStateBlow::Mad:    return GameElement::Mad;
+        case GameStateBlow::Poison: return GameElement::Poison;
+        case GameStateBlow::Curse:  return GameElement::Curse;
+        default:                    return GameElement::Spirit;
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // WeatherElementPower
+    //
+    // Legacy: GLOGICEX::WEATHER_ELEMENT_POW
+    //
+    // float fPOWER = 1.0f;
+    // if ( !bWeatherActive ) return fPOWER;
+    // switch ( emElement )
+    // {
+    // case EMELEMENT_FIRE:
+    // case EMELEMENT_STONE:
+    //     if ( dwWeather&FGW_RAIN )   fPOWER = 0.8f;
+    //     if ( dwWeather&FGW_LEAVES ) fPOWER = 1.2f;
+    //     break;
+    // case EMELEMENT_ICE:
+    // case EMELEMENT_MAD:
+    //     if ( dwWeather&FGW_LEAVES ) fPOWER = 0.8f;
+    //     if ( dwWeather&FGW_SNOW )   fPOWER = 1.2f;
+    //     break;
+    // case EMELEMENT_ELECTRIC:
+    // case EMELEMENT_STUN:
+    //     if ( dwWeather&FGW_SNOW ) fPOWER = 0.8f;
+    //     if ( dwWeather&FGW_RAIN ) fPOWER = 1.2f;
+    //     break;
+    // case EMELEMENT_POISON:
+    // case EMELEMENT_CURSE:
+    //     fPOWER = 1.0f;
+    //     break;
+    // };
+    // return fPOWER;
+    //
+    // NOTE: The weather flags are passed as a raw GameUInt32 bitmask from
+    // the caller. The portable function tests specific bit positions via
+    // the locally-defined constants (matching GLPeriod.h FGWEATHER values)
+    // and does NOT include GLPeriod.h.
+    // ---------------------------------------------------------------------------
+    float WeatherElementPower(
+        GameElement element,
+        GameUInt32 weatherFlags,
+        bool weatherActive)
+    {
+        float fPOWER = 1.0f;
+        if ( !weatherActive ) return fPOWER;
+
+        switch ( element )
+        {
+        case GameElement::Fire:
+        case GameElement::Stone:
+            if ( weatherFlags & kWeatherRain )   fPOWER = 0.8f;
+            if ( weatherFlags & kWeatherLeaves ) fPOWER = 1.2f;
+            break;
+
+        case GameElement::Ice:
+        case GameElement::Mad:
+            if ( weatherFlags & kWeatherLeaves ) fPOWER = 0.8f;
+            if ( weatherFlags & kWeatherSnow )   fPOWER = 1.2f;
+            break;
+
+        case GameElement::Electric:
+        case GameElement::Stun:
+            if ( weatherFlags & kWeatherSnow )   fPOWER = 0.8f;
+            if ( weatherFlags & kWeatherRain )   fPOWER = 1.2f;
+            break;
+
+        case GameElement::Poison:
+        case GameElement::Curse:
+            fPOWER = 1.0f;
+            break;
+        };
+
+        return fPOWER;
+    }
+
+    // ---------------------------------------------------------------------------
+    // WeatherBlowPower
+    //
+    // Legacy: GLOGICEX::WEATHER_BLOW_POW
+    //
+    // float fPOWER = 1.0f;
+    // if ( !bWeatherActive ) return fPOWER;
+    // EMELEMENT emElement = STATE_TO_ELEMENT ( emBlow );
+    // return WEATHER_ELEMENT_POW ( emElement, dwWeather, bWeatherActive );
+    // ---------------------------------------------------------------------------
+    float WeatherBlowPower(
+        GameStateBlow blow,
+        GameUInt32 weatherFlags,
+        bool weatherActive)
+    {
+        float fPOWER = 1.0f;
+        if ( !weatherActive ) return fPOWER;
+
+        GameElement emElement = StateBlowToElement(blow);
+        return WeatherElementPower(emElement, weatherFlags, weatherActive);
+    }
+
+    // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //
     // These are deterministic pure calculations extracted from GLOGICEX

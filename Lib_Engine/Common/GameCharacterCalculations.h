@@ -235,6 +235,92 @@ namespace GameCharacterCalculations
         GameSizeT patternCount);
 
     // ========================================================================
+    // Stage 2F-3 — Weather power calculations.
+    //
+    // Minimal portable element/state-blow enums. Numeric values match the
+    // legacy EMELEMENT and EMSTATE_BLOW enums exactly (verified from
+    // Lib_Client/G-Logic/GLCharDefine.h). The portable layer does NOT
+    // import GLCharDefine.h.
+    //
+    //   GameElement: SPIRIT=0, FIRE=1, ICE=2, ELECTRIC=3, POISON=4,
+    //                STONE=5, MAD=6, STUN=7, CURSE=8
+    //
+    //   GameStateBlow: NONE=0, NUMB=1, STUN=2, STONE=3, BURN=4,
+    //                  FROZEN=5, MAD=6, POISON=7, CURSE=8
+    //
+    // STATE_TO_ELEMENT mapping (legacy inline function):
+    //   NUMB→ELECTRIC, STUN→STUN, STONE→STONE, BURN→FIRE,
+    //   FROZEN→ICE, MAD→MAD, POISON→POISON, CURSE→CURSE,
+    //   default→SPIRIT
+    // ========================================================================
+
+    enum class GameElement : int
+    {
+        Spirit = 0,
+        Fire   = 1,
+        Ice    = 2,
+        Electric = 3,
+        Poison = 4,
+        Stone  = 5,
+        Mad    = 6,
+        Stun   = 7,
+        Curse  = 8
+    };
+
+    enum class GameStateBlow : int
+    {
+        None    = 0,
+        Numb    = 1,
+        Stun    = 2,
+        Stone   = 3,
+        Burn    = 4,
+        Frozen  = 5,
+        Mad     = 6,
+        Poison  = 7,
+        Curse   = 8
+    };
+
+    // ---------------------------------------------------------------------------
+    // StateBlowToElement — legacy STATE_TO_ELEMENT mapping.
+    //
+    // Legacy: STATE_TO_ELEMENT(emBlow) inline switch in GLCharDefine.h:942-957
+    // ---------------------------------------------------------------------------
+    GameElement StateBlowToElement(GameStateBlow blow);
+
+    // ---------------------------------------------------------------------------
+    // WeatherElementPower
+    //
+    // Legacy: GLOGICEX::WEATHER_ELEMENT_POW
+    //
+    // Weather inactive -> 1.0f
+    // FIRE/STONE:    rain->0.8f, leaves->1.2f
+    // ICE/MAD:       leaves->0.8f, snow->1.2f
+    // ELECTRIC/STUN: snow->0.8f, rain->1.2f
+    // POISON/CURSE:  1.0f
+    //
+    // The weather flags are passed as a raw DWORD (bitmask) from the caller;
+    // the portable function only tests specific bit positions via the
+    // caller-supplied flag constants. It does NOT define the flags itself.
+    // ---------------------------------------------------------------------------
+    float WeatherElementPower(
+        GameElement element,
+        GameUInt32 weatherFlags,
+        bool weatherActive);
+
+    // ---------------------------------------------------------------------------
+    // WeatherBlowPower
+    //
+    // Legacy: GLOGICEX::WEATHER_BLOW_POW
+    //
+    // Maps the state-blow to an element via StateBlowToElement, then delegates
+    // to WeatherElementPower.
+    // ---------------------------------------------------------------------------
+    float WeatherBlowPower(
+        GameStateBlow blow,
+        GameUInt32 weatherFlags,
+        bool weatherActive);
+
+    // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //
     // These tables are loaded at runtime from configuration files
