@@ -3047,8 +3047,13 @@ float GLCHARLOGIC::GETATT_ITEM ()
 }
 float GLCHARLOGIC::GETMOVE_ITEM ()
 {
-	float fMOVE = ( m_sSUMITEM.fInc_MoveSpeed / GLCONST_CHAR::cCONSTCLASS[m_CHARINDEX].fRUNVELO);
-	return fMOVE<0.0f?0.0f:fMOVE;
+	// Legacy layer resolves m_sSUMITEM.fInc_MoveSpeed and
+	// GLCONST_CHAR::cCONSTCLASS[m_CHARINDEX].fRUNVELO before delegating.
+	// The portable layer does NOT depend on GLCONST_CHAR.
+	const float fItemMoveSpeed = m_sSUMITEM.fInc_MoveSpeed;
+	const float fBaseRunVelocity = GLCONST_CHAR::cCONSTCLASS[m_CHARINDEX].fRUNVELO;
+	return GameCharacterCalculations::ItemMoveVelocityRatio(
+		fItemMoveSpeed, fBaseRunVelocity);
 }
 
 //	단순히 장착위치 인지만 검사.

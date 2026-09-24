@@ -948,4 +948,27 @@ namespace GameCharacterCalculations
 
         return static_cast<GameUInt16>(nRANGE);
     }
+
+    // ---------------------------------------------------------------------------
+    // ItemMoveVelocityRatio
+    //
+    // Legacy: GLCHARLOGIC::GETMOVE_ITEM() (GLogixExPC.cpp:3048)
+    //
+    // float fMOVE = ( m_sSUMITEM.fInc_MoveSpeed
+    //                 / GLCONST_CHAR::cCONSTCLASS[m_CHARINDEX].fRUNVELO );
+    // return fMOVE < 0.0f ? 0.0f : fMOVE;
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic floating-point division and negative clamp.
+    //
+    // NOTE: No zero-divisor guard is added. The current repository does
+    // NOT explicitly handle fRUNVELO == 0.0f; behavior is preserved exactly.
+    // ---------------------------------------------------------------------------
+    float ItemMoveVelocityRatio(
+        float itemMoveSpeed,
+        float baseRunVelocity)
+    {
+        const float fMOVE = itemMoveSpeed / baseRunVelocity;
+        return fMOVE < 0.0f ? 0.0f : fMOVE;
+    }
 }

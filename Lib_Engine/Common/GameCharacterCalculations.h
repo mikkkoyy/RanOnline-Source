@@ -715,6 +715,30 @@ namespace GameCharacterCalculations
         GameInt32 targetRangeBonus,
         bool affectsEnemy,
         float skillApplyRangeBonus);
+
+    // ---------------------------------------------------------------------------
+    // ItemMoveVelocityRatio — item movement-speed bonus ratio.
+    //
+    // Legacy: GLCHARLOGIC::GETMOVE_ITEM() (GLogixExPC.cpp:3048)
+    //
+    // float fMOVE = ( m_sSUMITEM.fInc_MoveSpeed
+    //                 / GLCONST_CHAR::cCONSTCLASS[m_CHARINDEX].fRUNVELO );
+    // return fMOVE < 0.0f ? 0.0f : fMOVE;
+    //
+    // The caller is responsible for:
+    //   - obtaining itemMoveSpeed (m_sSUMITEM.fInc_MoveSpeed)
+    //   - obtaining baseRunVelocity (GLCONST_CHAR::cCONSTCLASS[m_CHARINDEX].fRUNVELO)
+    //   - all surrounding movement pipeline (GETMOVEVELO, fSkinAniElap, etc.)
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic floating-point division and negative clamp.
+    //
+    // NOTE: No zero-divisor guard is added. The current repository does
+    // NOT explicitly handle fRUNVELO == 0.0f; behavior is preserved exactly.
+    // ---------------------------------------------------------------------------
+    float ItemMoveVelocityRatio(
+        float itemMoveSpeed,
+        float baseRunVelocity);
 }
 
 // Convenience aliases in the global namespace for minimal friction
