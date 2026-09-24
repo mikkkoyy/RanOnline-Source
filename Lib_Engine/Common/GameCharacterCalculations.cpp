@@ -295,6 +295,40 @@ namespace GameCharacterCalculations
         return baseVelocity * (sumMoveVelocity + itemMoveVelocity);
     }
 
+    // ---------------------------------------------------------------------------
+    // IsLowerHP
+    //
+    // Legacy: GLCrow::IsLowerHP()
+    //
+    // float fRate = 0.0f;
+    // for( int i = 0; i < m_vecPatternList.size(); i++ )
+    // {
+    //     fRate = m_vecPatternList[i].m_fPatternDNRate;
+    //     if( GETHP() >= (int)( (float)GETMAXHP() * fRate ) / 100.0f )
+    //         return i;
+    // }
+    // return -1;
+    //
+    // CRITICAL: The (int) cast truncates the product BEFORE division by 100.0f.
+    // This is preserved exactly — do NOT move the cast after the division.
+    // ---------------------------------------------------------------------------
+    int IsLowerHP(
+        GameUInt32 currentHP,
+        GameUInt32 maxHP,
+        const float* patternRates,
+        GameSizeT patternCount)
+    {
+        for (GameSizeT i = 0; i < patternCount; ++i)
+        {
+            float fRate = patternRates[i];
+            if (currentHP >= (int)((float)maxHP * fRate) / 100.0f)
+            {
+                return static_cast<int>(i);
+            }
+        }
+        return -1;
+    }
+
     // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //

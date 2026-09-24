@@ -215,6 +215,25 @@ namespace GameCharacterCalculations
         float itemMoveVelocity,
         bool isRunMode);
 
+    // ---------------------------------------------------------------------------
+    // IsLowerHP — crow action-pattern selection based on HP threshold.
+    //
+    // Legacy: GLCrow::IsLowerHP()
+    //
+    // for each pattern i:
+    //     threshold = (int)((float)maxHP * patternRates[i]) / 100.0f
+    //     if (currentHP >= threshold) return i
+    // return -1
+    //
+    // CRITICAL: The (int) cast truncates the product BEFORE division by 100.0f.
+    // This is preserved exactly — do NOT move the cast after the division.
+    // ---------------------------------------------------------------------------
+    int IsLowerHP(
+        GameUInt32 currentHP,
+        GameUInt32 maxHP,
+        const float* patternRates,
+        GameSizeT patternCount);
+
     // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //
