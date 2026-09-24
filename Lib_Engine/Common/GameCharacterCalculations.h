@@ -347,6 +347,34 @@ namespace GameCharacterCalculations
         GameInt32 level,
         GameInt32 maxLevel);
 
+    // ---------------------------------------------------------------------------
+    // DamageReflectionAmount — damage reflection amount from level-scaled modifier.
+    //
+    // Legacy: GLogixExPC.cpp:1742 and GLogicExNPC.cpp:318
+    //
+    // int nDamageReflection = (int) (
+    //     ( (rResultDAMAGE * fDamageReflection) * nLEVEL )
+    //     / GLCONST_CHAR::wMAX_LEVEL
+    // );
+    //
+    // The caller is responsible for:
+    //   - obtaining rResultDAMAGE (post-armor damage)
+    //   - obtaining fDamageReflection (reflection modifier)
+    //   - obtaining nLEVEL (target level)
+    //   - obtaining maxLevel (GLCONST_CHAR::wMAX_LEVEL = 300)
+    //   - deciding whether reflection activates (RANDOM_POS check stays in legacy)
+    //   - calling DamageReflectionProc() with the returned amount
+    //
+    // CRITICAL: The (int) cast truncates the floating-point result. The
+    // multiplication order is preserved exactly: (damage * damageReflection)
+    // * level / maxLevel. Do NOT reorder or "simplify".
+    // ---------------------------------------------------------------------------
+    GameInt32 DamageReflectionAmount(
+        GameInt32 damage,
+        float damageReflection,
+        GameInt32 level,
+        GameInt32 maxLevel);
+
     // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //

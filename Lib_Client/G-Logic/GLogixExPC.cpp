@@ -1739,13 +1739,14 @@ DWORD GLCHARLOGIC::CALCDAMAGE_20060328(
 	{
 		if ( fDamageReflectionRate > (RANDOM_POS*1) )
 		{
-			int nDamageReflection = (int) ( ( (rResultDAMAGE * fDamageReflection) * nLEVEL ) / GLCONST_CHAR::wMAX_LEVEL );
-			
-			if ( nDamageReflection > 0 )  
+			int nDamageReflection = GameCharacterCalculations::DamageReflectionAmount(
+				rResultDAMAGE, fDamageReflection, nLEVEL, GLCONST_CHAR::wMAX_LEVEL);
+
+			if ( nDamageReflection > 0 )
 			{
 				if ( bPsyDamage ) dwDamageFlag += DAMAGE_TYPE_PSY_REFLECTION;
 				else dwDamageFlag += DAMAGE_TYPE_MAGIC_REFLECTION;
-				
+
 				// 피격자 입장에서 데미지를 다시 보낸다.
 				STARGETID sActor(CROW_PC,dwGaeaID);
 				pActor->DamageReflectionProc( nDamageReflection, sActor );

@@ -503,6 +503,31 @@ namespace GameCharacterCalculations
             / static_cast<float>(maxLevel));
     }
 
+    // ---------------------------------------------------------------------------
+    // DamageReflectionAmount
+    //
+    // Legacy: GLogixExPC.cpp:1742 and GLogicExNPC.cpp:318
+    //
+    // int nDamageReflection = (int) (
+    //     ( (rResultDAMAGE * fDamageReflection) * nLEVEL )
+    //     / GLCONST_CHAR::wMAX_LEVEL
+    // );
+    //
+    // CRITICAL: The (int) cast truncates the floating-point result. The
+    // multiplication order is preserved exactly: (damage * damageReflection)
+    // * level / maxLevel. Do NOT reorder or "simplify".
+    // ---------------------------------------------------------------------------
+    GameInt32 DamageReflectionAmount(
+        GameInt32 damage,
+        float damageReflection,
+        GameInt32 level,
+        GameInt32 maxLevel)
+    {
+        return static_cast<GameInt32>(
+            (static_cast<float>(damage) * damageReflection * static_cast<float>(level))
+            / static_cast<float>(maxLevel));
+    }
+
     // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //

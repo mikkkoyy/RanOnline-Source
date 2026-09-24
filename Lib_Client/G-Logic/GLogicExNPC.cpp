@@ -311,13 +311,14 @@ DWORD GLCROWLOGIC::CALCDAMAGE ( int& rResultDAMAGE, const DWORD dwGaeaID, const 
 
 
 	//	데미지 반사 계산
-	if ( fDamageReflectionRate > 0.0f )
+if ( fDamageReflectionRate > 0.0f )
 	{
 		if ( fDamageReflectionRate > (RANDOM_POS*1) )
 		{
-			int nDamageReflection = (int) ( ( (rResultDAMAGE * fDamageReflection) * nLEVEL ) / GLCONST_CHAR::wMAX_LEVEL );
+			int nDamageReflection = GameCharacterCalculations::DamageReflectionAmount(
+				rResultDAMAGE, fDamageReflection, nLEVEL, GLCONST_CHAR::wMAX_LEVEL);
 
-			if ( nDamageReflection > 0 ) 
+			if ( nDamageReflection > 0 )
 			{
 				if ( bPsyDamage ) dwDamageFlag += DAMAGE_TYPE_PSY_REFLECTION;
 				else dwDamageFlag += DAMAGE_TYPE_MAGIC_REFLECTION;
