@@ -862,4 +862,90 @@ namespace GameCharacterCalculations
 
         return tables.pExpMaxTable2nd[wLev];
     }
+
+    // ---------------------------------------------------------------------------
+    // SkillTargetRange
+    //
+    // Legacy: GLCHARLOGIC::GETSKILLRANGE_TAR (GLogixExPC.cpp:4474)
+    //
+    // int nRANGE = sSKILL.m_sBASIC.wTARRANGE;
+    // if ( nRANGE < 20 ) nRANGE = 20;
+    // if ( sSKILL.m_sBASIC.emAPPLY==SKILL::EMAPPLY_PHY_LONG )
+    //     nRANGE += (int) GETSUM_TARRANGE() + 5;
+    // if ( sSKILL.m_sBASIC.emIMPACT_SIDE == SIDE_ENEMY )
+    //     nRANGE += (int) ( m_fSUM_SKILL_ATTACKRANGE
+    //                      + m_sSUM_PASSIVE.m_fSUM_SKILL_ATTACKRANGE );
+    // if ( nRANGE <= 0 ) nRANGE = 1;
+    // return (WORD)nRANGE;
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic range arithmetic, minimum/clamping, and final
+    // GameUInt16 conversion. The caller resolves all skill/object state.
+    // ---------------------------------------------------------------------------
+    GameUInt16 SkillTargetRange(
+        GameInt32 baseTargetRange,
+        bool isPhysicalLongRange,
+        GameInt32 targetRangeBonus,
+        bool affectsEnemy,
+        float skillAttackRangeBonus)
+    {
+        int nRANGE = static_cast<int>(baseTargetRange);
+
+        if ( nRANGE < 20 )
+            nRANGE = 20;
+
+        if ( isPhysicalLongRange )
+            nRANGE += targetRangeBonus + 5;
+
+        if ( affectsEnemy )
+            nRANGE += static_cast<int>(skillAttackRangeBonus);
+
+        if ( nRANGE <= 0 )
+            nRANGE = 1;
+
+        return static_cast<GameUInt16>(nRANGE);
+    }
+
+    // ---------------------------------------------------------------------------
+    // SkillApplyRange
+    //
+    // Legacy: GLCHARLOGIC::GETSKILLRANGE_APPLY (GLogixExPC.cpp:4503)
+    //
+    // int nRANGE = sDATA_LVL.wAPPLYRANGE;
+    // if ( sSKILL.m_sBASIC.emAPPLY==SKILL::EMAPPLY_PHY_LONG )
+    //     nRANGE += (int) GETSUM_TARRANGE() + 5;
+    // if ( sSKILL.m_sBASIC.emIMPACT_SIDE == SIDE_ENEMY )
+    //     nRANGE += (int) ( m_fSUM_SKILL_APPLYRANGE
+    //                      + m_sSUM_PASSIVE.m_fSUM_SKILL_APPLYRANGE );
+    // if ( nRANGE <= 0 ) nRANGE = 1;
+    // return (WORD)nRANGE;
+    //
+    // NOTE: The target-range function additionally clamps the base to a
+    // minimum of 20. The apply-range function does NOT have that minimum.
+    // This is preserved exactly.
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic range arithmetic, minimum/clamping, and final
+    // GameUInt16 conversion. The caller resolves all skill/object state.
+    // ---------------------------------------------------------------------------
+    GameUInt16 SkillApplyRange(
+        GameInt32 baseApplyRange,
+        bool isPhysicalLongRange,
+        GameInt32 targetRangeBonus,
+        bool affectsEnemy,
+        float skillApplyRangeBonus)
+    {
+        int nRANGE = static_cast<int>(baseApplyRange);
+
+        if ( isPhysicalLongRange )
+            nRANGE += targetRangeBonus + 5;
+
+        if ( affectsEnemy )
+            nRANGE += static_cast<int>(skillApplyRangeBonus);
+
+        if ( nRANGE <= 0 )
+            nRANGE = 1;
+
+        return static_cast<GameUInt16>(nRANGE);
+    }
 }

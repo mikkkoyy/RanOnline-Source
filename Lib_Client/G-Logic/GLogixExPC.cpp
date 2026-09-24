@@ -4473,17 +4473,20 @@ BOOL GLCHARLOGIC::ISREVIVE ()
 /*skill range spec logic, Juver, 2017/06/06 */
 WORD GLCHARLOGIC::GETSKILLRANGE_TAR ( const GLSKILL &sSKILL ) const
 {
-	int nRANGE = sSKILL.m_sBASIC.wTARRANGE;
-	if( nRANGE < 20 )	nRANGE = 20;	/*dmk14 anti shit*/
-	if ( sSKILL.m_sBASIC.emAPPLY==SKILL::EMAPPLY_PHY_LONG )		nRANGE += (int) GETSUM_TARRANGE()+5;
+	// Legacy layer resolves all skill/object state before delegating.
+	// The portable layer does NOT depend on GLSKILL, SKILL, or SIDE_ENEMY.
+	const bool isPhysicalLongRange =
+		(sSKILL.m_sBASIC.emAPPLY == SKILL::EMAPPLY_PHY_LONG);
+	const bool affectsEnemy =
+		(sSKILL.m_sBASIC.emIMPACT_SIDE == SIDE_ENEMY);
 
-	if ( sSKILL.m_sBASIC.emIMPACT_SIDE == SIDE_ENEMY )	
-		nRANGE += (int) ( m_fSUM_SKILL_ATTACKRANGE + m_sSUM_PASSIVE.m_fSUM_SKILL_ATTACKRANGE );
+	return GameCharacterCalculations::SkillTargetRange(
+		sSKILL.m_sBASIC.wTARRANGE,
+		isPhysicalLongRange,
+		GETSUM_TARRANGE(),
+		affectsEnemy,
+		m_fSUM_SKILL_ATTACKRANGE + m_sSUM_PASSIVE.m_fSUM_SKILL_ATTACKRANGE);
 
-	if ( nRANGE <= 0 ) nRANGE = 1;
-
-	return (WORD)nRANGE;
-	
 	/*anti shit gs
 	int nRANGE = sSKILL.m_sBASIC.wTARRANGE;
 
@@ -4502,17 +4505,20 @@ WORD GLCHARLOGIC::GETSKILLRANGE_TAR ( const GLSKILL &sSKILL ) const
 /*skill range spec logic, Juver, 2017/06/06 */
 WORD GLCHARLOGIC::GETSKILLRANGE_APPLY ( const GLSKILL &sSKILL, const WORD dwLEVEL ) const
 {
+	// Legacy layer resolves all skill/object state before delegating.
+	// The portable layer does NOT depend on GLSKILL, SKILL, or SIDE_ENEMY.
 	const SKILL::CDATA_LVL &sDATA_LVL = sSKILL.m_sAPPLY.sDATA_LVL[dwLEVEL];
+	const bool isPhysicalLongRange =
+		(sSKILL.m_sBASIC.emAPPLY == SKILL::EMAPPLY_PHY_LONG);
+	const bool affectsEnemy =
+		(sSKILL.m_sBASIC.emIMPACT_SIDE == SIDE_ENEMY);
 
-	int nRANGE = sDATA_LVL.wAPPLYRANGE;
-	if ( sSKILL.m_sBASIC.emAPPLY==SKILL::EMAPPLY_PHY_LONG )		nRANGE += (int) GETSUM_TARRANGE()+5;
-
-	if ( sSKILL.m_sBASIC.emIMPACT_SIDE == SIDE_ENEMY )	
-		nRANGE += (int) ( m_fSUM_SKILL_APPLYRANGE + m_sSUM_PASSIVE.m_fSUM_SKILL_APPLYRANGE );
-
-	if ( nRANGE <= 0 ) nRANGE = 1;
-
-	return (WORD)nRANGE;
+	return GameCharacterCalculations::SkillApplyRange(
+		sDATA_LVL.wAPPLYRANGE,
+		isPhysicalLongRange,
+		GETSUM_TARRANGE(),
+		affectsEnemy,
+		m_fSUM_SKILL_APPLYRANGE + m_sSUM_PASSIVE.m_fSUM_SKILL_APPLYRANGE);
 	/*anti shit gs
 	const SKILL::CDATA_LVL &sDATA_LVL = sSKILL.m_sAPPLY.sDATA_LVL[dwLEVEL];
 

@@ -644,6 +644,77 @@ namespace GameCharacterCalculations
     GameInt64 NeedExp2(
         const CharacterCalculationTables& tables,
         GameUInt16 wLev);
+
+    // ---------------------------------------------------------------------------
+    // SkillTargetRange — skill target range arithmetic.
+    //
+    // Legacy: GLCHARLOGIC::GETSKILLRANGE_TAR (GLogixExPC.cpp:4474)
+    //
+    // int nRANGE = sSKILL.m_sBASIC.wTARRANGE;
+    // if ( nRANGE < 20 ) nRANGE = 20;
+    // if ( sSKILL.m_sBASIC.emAPPLY==SKILL::EMAPPLY_PHY_LONG )
+    //     nRANGE += (int) GETSUM_TARRANGE() + 5;
+    // if ( sSKILL.m_sBASIC.emIMPACT_SIDE == SIDE_ENEMY )
+    //     nRANGE += (int) ( m_fSUM_SKILL_ATTACKRANGE
+    //                      + m_sSUM_PASSIVE.m_fSUM_SKILL_ATTACKRANGE );
+    // if ( nRANGE <= 0 ) nRANGE = 1;
+    // return (WORD)nRANGE;
+    //
+    // The caller is responsible for:
+    //   - obtaining baseTargetRange (sSKILL.m_sBASIC.wTARRANGE)
+    //   - resolving isPhysicalLongRange (emAPPLY == SKILL::EMAPPLY_PHY_LONG)
+    //   - obtaining targetRangeBonus (GETSUM_TARRANGE())
+    //   - resolving affectsEnemy (emIMPACT_SIDE == SIDE_ENEMY)
+    //   - obtaining skillAttackRangeBonus
+    //     (m_fSUM_SKILL_ATTACKRANGE + m_sSUM_PASSIVE.m_fSUM_SKILL_ATTACKRANGE)
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic range arithmetic, minimum/clamping, and final
+    // GameUInt16 conversion. The caller resolves all skill/object state.
+    // ---------------------------------------------------------------------------
+    GameUInt16 SkillTargetRange(
+        GameInt32 baseTargetRange,
+        bool isPhysicalLongRange,
+        GameInt32 targetRangeBonus,
+        bool affectsEnemy,
+        float skillAttackRangeBonus);
+
+    // ---------------------------------------------------------------------------
+    // SkillApplyRange — skill apply range arithmetic.
+    //
+    // Legacy: GLCHARLOGIC::GETSKILLRANGE_APPLY (GLogixExPC.cpp:4503)
+    //
+    // int nRANGE = sDATA_LVL.wAPPLYRANGE;
+    // if ( sSKILL.m_sBASIC.emAPPLY==SKILL::EMAPPLY_PHY_LONG )
+    //     nRANGE += (int) GETSUM_TARRANGE() + 5;
+    // if ( sSKILL.m_sBASIC.emIMPACT_SIDE == SIDE_ENEMY )
+    //     nRANGE += (int) ( m_fSUM_SKILL_APPLYRANGE
+    //                      + m_sSUM_PASSIVE.m_fSUM_SKILL_APPLYRANGE );
+    // if ( nRANGE <= 0 ) nRANGE = 1;
+    // return (WORD)nRANGE;
+    //
+    // NOTE: The target-range function additionally clamps the base to a
+    // minimum of 20. The apply-range function does NOT have that minimum.
+    // This is preserved exactly.
+    //
+    // The caller is responsible for:
+    //   - obtaining baseApplyRange (sDATA_LVL.wAPPLYRANGE)
+    //   - resolving isPhysicalLongRange (emAPPLY == SKILL::EMAPPLY_PHY_LONG)
+    //   - obtaining targetRangeBonus (GETSUM_TARRANGE())
+    //   - resolving affectsEnemy (emIMPACT_SIDE == SIDE_ENEMY)
+    //   - obtaining skillApplyRangeBonus
+    //     (m_fSUM_SKILL_APPLYRANGE + m_sSUM_PASSIVE.m_fSUM_SKILL_APPLYRANGE)
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic range arithmetic, minimum/clamping, and final
+    // GameUInt16 conversion. The caller resolves all skill/object state.
+    // ---------------------------------------------------------------------------
+    GameUInt16 SkillApplyRange(
+        GameInt32 baseApplyRange,
+        bool isPhysicalLongRange,
+        GameInt32 targetRangeBonus,
+        bool affectsEnemy,
+        float skillApplyRangeBonus);
 }
 
 // Convenience aliases in the global namespace for minimal friction
