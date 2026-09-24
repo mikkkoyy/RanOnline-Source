@@ -1118,4 +1118,35 @@ namespace GameCharacterCalculations
 
         return fMOVE < 0.0f ? 0.0f : fMOVE;
     }
+
+    // ---------------------------------------------------------------------------
+    // ApplyDefenseRate
+    //
+    // Legacy: GLCHARLOGIC::SUM_ADDITION() (GLogixExPC.cpp:2975)
+    //
+    // m_nDEFENSE_SKILL = int ( m_nDEFENSE_SKILL * m_fDefenseRate );
+    // if ( m_nDEFENSE_SKILL < 0 ) m_nDEFENSE_SKILL = 1;
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic float multiplication, int conversion, and minimum.
+    //
+    // NOTE: This is NOT the same calculation as Defense(), which applies an
+    // environment factor. Keep both functions separate.
+    //
+    // NOTE: The minimum of 1 is preserved exactly. The int() conversion is
+    // truncation toward zero, matching the legacy C-style cast.
+    // ---------------------------------------------------------------------------
+    GameInt32 ApplyDefenseRate(
+        GameInt32 defense,
+        float defenseRate)
+    {
+        GameInt32 result =
+            static_cast<GameInt32>(
+                static_cast<float>(defense) * defenseRate);
+
+        if ( result < 0 )
+            result = 1;
+
+        return result;
+    }
 }

@@ -880,6 +880,32 @@ namespace GameCharacterCalculations
         float skillMove,
         float optionMove,
         float itemMoveRate);
+
+    // ---------------------------------------------------------------------------
+    // ApplyDefenseRate — defense-rate application.
+    //
+    // Legacy: GLCHARLOGIC::SUM_ADDITION() (GLogixExPC.cpp:2975)
+    //
+    // m_nDEFENSE_SKILL = int ( m_nDEFENSE_SKILL * m_fDefenseRate );
+    // if ( m_nDEFENSE_SKILL < 0 ) m_nDEFENSE_SKILL = 1;
+    //
+    // The caller is responsible for:
+    //   - obtaining defense (m_nDEFENSE_SKILL)
+    //   - obtaining defenseRate (m_fDefenseRate)
+    //   - all surrounding stat aggregation (SUM_ADDITION, SUM_PASSIVE, etc.)
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic float multiplication, int conversion, and minimum.
+    //
+    // NOTE: This is NOT the same calculation as Defense(), which applies an
+    // environment factor. Keep both functions separate.
+    //
+    // NOTE: The minimum of 1 is preserved exactly. The int() conversion is
+    // truncation toward zero, matching the legacy C-style cast.
+    // ---------------------------------------------------------------------------
+    GameInt32 ApplyDefenseRate(
+        GameInt32 defense,
+        float defenseRate);
 }
 
 // Convenience aliases in the global namespace for minimal friction

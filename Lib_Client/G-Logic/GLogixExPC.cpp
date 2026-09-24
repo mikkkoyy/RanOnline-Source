@@ -2972,8 +2972,9 @@ void GLCHARLOGIC::UPDATE_DATA ( float fTime, float fElapsedTime, BOOL bClient, f
 	m_wSUM_MA = m_wMA + nSUM_MA;
 
 	//	방어력. 변화율 반영.
-	m_nDEFENSE_SKILL = int ( m_nDEFENSE_SKILL * m_fDefenseRate );
-	if ( m_nDEFENSE_SKILL < 0 )			m_nDEFENSE_SKILL = 1;
+	m_nDEFENSE_SKILL = GameCharacterCalculations::ApplyDefenseRate(
+		m_nDEFENSE_SKILL,
+		m_fDefenseRate);
 
 	m_sSUMRESIST_SKILL.LIMIT();
 
