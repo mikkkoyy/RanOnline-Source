@@ -478,6 +478,31 @@ namespace GameCharacterCalculations
         return WeatherElementPower(emElement, weatherFlags, weatherActive);
     }
 
+    // ---------------------------------------------------------------------------
+    // DamageReduceAmount
+    //
+    // Legacy: GLogixExPC.cpp:1728 and GLogicExNPC.cpp:304
+    //
+    // int nDamageReduce = (int) (
+    //     ( (rResultDAMAGE * fDamageReduce) * nLEVEL )
+    //     / GLCONST_CHAR::wMAX_LEVEL
+    // );
+    //
+    // CRITICAL: The (int) cast truncates the floating-point result. The
+    // multiplication order is preserved exactly: (damage * damageReduce)
+    // * level / maxLevel. Do NOT reorder or "simplify".
+    // ---------------------------------------------------------------------------
+    GameInt32 DamageReduceAmount(
+        GameInt32 damage,
+        float damageReduce,
+        GameInt32 level,
+        GameInt32 maxLevel)
+    {
+        return static_cast<GameInt32>(
+            (static_cast<float>(damage) * damageReduce * static_cast<float>(level))
+            / static_cast<float>(maxLevel));
+    }
+
     // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //

@@ -320,6 +320,33 @@ namespace GameCharacterCalculations
         GameUInt32 weatherFlags,
         bool weatherActive);
 
+    // ---------------------------------------------------------------------------
+    // DamageReduceAmount — damage reduction amount from level-scaled modifier.
+    //
+    // Legacy: GLOGIXEXPC.cpp:1728 and GLOGICEXNPC.cpp:304
+    //
+    // int nDamageReduce = (int) (
+    //     ( (rResultDAMAGE * fDamageReduce) * nLEVEL )
+    //     / GLCONST_CHAR::wMAX_LEVEL
+    // );
+    //
+    // The caller is responsible for:
+    //   - obtaining rResultDAMAGE (post-armor damage)
+    //   - obtaining fDamageReduce (reduction modifier, 0.0-1.0)
+    //   - obtaining nLEVEL (target level)
+    //   - obtaining maxLevel (GLCONST_CHAR::wMAX_LEVEL = 300)
+    //   - subtracting the returned reduction from rResultDAMAGE
+    //
+    // CRITICAL: The (int) cast truncates the floating-point result. The
+    // multiplication order is preserved exactly: (damage * damageReduce)
+    // * level / maxLevel. Do NOT reorder or "simplify".
+    // ---------------------------------------------------------------------------
+    GameInt32 DamageReduceAmount(
+        GameInt32 damage,
+        float damageReduce,
+        GameInt32 level,
+        GameInt32 maxLevel);
+
     // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //

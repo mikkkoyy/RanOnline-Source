@@ -1725,7 +1725,8 @@ DWORD GLCHARLOGIC::CALCDAMAGE_20060328(
 	//	µ¥¹ÌÁö Èí¼ö
 	if ( fDamageReduce > 0.0f ) 
 	{
-		int nDamageReduce = (int) ( ( (rResultDAMAGE * fDamageReduce) * nLEVEL ) / GLCONST_CHAR::wMAX_LEVEL );
+		int nDamageReduce = GameCharacterCalculations::DamageReduceAmount(
+			rResultDAMAGE, fDamageReduce, nLEVEL, GLCONST_CHAR::wMAX_LEVEL);
 		rResultDAMAGE -= nDamageReduce;
 		
 		if ( bPsyDamage ) dwDamageFlag += DAMAGE_TYPE_PSY_REDUCE;
