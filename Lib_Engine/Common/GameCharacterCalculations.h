@@ -906,6 +906,45 @@ namespace GameCharacterCalculations
     GameInt32 ApplyDefenseRate(
         GameInt32 defense,
         float defenseRate);
+
+    // ---------------------------------------------------------------------------
+    // PkLevel — PK level threshold calculation.
+    //
+    // Legacy: GLCHARLOGIC::GET_PK_LEVEL() (GLogixExPC.cpp:4555)
+    //
+    // if ( m_nBright >= 0 ) return UINT_MAX;
+    //
+    // DWORD dwLEVEL = 0;
+    // for ( dwLEVEL=0; dwLEVEL<GLCONST_CHAR::EMPK_STATE_LEVEL; ++dwLEVEL )
+    // {
+    //     if ( GLCONST_CHAR::sPK_STATE[dwLEVEL].nPKPOINT <= m_nBright ) break;
+    // }
+    //
+    // if ( dwLEVEL>=GLCONST_CHAR::EMPK_STATE_LEVEL )
+    //     dwLEVEL = GLCONST_CHAR::EMPK_STATE_LEVEL-1;
+    //
+    // return dwLEVEL;
+    //
+    // The caller is responsible for:
+    //   - obtaining brightness (m_nBright)
+    //   - obtaining pkPoints (GLCONST_CHAR::sPK_STATE[].nPKPOINT)
+    //   - obtaining pkStateCount (GLCONST_CHAR::EMPK_STATE_LEVEL)
+    //   - all surrounding PK state table ownership
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic threshold search.
+    //
+    // NOTE: GLCONST_CHAR::sPK_STATE remains owned by the legacy layer. The
+    // portable function receives a raw pointer to the already-resolved PK-point
+    // thresholds and the state count. No PK configuration is duplicated here.
+    //
+    // NOTE: pkStateCount == 0 is impossible by current design (EMPK_STATE_LEVEL
+    // is a fixed enum of 5). No new fallback behavior is invented.
+    // ---------------------------------------------------------------------------
+    GameUInt32 PkLevel(
+        GameInt32 brightness,
+        const GameInt32* pkPoints,
+        GameUInt32 pkStateCount);
 }
 
 // Convenience aliases in the global namespace for minimal friction

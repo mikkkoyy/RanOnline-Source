@@ -4554,17 +4554,25 @@ WORD GLCHARLOGIC::GETSKILLRANGE_APPLY ( const GLSKILL &sSKILL, const WORD dwLEVE
 //	Note : 현재 pk 레벨을 알아본다. ( UINT_MAX 일경우 pk 해당사항 없음. )
 DWORD GLCHARLOGIC::GET_PK_LEVEL ()
 {
+	// Legacy layer resolves m_nBright and GLCONST_CHAR::sPK_STATE[]
+	// before delegating. The portable layer does NOT depend on GLCONST_CHAR.
 	if ( m_nBright >= 0 )	return UINT_MAX;
 
-	DWORD dwLEVEL = 0;
-	for ( dwLEVEL=0; dwLEVEL<GLCONST_CHAR::EMPK_STATE_LEVEL; ++dwLEVEL )
+	// sPK_STATE[].nPKPOINT fields are not contiguous in memory, so the
+	// legacy layer gathers the thresholds into a local array before calling
+	// the portable threshold search.
+	const WORD pkStateCount = GLCONST_CHAR::EMPK_STATE_LEVEL;
+ GameInt32 pkPoints[EMPK_STATE_LEVEL];
+	for ( WORD i = 0; i < pkStateCount; ++i )
 	{
-		if ( GLCONST_CHAR::sPK_STATE[dwLEVEL].nPKPOINT <= m_nBright )		break;
+		pkPoints[i] = GLCONST_CHAR::sPK_STATE[i].nPKPOINT;
 	}
 
-	if ( dwLEVEL>=GLCONST_CHAR::EMPK_STATE_LEVEL )	dwLEVEL = GLCONST_CHAR::EMPK_STATE_LEVEL-1;
-
-	return dwLEVEL;
+	return GameCharacterCalculations::PkLevel(
+		m_nBright,
+		pkPoints,
+		static_cast<GameUInt32>(pkStateCount));
+}
 }
 
 
