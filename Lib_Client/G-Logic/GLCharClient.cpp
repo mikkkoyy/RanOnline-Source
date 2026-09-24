@@ -21,6 +21,8 @@
 
 #include "RANPARAM.h"
 
+#include "../Lib_Engine/Common/GameCharacterCalculations.h"
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
@@ -1254,13 +1256,19 @@ float GLCharClient::GETMOVEVELO ()
 
 float GLCharClient::GETATT_ITEM ()
 {
-	float fATTVELO = m_fITEMATTVELO / 100;
-	return fATTVELO;
+	// Legacy layer resolves m_fITEMATTVELO before delegating.
+	// The portable layer does NOT depend on GLCharClient.
+	return GameCharacterCalculations::ItemAttackVelocityRatio(
+		m_fITEMATTVELO);
 }
 float GLCharClient::GETMOVE_ITEM ()
 {
-	float fMOVE = m_fITEM_MOVE / GLCONST_CHAR::cCONSTCLASS[m_CHARINDEX].fRUNVELO;
-	return fMOVE<0.0f?0.0f:fMOVE;
+	// Legacy layer resolves m_fITEM_MOVE and
+	// GLCONST_CHAR::cCONSTCLASS[m_CHARINDEX].fRUNVELO before delegating.
+	// The portable layer does NOT depend on GLCONST_CHAR.
+	return GameCharacterCalculations::ItemMoveVelocityRatio(
+		m_fITEM_MOVE,
+	,GLCONST_CHAR::cCONSTCLASS[m_CHARINDEX].fRUNVELO);
 }
 
 float GLCharClient::GetMoveVelo ()
