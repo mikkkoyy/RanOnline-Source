@@ -1201,4 +1201,25 @@ namespace GameCharacterCalculations
 
         return level;
     }
+
+    // ---------------------------------------------------------------------------
+    // IsOffender
+    //
+    // Legacy: GLCHARLOGIC::ISOFFENDER() (GLogixExPC.cpp:4649)
+    //
+    // return ( m_nBright < GLCONST_CHAR::sPK_STATE[0].nPKPOINT );
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic signed-integer comparison.
+    //
+    // NOTE: GLCONST_CHAR::sPK_STATE remains owned by the legacy layer. The
+    // portable function receives the already-resolved threshold value.
+    // No PK configuration is duplicated here.
+    // ---------------------------------------------------------------------------
+    bool IsOffender(
+        GameInt32 brightness,
+        GameInt32 offenderThreshold)
+    {
+        return brightness < offenderThreshold;
+    }
 }

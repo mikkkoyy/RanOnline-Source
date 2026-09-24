@@ -4648,7 +4648,10 @@ bool GLCHARLOGIC::ISPLAYKILLING ()
 //	Note : 자신이 범죄자인가?
 bool GLCHARLOGIC::ISOFFENDER ()
 {
-	return ( m_nBright < GLCONST_CHAR::sPK_STATE[0].nPKPOINT );
+	// Legacy layer resolves m_nBright and
+	// GLCONST_CHAR::sPK_STATE[0].nPKPOINT before delegating.
+	// The portable layer does NOT depend on GLCONST_CHAR.
+	return GameCharacterCalculations::IsOffender(m_nBright, GLCONST_CHAR::sPK_STATE[0].nPKPOINT);
 }
 
 bool GLCHARLOGIC::IS_HOSTILE_ACTOR ( DWORD dwCHARID )
