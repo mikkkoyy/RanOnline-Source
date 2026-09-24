@@ -90,17 +90,19 @@ namespace GameCharacterCalculations
     // float fFactor[BFB_SIZE] = { 0.8f, 1.0f, 1.2f };
     // EM_BRIGHT_FB brightFB = GLSPACEGAP(emACTOR, emRecep, emSPACE);
     // return int(nDEFENSE * fFactor[brightFB]);
+    //
+    // The environment factor is the caller's already-resolved value from
+    // the legacy EM_BRIGHT_FB table { 0.8f, 1.0f, 1.2f }. It is passed as a
+    // plain float so the portable layer does NOT depend on EM_BRIGHT_FB,
+    // EMBRIGHT, or GLSPACEGAP. The caller computes the factor via
+    // SpaceGap() and passes the resolved float.
     // ---------------------------------------------------------------------------
-    int Defense(
-        int nDEFENSE,
-        GameBright emACTOR,
-        GameBright emRecep,
-        GameBright emSPACE)
+    GameInt32 Defense(
+        GameInt32 defense,
+        float environmentFactor)
     {
-        float fFactor[3] = { 0.8f, 1.0f, 1.2f };
-        GameBrightFB brightFB = SpaceGap(emACTOR, emRecep, emSPACE);
-
-        return static_cast<int>(nDEFENSE * fFactor[static_cast<int>(brightFB)]);
+        return static_cast<GameInt32>(
+            static_cast<float>(defense) * environmentFactor);
     }
 
     // ---------------------------------------------------------------------------

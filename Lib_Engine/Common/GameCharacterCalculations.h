@@ -88,14 +88,18 @@ namespace GameCharacterCalculations
     //
     // Legacy: GLOGICEX::GLDEFENSE
     //
-    // Formula: int(nDEFENSE * fFactor[bFB])
-    // where fFactor = { 0.8f (Dis), 1.0f (Aver), 1.2f (Adv) }
+    // Formula: int(nDEFENSE * environmentFactor)
+    // where environmentFactor = { 0.8f (Dis), 1.0f (Aver), 1.2f (Adv) }
+    //
+    // The environment factor is the caller's already-resolved value from
+    // the legacy EM_BRIGHT_FB table { 0.8f, 1.0f, 1.2f } (BFB_DIS, BFB_AVER,
+    // BFB_ADV). It is passed as a plain float so the portable layer does
+    // NOT depend on EM_BRIGHT_FB, EMBRIGHT, or GLSPACEGAP. The caller
+    // computes the factor via SpaceGap() and passes the resolved float.
     // ---------------------------------------------------------------------------
-    int Defense(
-        int nDEFENSE,
-        GameBright emACTOR,
-        GameBright emRecep,
-        GameBright emSPACE);
+    GameInt32 Defense(
+        GameInt32 defense,
+        float environmentFactor);
 
     // ---------------------------------------------------------------------------
     // Skill delay calculation.
