@@ -1034,4 +1034,54 @@ namespace GameCharacterCalculations
     {
         return itemAttackSpeed / 100;
     }
+
+    // ---------------------------------------------------------------------------
+    // TaxiCharge
+    //
+    // Legacy: GLCharacter::GetCalcTaxiCharge() (GLCharacter.cpp:6070)
+    //
+    // LONGLONG dwCharge = sTaxiStation.GetBasicCharge();
+    //
+    // if ( pSTATION->dwMAPID != dwCurMapID ) dwCharge += pSTATION->dwMapCharge;
+    //
+    // PLANDMANCLIENT pLand = GLGaeaClient::GetInstance().GetActiveMap();
+    // if ( pLand )
+    // {
+    //     volatile float fSHOP_RATE = GetBuyRate();
+    //     volatile float fSHOP_RATE_C = fSHOP_RATE * 0.01f;
+    //     dwCharge = LONGLONG ( (float)dwCharge * fSHOP_RATE_C );
+    // }
+    //
+    // return dwCharge;
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic addition, multiplication, and float->int64 truncation.
+    // No clamping, no validation, no overflow protection.
+    //
+    // NOTE: The final conversion preserves the original LONGLONG cast
+    // (truncation toward zero), matching the legacy behavior exactly.
+    // ---------------------------------------------------------------------------
+    GameInt64 TaxiCharge(
+        GameInt64 baseCharge,
+        GameInt64 mapCharge,
+        bool differentMap,
+        float shopBuyRate,
+        bool applyShopRate)
+    {
+        GameInt64 charge = baseCharge;
+
+        if ( differentMap )
+        {
+            charge += mapCharge;
+        }
+
+        if ( applyShopRate )
+        {
+            const float shopRateC = shopBuyRate * 0.01f;
+            charge = static_cast<GameInt64>(
+                static_cast<float>(charge) * shopRateC);
+        }
+
+        return charge;
+    }
 }

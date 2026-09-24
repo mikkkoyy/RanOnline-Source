@@ -6088,17 +6088,23 @@ LONGLONG GLCharacter::GetCalcTaxiCharge( int nSelectMap, int nSelectStop )
 	DWORD dwCurMapID = GLGaeaClient::GetInstance().GetActiveMapID().dwID;
 	LONGLONG dwCharge = sTaxiStation.GetBasicCharge();
 
-	if ( pSTATION->dwMAPID != dwCurMapID ) dwCharge += pSTATION->dwMapCharge;
+	const bool differentMap = ( pSTATION->dwMAPID != dwCurMapID );
 
 	PLANDMANCLIENT pLand = GLGaeaClient::GetInstance().GetActiveMap();
+	float fShopBuyRate = 0.0f;
+	bool applyShopRate = false;
 	if ( pLand )
 	{
-		volatile float fSHOP_RATE = GetBuyRate();
-		volatile float fSHOP_RATE_C = fSHOP_RATE * 0.01f;
-		dwCharge = LONGLONG ( (float)dwCharge * fSHOP_RATE_C );
+		fShopBuyRate = GetBuyRate();
+		applyShopRate = true;
 	}
 
-	return dwCharge;
+	return GameCharacterCalculations::TaxiCharge(
+		dwCharge,
+		(LONGLONG)pSTATION->dwMapCharge,
+		differentMap,
+		fShopBuyRate,
+		applyShopRate);
 }
 
 bool GLCharacter::IsCoolTime( SNATIVEID sNativeID )
