@@ -268,6 +268,33 @@ namespace GameCharacterCalculations
         return GameRandom::CheckProbability(fThreshold, randomValue);
     }
 
+    // ---------------------------------------------------------------------------
+    // MoveVelocity
+    //
+    // Legacy: GLCharacter::GetMoveVelo(), GLChar::GetMoveVelo(),
+    //         GLCrow::GetMoveVelo()
+    //
+    // float fDefaultVelo = IsSTATE(EM_ACT_RUN) ? fRUNVELO : fWALKVELO;
+    // float fMoveVelo = fDefaultVelo * ( GETMOVEVELO() + GETMOVE_ITEM() );
+    // return fMoveVelo;
+    //
+    // NOTE: GLCrow omits the item-move-velocity term (no equipment), so its
+    // itemMoveVelocity is 0.0f. The formula is otherwise identical.
+    // ---------------------------------------------------------------------------
+    float MoveVelocity(
+        float baseVelocity,
+        float sumMoveVelocity,
+        float itemMoveVelocity,
+        bool isRunMode)
+    {
+        // isRunMode is accepted for symmetry with the legacy callers but is
+        // NOT used in the formula — the base velocity is already resolved to
+        // run or walk by the caller before calling this function.
+        (void)isRunMode;
+
+        return baseVelocity * (sumMoveVelocity + itemMoveVelocity);
+    }
+
     // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //

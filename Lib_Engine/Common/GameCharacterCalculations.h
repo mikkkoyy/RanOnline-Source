@@ -190,6 +190,31 @@ namespace GameCharacterCalculations
         int nStateBlowLevelSize,
         float randomValue);
 
+    // ---------------------------------------------------------------------------
+    // MoveVelocity — character movement speed calculation.
+    //
+    // Legacy: GLOGICEX equivalents in GLCharacter::GetMoveVelo(),
+    // GLChar::GetMoveVelo(), GLCrow::GetMoveVelo().
+    //
+    // Formula: baseVelocity * (sumMoveVelocity + itemMoveVelocity)
+    //
+    // The caller is responsible for resolving:
+    //   - baseVelocity: class/crow base run or walk velocity (selected by
+    //     the run/walk state flag)
+    //   - sumMoveVelocity: character stat + buff movement velocity sum
+    //   - itemMoveVelocity: equipment movement velocity bonus (0.0f for CROW)
+    //   - isRunMode: whether the character is in run mode
+    //
+    // NOTE: isRunMode is accepted for symmetry with the legacy callers but
+    // is NOT used in the formula — the base velocity is already resolved
+    // to run or walk by the caller before calling this function.
+    // ---------------------------------------------------------------------------
+    float MoveVelocity(
+        float baseVelocity,
+        float sumMoveVelocity,
+        float itemMoveVelocity,
+        bool isRunMode);
+
     // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //

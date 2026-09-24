@@ -1206,7 +1206,11 @@ HRESULT GLCrow::UpateAnimation ( float fTime, float fElapsedTime )
 float GLCrow::GetMoveVelo ()
 {
 	float fDefaultVelo = IsSTATE(EM_ACT_RUN) ? m_pCrowData->m_sAction.m_fRunVelo : m_pCrowData->m_sAction.m_fWalkVelo;
-	return fDefaultVelo * GLCROWLOGIC::GETMOVEVELO();
+	return GameCharacterCalculations::MoveVelocity(
+		fDefaultVelo
+	,GLCROWLOGIC::GETMOVEVELO()
+	,0.0f
+	,IsSTATE(EM_ACT_RUN));
 }
 
 HRESULT GLCrow::FrameMove ( float fTime, float fElapsedTime )
