@@ -739,6 +739,52 @@ namespace GameCharacterCalculations
     float ItemMoveVelocityRatio(
         float itemMoveSpeed,
         float baseRunVelocity);
+
+    // ---------------------------------------------------------------------------
+    // BuyRate — shop buy-rate arithmetic.
+    //
+    // Legacy: GLCharacter::GetBuyRate() (GLCharacter.cpp:513)
+    //
+    // float fBUY_RATE = GET_PK_SHOP2BUY();
+    // PLANDMANCLIENT pLand = GLGaeaClient::GetInstance().GetActiveMap();
+    // if ( pLand ) { fBUY_RATE += pLand->m_fCommission; }
+    // return fBUY_RATE;
+    //
+    // The caller is responsible for:
+    //   - obtaining baseBuyRate (GET_PK_SHOP2BUY())
+    //   - obtaining commission (pLand->m_fCommission) only when an active map exists
+    //   - all surrounding shop/economic pipeline
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic addition. No clamping, no validation, no percentage
+    // conversion. The rate is kept in its existing representation exactly.
+    // ---------------------------------------------------------------------------
+    float BuyRate(
+        float baseBuyRate,
+        float commission);
+
+    // ---------------------------------------------------------------------------
+    // SaleRate — shop sale-rate arithmetic.
+    //
+    // Legacy: GLCharacter::GetSaleRate() (GLCharacter.cpp:526)
+    //
+    // float fSALE_RATE = GET_PK_SHOP2SALE();
+    // PLANDMANCLIENT pLand = GLGaeaClient::GetInstance().GetActiveMap();
+    // if ( pLand ) { fSALE_RATE -= pLand->m_fCommission; }
+    // return fSALE_RATE;
+    //
+    // The caller is responsible for:
+    //   - obtaining baseSaleRate (GET_PK_SHOP2SALE())
+    //   - obtaining commission (pLand->m_fCommission) only when an active map exists
+    //   - all surrounding shop/economic pipeline
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic subtraction. No clamping, no validation, no percentage
+    // conversion. The rate is kept in its existing representation exactly.
+    // ---------------------------------------------------------------------------
+    float SaleRate(
+        float baseSaleRate,
+        float commission);
 }
 
 // Convenience aliases in the global namespace for minimal friction

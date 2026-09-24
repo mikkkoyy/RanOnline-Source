@@ -72,6 +72,8 @@
 #include "GLPVPCaptureTheFlagClient.h"
 #include "GLPVPCaptureTheFlagDefine.h"
 
+#include "../Lib_Engine/Common/GameCharacterCalculations.h"
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
@@ -512,28 +514,36 @@ GLCharacter::~GLCharacter ()
 
 float GLCharacter::GetBuyRate ()
 {
+	// Legacy layer resolves GET_PK_SHOP2BUY() and active-map commission
+	// (pLand->m_fCommission) before delegating. The portable layer does
+	// NOT depend on GLGaeaClient or PLANDMANCLIENT.
 	float fBUY_RATE = GET_PK_SHOP2BUY();
 
 	PLANDMANCLIENT pLand = GLGaeaClient::GetInstance().GetActiveMap();
+	float fCommission = 0.0f;
 	if ( pLand )
 	{
-		fBUY_RATE += pLand->m_fCommission;
+		fCommission = pLand->m_fCommission;
 	}
 
-	return fBUY_RATE;
+	return GameCharacterCalculations::BuyRate(fBUY_RATE, fCommission);
 }
 
 float GLCharacter::GetSaleRate ()
 {
+	// Legacy layer resolves GET_PK_SHOP2SALE() and active-map commission
+	// (pLand->m_fCommission) before delegating. The portable layer does
+	// NOT depend on GLGaeaClient or PLANDMANCLIENT.
 	float fSALE_RATE = GET_PK_SHOP2SALE ();
-	
+
 	PLANDMANCLIENT pLand = GLGaeaClient::GetInstance().GetActiveMap();
+	float fCommission = 0.0f;
 	if ( pLand )
 	{
-		fSALE_RATE -= pLand->m_fCommission;
+		fCommission = pLand->m_fCommission;
 	}
 
-	return fSALE_RATE;
+	return GameCharacterCalculations::SaleRate(fSALE_RATE, fCommission);
 }
 
 void GLCharacter::ResetData ()

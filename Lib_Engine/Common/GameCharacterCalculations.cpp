@@ -971,4 +971,46 @@ namespace GameCharacterCalculations
         const float fMOVE = itemMoveSpeed / baseRunVelocity;
         return fMOVE < 0.0f ? 0.0f : fMOVE;
     }
+
+    // ---------------------------------------------------------------------------
+    // BuyRate
+    //
+    // Legacy: GLCharacter::GetBuyRate() (GLCharacter.cpp:513)
+    //
+    // float fBUY_RATE = GET_PK_SHOP2BUY();
+    // PLANDMANCLIENT pLand = GLGaeaClient::GetInstance().GetActiveMap();
+    // if ( pLand ) { fBUY_RATE += pLand->m_fCommission; }
+    // return fBUY_RATE;
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic addition. No clamping, no validation, no percentage
+    // conversion. The rate is kept in its existing representation exactly.
+    // ---------------------------------------------------------------------------
+    float BuyRate(
+        float baseBuyRate,
+        float commission)
+    {
+        return baseBuyRate + commission;
+    }
+
+    // ---------------------------------------------------------------------------
+    // SaleRate
+    //
+    // Legacy: GLCharacter::GetSaleRate() (GLCharacter.cpp:526)
+    //
+    // float fSALE_RATE = GET_PK_SHOP2SALE();
+    // PLANDMANCLIENT pLand = GLGaeaClient::GetInstance().GetActiveMap();
+    // if ( pLand ) { fSALE_RATE -= pLand->m_fCommission; }
+    // return fSALE_RATE;
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic subtraction. No clamping, no validation, no percentage
+    // conversion. The rate is kept in its existing representation exactly.
+    // ---------------------------------------------------------------------------
+    float SaleRate(
+        float baseSaleRate,
+        float commission)
+    {
+        return baseSaleRate - commission;
+    }
 }
