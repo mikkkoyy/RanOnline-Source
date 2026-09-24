@@ -118,6 +118,7 @@
     <ClInclude Include="Common\GameTypes.h" />
 	<ClInclude Include="Common\GameCharacterCalculations.h" />
     <ClInclude Include="Common\GameInput.h" />
+    <ClInclude Include="Common\GameFileSystem.h" />
     <ClInclude Include="Common\GameSerializationTypes.h" />
     <ClInclude Include="Common\GameRandom.h" />
     <ClInclude Include="Common\charset.h" />
@@ -180,6 +181,7 @@
     <ClInclude Include="DxCommon\DxGlowMan.h" />
     <ClInclude Include="DxCommon\DxGrapUtils.h" />
     <ClInclude Include="DxCommon\DxInputDevice.h" />
+    <ClInclude Include="DxCommon\DxWindowsFileSystem.h" />
     <ClInclude Include="DxCommon\DxLightMan.h" />
     <ClInclude Include="DxCommon\DxMeshTexMan.h" />
     <ClInclude Include="DxCommon\DxMethods.h" />
@@ -488,6 +490,7 @@
     <ClCompile Include="Common\ByteStream.cpp" />
 	<ClCompile Include="Common\GameCharacterCalculations.cpp" />
     <ClCompile Include="Common\GameInput.cpp" />
+    <ClCompile Include="Common\GameFileSystem.cpp" />
     <ClCompile Include="Common\CFileFind.cpp" />
     <ClCompile Include="Common\charset.cpp" />
     <ClCompile Include="Common\CommonWeb.cpp" />
@@ -585,6 +588,7 @@
     <ClCompile Include="DxCommon\DxGlowMan.cpp" />
     <ClCompile Include="DxCommon\DxGrapUtils.cpp" />
     <ClCompile Include="DxCommon\DxInputDevice.cpp" />
+    <ClCompile Include="DxCommon\DxWindowsFileSystem.cpp" />
     <ClCompile Include="DxCommon\DxLightMan.cpp" />
     <ClCompile Include="DxCommon\DxLightManSetSaveLoad.cpp" />
     <ClCompile Include="DxCommon\DxMeshTexMan.cpp" />

@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "./RANPARAM.h"
 
-#include "Shlwapi.h"
+#include "../DxCommon/DxWindowsFileSystem.h"
 
 #include "../Lib_Engine/Common/Rijndael.h"
 #include "../Lib_Engine/Common/IniLoader.h"
@@ -19,7 +19,7 @@ namespace RANPARAM
 		strOptionFile = szRootPath;
 		strOptionFile += "\\option.ini";
 
-		if ( !PathFileExists( strOptionFile.c_str() ) )
+		if ( !DxWindowsFileSystem().Exists( strOptionFile ) )
 		{
 			return FALSE;
 		}
