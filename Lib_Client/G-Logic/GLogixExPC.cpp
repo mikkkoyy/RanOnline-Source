@@ -1608,9 +1608,11 @@ DWORD GLCHARLOGIC::CALCDAMAGE_20060328(
 	if ( ndxLvl < -5 )		ndxLvl = -5;
 
 	//	Note : Critical 발생 확율.
-	int nPerHP = ((GETHP()*100)/GETMAXHP());
-	if ( nPerHP <= 10 )	nPerHP = 10;
-	int nPercentCri = 1000 / nPerHP - 10 + ndxLvl;
+	int nPercentCri = GameCharacterCalculations::CriticalBaseRate(
+		GETHP(),
+		GETMAXHP(),
+		GETLEVEL(),
+		nLEVEL);
 	nPercentCri += (int)( m_sSUMITEM.fIncR_Critical * 100 );
 
 	SINCREASEEFF* const pIncreaseEff = pActor->GetIncreaseEff();

@@ -266,9 +266,11 @@ DWORD GLCROWLOGIC::CALCDAMAGE ( int& rResultDAMAGE, const DWORD dwGaeaID, const 
 	if ( ndxLvl < -5 )		ndxLvl = -5;
 
 	//	Note : Critical 발생 확율.
-	int nPerHP = ((GETHP()*100)/GETMAXHP());
-	if ( nPerHP <= 10 )	nPerHP = 10;
-	int nPercentCri = 1000 / nPerHP - 10 + ndxLvl;
+	int nPercentCri = GameCharacterCalculations::CriticalBaseRate(
+		GETHP(),
+		GETMAXHP(),
+		GETLEVEL(),
+		nLEVEL);
 	if ( nPercentCri > (int)GLCONST_CHAR::dwCRITICAL_MAX )		nPercentCri = GLCONST_CHAR::dwCRITICAL_MAX;
 	if ( nPercentCri < 0 )	nPercentCri = 0;
 

@@ -528,6 +528,42 @@ namespace GameCharacterCalculations
             / static_cast<float>(maxLevel));
     }
 
+    // ---------------------------------------------------------------------------
+    // CriticalBaseRate
+    //
+    // Legacy: GLogixExPC.cpp:1603-1613 and GLogicExNPC.cpp:262-271
+    //
+    // int ndxLvl = nLEVEL - GETLEVEL();
+    // if ( ndxLvl > 5 )  ndxLvl = 5;
+    // if ( ndxLvl < -5 ) ndxLvl = -5;
+    // int nPerHP = ((GETHP()*100)/GETMAXHP());
+    // if ( nPerHP <= 10 ) nPerHP = 10;
+    // int nPercentCri = 1000 / nPerHP - 10 + ndxLvl;
+    //
+    // All arithmetic is integer-only. No floating point. No RNG.
+    // ---------------------------------------------------------------------------
+    GameInt32 CriticalBaseRate(
+        GameInt32 currentHP,
+        GameInt32 maxHP,
+        GameInt32 attackerLevel,
+        GameInt32 targetLevel)
+    {
+        GameInt32 levelDifference = targetLevel - attackerLevel;
+
+        if ( levelDifference > 5 )
+            levelDifference = 5;
+
+        if ( levelDifference < -5 )
+            levelDifference = -5;
+
+        GameInt32 percentHP = (currentHP * 100) / maxHP;
+
+        if ( percentHP <= 10 )
+            percentHP = 10;
+
+        return 1000 / percentHP - 10 + levelDifference;
+    }
+
     // ========================================================================
     // Table-driven character calculations (Stage 2B/2C)
     //
