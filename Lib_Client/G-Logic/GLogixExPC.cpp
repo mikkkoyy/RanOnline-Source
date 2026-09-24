@@ -11,6 +11,8 @@
 #include "./GLCodex.h"
 #include "./DxGlobalStage.h"
 
+#include "../Lib_Engine/Common/GameCharacterCalculations.h"
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
@@ -3042,8 +3044,10 @@ float GLCHARLOGIC::GETMOVEVELO ()
 
 float GLCHARLOGIC::GETATT_ITEM ()
 {
-	float fATTVELO = m_sSUMITEM.fInc_AtkSpeed / 100;
-	return fATTVELO;
+	// Legacy layer resolves m_sSUMITEM.fInc_AtkSpeed before delegating.
+	// The portable layer does NOT depend on SITEM or GLItemMan.
+	return GameCharacterCalculations::ItemAttackVelocityRatio(
+		m_sSUMITEM.fInc_AtkSpeed);
 }
 float GLCHARLOGIC::GETMOVE_ITEM ()
 {

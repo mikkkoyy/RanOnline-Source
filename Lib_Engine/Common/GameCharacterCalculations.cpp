@@ -1013,4 +1013,25 @@ namespace GameCharacterCalculations
     {
         return baseSaleRate - commission;
     }
+
+    // ---------------------------------------------------------------------------
+    // ItemAttackVelocityRatio
+    //
+    // Legacy: GLCHARLOGIC::GETATT_ITEM() (GLogixExPC.cpp:3043)
+    //
+    // float fATTVELO = m_sSUMITEM.fInc_AtkSpeed / 100;
+    // return fATTVELO;
+    //
+    // The portable function does NOT generate randomness. It only performs
+    // the deterministic division by 100. No clamping, no validation, no
+    // percentage conversion beyond the existing / 100.
+    //
+    // NOTE: Negative input is preserved (e.g. -50 -> -0.5). The original
+    // function has no negative clamp; behavior is preserved exactly.
+    // ---------------------------------------------------------------------------
+    float ItemAttackVelocityRatio(
+        float itemAttackSpeed)
+    {
+        return itemAttackSpeed / 100;
+    }
 }
