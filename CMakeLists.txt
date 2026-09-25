@@ -22,3 +22,8 @@ add_subdirectory(Lib_Engine)
 add_subdirectory(Lib_Network)
 add_subdirectory(Lib_ClientUI)
 add_subdirectory(Lib_Client)
+
+add_subdirectory(Modern)
+add_subdirectory(Modern/Tools)
+add_subdirectory(ModernEmulator)
+add_subdirectory(ModernLegacyAdapter)

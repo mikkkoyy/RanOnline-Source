@@ -5,6 +5,7 @@
 #include "./profile.h"
 #include "../DxCommon/DebugSet.h"
 #include "../DxCommon/DxInputDevice.h"
+#include "../DxCommon/DxWindowsTime.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -17,7 +18,7 @@ BOOL		g_bProfile = FALSE;
 namespace
 {
 	#define _HISTORY_RATE_		( 5000.0f )
-	#define _GETCURTIME_		( timeGetTime() )
+	#define _GETCURTIME_		( DxWindowsTime().GetMonotonicMilliseconds() )
 	#define _GETELAPSEDTIME_	( (float)( m_endProfile - m_startProfile ) )
 };
 
