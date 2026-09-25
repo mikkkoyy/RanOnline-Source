@@ -1,6 +1,7 @@
 set(MODERN_SOURCES
     Character/Character.cpp
     Character/CharacterBaseData.cpp
+    Item/ItemData.cpp
     Progression/ProgressionData.cpp
 )
 

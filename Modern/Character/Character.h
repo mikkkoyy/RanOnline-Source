@@ -4,10 +4,12 @@
 #include "../Math/Vector3.h"
 #include "../Entity/Entity.h"
 #include "../Progression/ProgressionData.h"
+#include "../Item/ItemData.h"
 #include "CharacterBaseData.h"
 
 #include <cstdint>
 #include <string>
+#include <array>
 
 namespace Modern
 {
@@ -51,6 +53,7 @@ namespace Modern
 		static constexpr float WalkSpeed    = 8.0f;
 		static constexpr float RunSpeed     = 14.0f;
 		static constexpr size_t NameCapacity = 32;
+		static constexpr size_t EquipSlotCount = 21;  // SLOT_NSIZE_S_2
 
 		static constexpr float kDefaultHpRecoverPerSec = 0.003f;
 		static constexpr float kDefaultMpRecoverPerSec = 0.003f;
@@ -97,8 +100,15 @@ namespace Modern
 
 		void SetProgressionData(const ProgressionData* data);
 		void SetBaseDataProvider(const ICharacterBaseDataProvider* provider);
+		void SetItemDataProvider(const IItemDataProvider* provider);
 		void SetMaxLevel(uint16_t maxLevel) { m_maxLevel = maxLevel; }
 		void AddExperience(int64_t amount);
+
+		// Equipment
+		bool EquipItem(EquipSlot slot, uint32_t itemId);
+		void UnequipItem(EquipSlot slot);
+		const ItemInstanceData* GetEquippedItem(EquipSlot slot) const;
+		bool IsSlotValid(EquipSlot slot) const;
 
 		void SetPosition(const Vector3& position);
 		void SetDirection(const Vector3& direction);
@@ -142,6 +152,7 @@ namespace Modern
 		void RefreshExpMax();
 		void RefreshBaseData();
 		void ApplyLevelUpStats();
+		void RecalculateStats();  // Recalculate including item contributions
 
 		Entity                              m_entity;
 		std::string                         m_nameString;
@@ -155,8 +166,13 @@ namespace Modern
 		int64_t                             m_expMax  = 0;
 		const ProgressionData*              m_progression = nullptr;
 		const ICharacterBaseDataProvider*   m_baseDataProvider = nullptr;
+		const IItemDataProvider*            m_itemDataProvider = nullptr;
 		const CharacterBaseData*            m_baseData = nullptr;
 		CharacterStats                      m_currentStats;
+
+		// Equipment state
+		std::array<ItemInstanceData, EquipSlotCount> m_equippedItems;
+		ItemContribution                    m_itemContribution;
 
 		uint32_t                            m_hpNow = 0;
 		uint32_t                            m_hpMax = 0;

@@ -2,6 +2,7 @@
 #include "../Math/Vector3.h"
 #include "../Progression/ProgressionData.h"
 #include "CharacterBaseData.h"
+#include "../Item/ItemData.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -100,6 +101,12 @@ namespace Modern
 		RefreshBaseData();
 	}
 
+	void Character::SetItemDataProvider(const IItemDataProvider* provider)
+	{
+		m_itemDataProvider = provider;
+		RecalculateStats();
+	}
+
 	void Character::RefreshBaseData()
 	{
 		if (!m_baseDataProvider)
@@ -122,20 +129,8 @@ namespace Modern
 		// Calculate current stats based on level
 		m_currentStats = CalculateStatsAtLevel(*data, m_level);
 
-		// Calculate max resources from stats and class factors
-		uint32_t hp, mp, sp;
-		CalculateBaseResources(*data, m_currentStats, hp, mp, sp);
-		m_hpMax = hp;
-		m_mpMax = mp;
-		m_spMax = sp;
-
-		// Clamp current values to new max
-		if (m_hpNow > m_hpMax) m_hpNow = m_hpMax;
-		if (m_mpNow > m_mpMax) m_mpNow = m_mpMax;
-		if (m_spNow > m_spMax) m_spNow = m_spMax;
-
-		// Update movement speeds from base data
-		// (no separate walk/run speed members, use static constants)
+		// Recalculate full stats including items
+		RecalculateStats();
 	}
 
 	void Character::ApplyLevelUpStats()
@@ -146,6 +141,132 @@ namespace Modern
 		// Recalculate stats at current level
 		m_currentStats = CalculateStatsAtLevel(*m_baseData, m_level);
 		RefreshBaseData();
+	}
+
+	void Character::RecalculateStats()
+	{
+		if (!m_baseData)
+			return;
+
+		// Calculate current stats based on level
+		m_currentStats = CalculateStatsAtLevel(*m_baseData, m_level);
+
+		// Calculate item contributions
+		m_itemContribution.Reset();
+		if (m_itemDataProvider)
+		{
+			m_itemContribution = CalculateItemContribution(
+				m_itemDataProvider,
+				m_equippedItems.data(),
+				EquipSlotCount);
+		}
+
+		// Add item stat contributions to current stats (legacy behavior: stats include item bonuses before HP/MP/SP calc)
+		m_currentStats.pow  += m_itemContribution.pow;
+		m_currentStats.str  += m_itemContribution.str;
+		m_currentStats.spi  += m_itemContribution.spi;
+		m_currentStats.dex  += m_itemContribution.dex;
+		m_currentStats.intel += m_itemContribution.intel;
+		m_currentStats.sta  += m_itemContribution.sta;
+
+		// Calculate max resources from stats + class factors + item contributions
+		// HP = (STR * fHP_STR + itemHP) * (1 + itemHPRate) + itemHPVolume
+		// Note: passive skills and conft rates handled elsewhere if needed
+		float strFactor = m_baseData->hpStrFactor;
+		float spiFactor = m_baseData->mpSpiFactor;
+		float staFactor = m_baseData->spStaFactor;
+
+		float baseHP = m_currentStats.str * strFactor;
+		float baseMP = m_currentStats.spi * spiFactor;
+		float baseSP = m_currentStats.sta * staFactor;
+
+		// Add flat item HP/MP/SP
+		baseHP += m_itemContribution.hp;
+		baseMP += m_itemContribution.mp;
+		baseSP += m_itemContribution.sp;
+
+		// Apply rate multipliers (1 + rate)
+		baseHP *= (1.0f + m_itemContribution.hpRate);
+		baseMP *= (1.0f + m_itemContribution.mpRate);
+		baseSP *= (1.0f + m_itemContribution.spRate);
+
+		// Add volume (flat)
+		baseHP += m_itemContribution.hpVolume;
+		baseMP += m_itemContribution.mpVolume;
+		baseSP += m_itemContribution.spVolume;
+
+		// Apply class base resources as minimum (removed - legacy formula doesn't clamp to class base)
+		// The class baseHP/baseMP/baseSP are naturally produced by the formula at level 1 with no items
+
+		m_hpMax = static_cast<uint32_t>(baseHP);
+		m_mpMax = static_cast<uint32_t>(baseMP);
+		m_spMax = static_cast<uint32_t>(baseSP);
+
+		// Clamp current values to new max
+		if (m_hpNow > m_hpMax) m_hpNow = m_hpMax;
+		if (m_mpNow > m_mpMax) m_mpNow = m_mpMax;
+		if (m_spNow > m_spMax) m_spNow = m_spMax;
+	}
+
+	// Equipment methods
+	bool Character::EquipItem(EquipSlot slot, uint32_t itemId)
+	{
+		if (static_cast<size_t>(slot) >= EquipSlotCount || slot == EquipSlot::Invalid)
+			return false;
+
+		if (itemId == 0)
+			return false;
+
+		if (!m_itemDataProvider)
+			return false;
+
+		const ItemBaseData* itemData = m_itemDataProvider->GetItemData(itemId);
+		if (!itemData)
+			return false;
+
+		if (!itemData->CanEquipInSlot(slot))
+			return false;
+
+		// Check requirements
+		if (m_level < itemData->reqLevelMin || m_level > itemData->reqLevelMax)
+			return false;
+
+		// Unequip current item in slot if any
+		size_t idx = static_cast<size_t>(slot);
+		if (m_equippedItems[idx].itemId != 0)
+		{
+			UnequipItem(slot);
+		}
+
+		// Equip new item
+		m_equippedItems[idx] = ItemInstanceData(itemId);
+		RecalculateStats();
+		return true;
+	}
+
+	void Character::UnequipItem(EquipSlot slot)
+	{
+		if (static_cast<size_t>(slot) >= EquipSlotCount || slot == EquipSlot::Invalid)
+			return;
+
+		m_equippedItems[static_cast<size_t>(slot)] = ItemInstanceData();
+		RecalculateStats();
+	}
+
+	const ItemInstanceData* Character::GetEquippedItem(EquipSlot slot) const
+	{
+		if (static_cast<size_t>(slot) >= EquipSlotCount || slot == EquipSlot::Invalid)
+			return nullptr;
+
+		const ItemInstanceData& inst = m_equippedItems[static_cast<size_t>(slot)];
+		if (inst.itemId == 0)
+			return nullptr;
+		return &inst;
+	}
+
+	bool Character::IsSlotValid(EquipSlot slot) const
+	{
+		return static_cast<size_t>(slot) < EquipSlotCount && slot != EquipSlot::Invalid;
 	}
 
 	void Character::SetMaxHP(uint32_t max)
