@@ -118,8 +118,8 @@ static void RunResourceChecks()
 	c.SetMaxSP(50);
 	c.Spawn({0, 0, 0}, {0, 0, 1});
 	assert(c.GetHP() == 200);
-	assert(c.GetMP() == 0);
-	assert(c.GetSP() == 0);
+	assert(c.GetMP() == 100); // Spawn sets all resources to max
+	assert(c.GetSP() == 50);
 
 	c.SetHP(120);
 	c.SetMP(40);
@@ -239,8 +239,8 @@ static void RunBaseDataChecks()
 		assert(c.GetMaxMP() > 0);
 		assert(c.GetMaxSP() > 0);
 		assert(c.GetHP() == c.GetMaxHP()); // Spawn should set to max
-		assert(c.GetMP() == 0); // MP starts at 0 (no base MP in test data)
-		assert(c.GetSP() == 0); // SP starts at 0
+		assert(c.GetMP() == c.GetMaxMP()); // Spawn sets MP to max from base data
+		assert(c.GetSP() == c.GetMaxSP()); // Spawn sets SP to max from base data
 
 		// Check class-specific values from test provider
 		const auto* baseData = baseProvider.GetBaseData(static_cast<uint32_t>(CharIndex::SwordsmanM), 0);
