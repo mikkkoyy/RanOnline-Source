@@ -1,0 +1,2 @@
+@echo off
+"D:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" "D:\FILES\project\modernization RanOnline\Lib_Engine\Lib_Engine.vcxproj" /p:Configuration=Debug /p:Platform=Win32 /m

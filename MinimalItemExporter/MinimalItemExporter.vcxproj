@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{1A2B3C4D-5E6F-7A8B-9C0D-1E2F3A4B5C6D}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>MinimalItemExporter</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.22621.0</_ProjectFileVersion>
+    <OutDir>bin\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>obj\$(Platform)\$(Configuration)\</IntDir>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_AFXDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\Lib_Engine\Common;$(ProjectDir)..\Lib_Engine\G-Logic;$(ProjectDir)..\Lib_Client\G-Logic;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_AFXDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)...\Lib_Engine\Common;$(ProjectDir)..\Lib_Engine\G-Logic;$(ProjectDir)..\Lib_Client\G-Logic;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="legacy_stubs.h" />
+    <ClCompile Include="MinimalItemExporter.cpp" />
+    <ClCompile Include="..\Lib_Engine\Common\ByteCrypt.cpp" />
+    <ClCompile Include="..\Lib_Engine\Common\ByteStream.cpp" />
+    <ClCompile Include="..\Lib_Engine\Common\SerialFile.cpp" />
+    <ClCompile Include="..\Lib_Engine\Common\SerialMemory.cpp" />
+    <ClCompile Include="..\Lib_Engine\Common\StringFile.cpp" />
+    <ClCompile Include="..\Lib_Engine\Common\StringMemory.cpp" />
+    <ClCompile Include="..\Lib_Engine\Common\SFileSystem.cpp" />
+    <ClCompile Include="..\Lib_Engine\Common\Unzipper.cpp" />
+    <ClCompile Include="..\Lib_Engine\Common\Rijndael.cpp" />
+    <ClCompile Include="..\Lib_Engine\G-Logic\GLogic.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItem.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemMan.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemBasic.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemSuit.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemDrug.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemSkillBook.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemGrinding.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemGenerate.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemBox.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemRandomBox.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemQuestion.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemRandomOption.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemPet.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemVehicle.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemPetSkin.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemRVCard.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemMix.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemLink.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemMan.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemDef.cpp" />
+    <ClCompile Include="..\Lib_Client\G-Logic\GLItemDefEX.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="legacy_stubs.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
