@@ -44,7 +44,7 @@ modern/
 │   ├── application/         Application lifecycle, update loop (CLIENT-002)
 │   ├── input/               Input events, system & platform abstraction (CLIENT-003)
 │   ├── resources/           Resource boundary, identifiers, providers, cache (CLIENT-005, CLIENT-006)
-│   ├── assets/              Typed CPU-side assets, decoders & real DDS decoding (CLIENT-007, CLIENT-008, CLIENT-011, CLIENT-012)
+│   ├── assets/              Typed CPU-side assets, decoders & real DDS decoding (CLIENT-007, CLIENT-008, CLIENT-011, CLIENT-012, CLIENT-013)
 │   └── rendering/           Renderer abstraction, null backend & asset upload boundary (CLIENT-004, CLIENT-009)
 ├── tests/                   headless rule tests (ModernCoreTests)
 ├── tools/                   offline / research tooling
@@ -1789,6 +1789,118 @@ ctest --test-dir build -C Debug --output-on-failure
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 build\Debug\ModernClientAssetUploadTests.exe
+
+## 23. CLIENT-013: RAN MXF mesh transform
+
+The RAN client ships mesh/skin files as `.mxf`: a 12-byte header
+(`version`, `payloadSize`, `fileType`) followed by an obfuscated
+payload. This milestone adds a small transform boundary that strips
+the container and decrypts the payload back into plain DirectX `.x`
+bytes, which a future X decoder can consume.
+
+### Why a separate transform
+
+The obfuscation is a byte-level operation, not a decoder: it has no
+vertices, no indices, and no mesh format awareness. Folding it into
+a future X decoder would make the decoder understand `.mxf`, which
+violates the layered boundary. The transform produces plain `.x`
+bytes that are indistinguishable from shipped `.x` files, so the
+decoder stays unchanged and the transform is independently testable.
+
+### Architecture
+
+```text
+ResourceData (MXF bytes)
+        |
+        v
+RAN MXF Transform          validate header, decrypt payload, verify X magic
+        |
+        v
+ResourceData (plain .X)
+        |
+        v
+future X decoder           NOT YET IMPLEMENTED
+        |
+        v
+MeshAsset
+        |
+        v
+IAssetUploader -> MeshResourceHandle
+```
+
+### Header format
+
+```text
+bytes 0..3   int32 version        (must be 0x100)
+bytes 4..7   int32 payloadSize    (must equal inputSize - 12)
+bytes 8..11  int32 fileType       (0 = skin, the only supported type)
+bytes 12..   payload bytes        (encrypted with XOR 0xEB and +0xEA)
+```
+
+### Decryption
+
+For each payload byte:
+```cpp
+byte += 0xEA;
+byte ^= 0xEB;
+```
+
+This is the inverse of the legacy `EncryptSkin()` operation.
+The transform uses unsigned byte arithmetic to avoid undefined
+behaviour.
+
+### Validation
+
+- Truncated header (less than 12 bytes): refused
+- Invalid version (not 0x100): refused
+- Payload size mismatch (input != 12 + payloadSize): refused
+- Unsupported file type (not 0): refused
+- Zero payload: refused
+- Decrypted output does not start with `xof ` magic: refused
+- The transform does not mutate the caller's input buffer
+
+### What is NOT in scope
+
+- `.X` format parsing and decoding belongs to a future milestone
+- `D3DXLoadMeshFromX` and all DirectX dependencies remain excluded
+- No `DirectX`, `D3DX`, `MFC`, `COM`, or renderer headers are used
+- The transform does not construct `MeshAsset` or call `IMeshDecoder`
+
+### Tests
+
+`ClientMxfTests.cpp` registers with CTest as `ModernClientMxfTests`:
+
+- **Valid synthetic MXF -> exact .X byte recovery**: round-trip
+  through encryption and decryption produces identical bytes
+- **Truncated header, invalid version, payload mismatch, zero
+  payload**: all refused with `InvalidArgument`
+- **Unsupported file type**: refused
+- **Bad decrypted .X magic**: refused
+- **Correct byte transformation**: `+0xEA` then `^0xEB` verified
+- **Output independence**: mutating the input buffer does not
+  affect the transform output
+- **Deterministic repeated calls**: stateless and repeatable
+- **Real-asset validation**: validates every `.mxf` file in the
+  `RAN_ASSET_ROOT` skeleton directory (52 real files), confirming
+  each decrypts to valid `xof ` bytes
+
+### Integration
+
+The transform is integrated into the existing asset layer:
+`ModernClientAssets` links `MxfMeshTransform.cpp` alongside
+`MtfTextureTransform.cpp`. The emulator demonstrates the full
+`MXF → X bytes` path. No existing `MeshAsset`, `IMeshDecoder`,
+`IAssetUploader`, or renderer code is modified.
+
+### Legacy source of truth
+
+The behavior is derived from `legacy/Lib_Engine/DxCommon/MemoryXFile.cpp`:
+- `CMemoryXFile::DecryptSkin()` validates the header and decrypts
+  the payload
+- `CMemoryXFile::DecryptSkinToTile()` writes the result as `.x`
+- The constants `SKIN_VERSION = 0x100`, `SKIN_XOR_DATA = 0x92617EB`,
+  and `SKIN_DIFF_DATA = 0x99701EA` define the transform
+
 
 ## 22. CLIENT-011: real DDS image decoder boundary
 

@@ -30,6 +30,7 @@
 #include "assets/MeshDecoder.h"
 #include "assets/TestMeshDecoder.h"
 #include "assets/MtfTextureTransform.h"
+#include "assets/MxfMeshTransform.h"
 
 #include "rendering/AssetUpload.h"
 #include "rendering/NullAssetUploader.h"
@@ -845,6 +846,62 @@ int main()
 		else
 		{
 			std::printf("  %-22s %s\n", "mtf transform", Modern::ToString(mtfResult.GetError()));
+		}
+	}
+
+	// Client RAN MXF mesh transform (CLIENT-013)
+	{
+		// Minimal .X payload: "xof " header
+		std::vector<uint8_t> plainX;
+		plainX.push_back('x');
+		plainX.push_back('o');
+		plainX.push_back('f');
+		plainX.push_back(' ');
+		plainX.push_back(0x00);
+		plainX.push_back(0x00);
+		plainX.push_back(0x00);
+		plainX.push_back(0x00);
+
+		// Encrypt: encoded = (plain ^ 0xEB) - 0xEA
+		std::vector<uint8_t> mxfBytes;
+		auto pushU32 = [](std::vector<uint8_t>& out, uint32_t value)
+		{
+			out.push_back(static_cast<uint8_t>(value & 0xFFu));
+			out.push_back(static_cast<uint8_t>((value >> 8) & 0xFFu));
+			out.push_back(static_cast<uint8_t>((value >> 16) & 0xFFu));
+			out.push_back(static_cast<uint8_t>((value >> 24) & 0xFFu));
+		};
+		pushU32(mxfBytes, 0x100u); // version
+		pushU32(mxfBytes, static_cast<uint32_t>(plainX.size()));
+		pushU32(mxfBytes, 0u); // fileType = skin
+		for (size_t i = 0; i < plainX.size(); ++i)
+		{
+			mxfBytes.push_back(static_cast<uint8_t>((plainX[i] ^ 0xEB) - 0xEA));
+		}
+
+		Modern::Client::MxfMeshTransform transform;
+		const auto mxfResult = transform.Transform(Modern::Client::ResourceData(mxfBytes));
+		std::printf("  %-22s %s\n", "mxf transform", "stateless");
+
+		if (mxfResult.IsOk())
+		{
+			std::printf("  %-22s %zu bytes\n", "mxf -> x", mxfResult.GetValue().GetSize());
+
+			const auto& xBytes = mxfResult.GetValue().GetBytes();
+			bool match = xBytes.size() == plainX.size();
+			if (match)
+			{
+				for (size_t i = 0; i < plainX.size(); ++i)
+				{
+					if (xBytes[i] != plainX[i]) { match = false; break; }
+				}
+			}
+			std::printf("  %-22s %s\n", "mxf bytes match", match ? "true" : "false");
+			std::printf("  %-22s %c%c%c%c\n", "x magic", xBytes[0], xBytes[1], xBytes[2], xBytes[3]);
+		}
+		else
+		{
+			std::printf("  %-22s %s\n", "mxf transform", Modern::ToString(mxfResult.GetError()));
 		}
 	}
 
