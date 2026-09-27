@@ -43,6 +43,7 @@ modern/
 ├── client/                  new RAN client — consumes core, never legacy
 │   ├── application/         Application lifecycle, update loop (CLIENT-002)
 │   ├── input/               Input events, system & platform abstraction (CLIENT-003)
+│   ├── resources/           Resource boundary, identifiers, provider, cache (CLIENT-005)
 │   └── rendering/           Renderer abstraction & headless null backend (CLIENT-004)
 ├── tests/                   headless rule tests (ModernCoreTests)
 ├── tools/                   offline / research tooling
@@ -447,3 +448,76 @@ InputSystem::EndFrame()
 - **Future backend strategy**: DirectX 12, Vulkan, or other modern graphics APIs
   will be implemented as concrete backends implementing `IRenderer` under
   `modern/client/rendering/backends/` without altering the modern application or core.
+
+## 17. CLIENT-005: modern client resource / asset boundary
+
+Establishes `modern/client/resources`, providing a platform-independent resource
+boundary consisting of a strongly-typed identifier (`ResourceId`), an immutable
+binary data representation (`ResourceData`), a provider abstraction (`IResourceProvider`),
+an in-memory test provider (`MemoryResourceProvider`), and a deterministic caching
+coordinator (`ResourceManager`).
+
+### Architecture
+
+```text
+Modern Core
+    ↑
+Modern Client
+    ├── Application
+    │     ├── InputSystem (CLIENT-003)
+    │     ├── IRenderer (CLIENT-004)
+    │     └── ResourceManager (CLIENT-005)
+    ├── Input
+    ├── Rendering
+    └── Resources
+```
+
+### What it contains
+
+| Unit                                                    | Responsibility                                                     |
+| ------------------------------------------------------- | ------------------------------------------------------------------ |
+| `modern/client/resources/ResourceId.h, .cpp`            | Strongly validated logical resource identifier (canonical forward slashes) |
+| `modern/client/resources/ResourceData.h`                | Immutable/value-oriented binary payload holding loaded bytes       |
+| `modern/client/resources/ResourceProvider.h`            | Pure abstract contract resolving `ResourceId` -> `ResourceData`    |
+| `modern/client/resources/MemoryResourceProvider.h, .cpp`| Headless test provider storing in-memory registered byte payloads  |
+| `modern/client/resources/ResourceManager.h, .cpp`       | Cache-coordinating manager with deterministic lifecycle            |
+| `modern/client/resources/ClientResourceTests.cpp`       | 10 headless tests covering validation, provider, caching, errors   |
+
+### Key conventions
+
+- **Strict isolation & zero GPU/OS coupling**: Modern client resource headers never include
+  `<Windows.h>`, Direct3D (`d3d9.h`, `d3d11.h`), Vulkan, OpenGL, MFC, or legacy RAN headers.
+  The resource subsystem does NOT depend on `modern/client/rendering` or vice-versa.
+  The resource layer delivers raw bytes; decoding into GPU resources (textures, vertex buffers,
+  shaders) is the responsibility of future asset decoders and render resource factories.
+- **ResourceId semantics**:
+  `ResourceId` represents a logical, portable identity (e.g. `textures/ui/login_background`,
+  `models/character/body`), never a raw Windows path or backslash-laden filesystem path.
+  Construction via `ResourceId::Create(...)` rejects empty names, whitespace, backslashes,
+  and leading/trailing slashes, returning `ErrorCode::InvalidArgument`.
+- **ResourceData semantics**:
+  A safe, immutable byte container (`std::vector<uint8_t>`) that can be viewed as bytes or
+  string views without exposing OS file descriptors or raw pointer ownership.
+- **Provider abstraction**:
+  `IResourceProvider` defines `HasResource(id)` and `Load(id)`. Multiple providers can exist:
+  `MemoryResourceProvider` for headless testing, portable filesystem providers for development,
+  and future archive adapters.
+- **ResourceManager lifecycle**:
+  ```text
+  Uninitialized -> Ready -> Shutdown
+  ```
+  `Initialize()` requires an injected `IResourceProvider`. `Load()` looks up the internal
+  cache first, falling back to the provider, caching successful results deterministically.
+- **Legacy RAN formats inspection & isolation**:
+  Legacy RAN assets use diverse formats and access systems:
+  - `CryptionRCC` / `CCrypt`: proprietary block encryption (`0x100` version, header offset 12)
+    applied to loose files and RCC archives.
+  - `FileCrypt` / `IMethod`: blowfish/block encryption for client assets.
+  - `SFileSystem`: legacy archive packaging format (`RANPACKAGEFILESYSTEM` header).
+  - Legacy asset types: `.isf` (items/skills), `.ssf` (effects), `.cps` (characters), `.x` (DirectX meshes).
+  - Legacy manager coupling: `TextureManager` and `DxMeshTexMan` were tightly coupled to
+    `LPDIRECT3DDEVICEQ`, D3DX9 texture loaders (`D3DXCreateTextureFromFileInMemoryEx`), and MFC globals.
+  These legacy systems are intentionally NOT ported into `modern/client/resources`. Any future
+  support for legacy RCC archives or binary formats will be implemented via dedicated, isolated
+  adapters under `modern/compatibility/` or future data importer tools.
+

@@ -1,6 +1,6 @@
 add_executable(ModernEmulator main.cpp)
 
-target_link_libraries(ModernEmulator PRIVATE Modern ModernClientApplication ModernClientInput ModernClientRendering)
+target_link_libraries(ModernEmulator PRIVATE Modern ModernClientApplication ModernClientInput ModernClientRendering ModernClientResources)
 
 target_include_directories(ModernEmulator PRIVATE
     ${CMAKE_SOURCE_DIR}/modern/client

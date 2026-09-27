@@ -25,6 +25,11 @@
 #include "rendering/Renderer.h"
 #include "rendering/RenderingTypes.h"
 
+#include "resources/MemoryResourceProvider.h"
+#include "resources/ResourceData.h"
+#include "resources/ResourceId.h"
+#include "resources/ResourceManager.h"
+
 #include <cstdio>
 #include <string>
 
@@ -187,6 +192,30 @@ int main()
 		static_cast<unsigned long long>(renderer.GetClearCount()));
 	renderer.Shutdown();
 	std::printf("  %-22s state=%s\n", "renderer shutdown", Modern::Client::ToString(renderer.GetState()));
+
+
+	std::printf("\nClient resource management\n");
+	Modern::Client::MemoryResourceProvider resourceProvider;
+	Modern::Client::ResourceManager resourceManager;
+	resourceManager.SetProvider(&resourceProvider);
+	std::printf("  %-22s %s\n", "resource mgr init", resourceManager.Initialize().GetMessage());
+
+	auto resId = Modern::Client::ResourceId::Create("ui/textures/login_background").GetValue();
+	Modern::Client::ResourceData mockTexture("SAMPLE_TEXTURE_BINARY_DATA");
+	resourceProvider.RegisterResource(resId, mockTexture);
+	std::printf("  %-22s id=%s registered\n", "provider", resId.GetName().c_str());
+
+	auto loaded = resourceManager.Load(resId);
+	if (loaded.IsOk())
+	{
+		std::printf("  %-22s id=%s bytes=%zu cached=%s\n",
+			"resource loaded",
+			resId.GetName().c_str(),
+			loaded.GetValue().GetSize(),
+			resourceManager.IsCached(resId) ? "true" : "false");
+	}
+	resourceManager.Shutdown();
+	std::printf("  %-22s state=%s\n", "resource mgr shutdown", Modern::Client::ToString(resourceManager.GetState()));
 
 	return 0;
 }

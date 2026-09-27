@@ -8,6 +8,7 @@
 # nobody has checked yet.
 
 add_subdirectory(input)
+add_subdirectory(resources)
 add_subdirectory(rendering)
 add_subdirectory(application)
 
