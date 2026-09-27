@@ -19,17 +19,20 @@ const char* ToString(ApplicationState state) noexcept
 
 Application::Application()
 	: m_platform(std::make_unique<NullPlatformEvents>())
+	, m_inputSource(std::make_unique<NullInputSource>())
 {
 }
 
 Application::Application(ApplicationConfig config)
 	: m_config(config)
 	, m_platform(std::make_unique<NullPlatformEvents>())
+	, m_inputSource(std::make_unique<NullInputSource>())
 {
 }
 
 Application::Application(std::unique_ptr<IPlatformEvents> platform)
 	: m_platform(std::move(platform))
+	, m_inputSource(std::make_unique<NullInputSource>())
 {
 	if (!m_platform)
 	{
@@ -40,10 +43,28 @@ Application::Application(std::unique_ptr<IPlatformEvents> platform)
 Application::Application(ApplicationConfig config, std::unique_ptr<IPlatformEvents> platform)
 	: m_config(config)
 	, m_platform(std::move(platform))
+	, m_inputSource(std::make_unique<NullInputSource>())
 {
 	if (!m_platform)
 	{
 		m_platform = std::make_unique<NullPlatformEvents>();
+	}
+}
+
+void Application::SetInputSource(std::unique_ptr<IInputSource> source)
+{
+	m_inputSource = std::move(source);
+	if (!m_inputSource)
+	{
+		m_inputSource = std::make_unique<NullInputSource>();
+	}
+}
+
+void Application::SubscribeInput(std::function<void(const InputEvent&)> subscriber)
+{
+	if (subscriber)
+	{
+		m_inputSubscribers.push_back(std::move(subscriber));
 	}
 }
 
@@ -88,11 +109,40 @@ Status Application::Run()
 			break;
 		}
 
+		// Frame order is fixed: source -> queue -> subscribers -> update ->
+		// EndFrame. A WindowClosed event is queued like any other event so
+		// subscribers observe the frame it arrived in; RequestsClose ends
+		// the loop after dispatch instead of skipping it.
+		const std::vector<InputEvent> frameEvents = m_inputSource->PollEvents();
+		for (const InputEvent& event : frameEvents)
+		{
+			if (m_input != nullptr)
+			{
+				m_input->PushEvent(event);
+				for (const auto& subscriber : m_inputSubscribers)
+				{
+					subscriber(event);
+				}
+			}
+		}
+
+		const bool closeRequested = m_inputSource->RequestsClose();
+
 		++m_frameCount;
 
 		if (m_update)
 		{
 			m_update(m_frameCount);
+		}
+
+		if (m_input != nullptr)
+		{
+			m_input->EndFrame();
+		}
+
+		if (closeRequested)
+		{
+			break;
 		}
 
 		if (m_state == ApplicationState::Stopping)

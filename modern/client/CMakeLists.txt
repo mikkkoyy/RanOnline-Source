@@ -8,3 +8,4 @@
 # nobody has checked yet.
 
 add_subdirectory(application)
+add_subdirectory(input)

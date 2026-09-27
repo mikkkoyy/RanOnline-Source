@@ -41,7 +41,8 @@ modern/
 │   ├── math/                Vector3
 │   └── types/               Ids, Result
 ├── client/                  new RAN client — consumes core, never legacy
-│   └── application/         Application lifecycle, update loop (CLIENT-002)
+│   ├── application/         Application lifecycle, update loop (CLIENT-002)
+│   └── input/               Input events, system & platform abstraction (CLIENT-003)
 ├── tests/                   headless rule tests (ModernCoreTests)
 ├── tools/                   offline / research tooling
 │   ├── exptable_dump.cpp    reads the packed legacy EXP table -> text
@@ -66,10 +67,10 @@ shipped implementation.
 - **`core`** defines the domain. It depends on the standard library and on
   nothing else. It is the only thing every other modern component may depend on.
 - **`network`**, **`database`**, **`server`**, **`client`**, **`tools`** consume
-  `core`. `client/application` is the first client slice (CLIENT-002); the
-  remaining client systems (input, rendering, resources, ui, character,
-  world, audio) and the network/database/server layers are created when
-  there is code to put in them.
+  `core`. `client/application` and `client/input` are the first client slices
+  (CLIENT-002, CLIENT-003); the remaining client systems (rendering, resources,
+  ui, character, world, audio) and the network/database/server layers are
+  created when there is code to put in them.
 - **`compatibility/legacy`** converts between modern types and legacy RAN
   types and formats. Only this layer may see `legacy/`, and nothing in `core`
   may reference it.
@@ -315,3 +316,58 @@ cmake --build build --config Debug
 
 `ModernEmulator` prints the same conventions in use. It is a demonstration, not
 the authority.
+
+
+## 14. CLIENT-002: modern client application foundation
+
+Establishes modern/client/application, providing an isolated, deterministic
+application lifecycle and frame loop without legacy Direct3D or MFC dependencies.
+
+### What it contains
+
+| Unit                                    | Responsibility                                                |
+| --------------------------------------- | ------------------------------------------------------------- |
+| modern/client/application/Application | Lifecycle state machine, frame rate throttle, update pipeline |
+
+### Key conventions
+
+- **Strict isolation from legacy engine loops**: CD3DApplication and CGameClient2Wnd
+  are not referenced; the application owns startup, shutdown, and update ticks cleanly.
+- **Headless testability**: IPlatformEvents and IInputSource default to headless
+  stubs (NullPlatformEvents, NullInputSource) allowing deterministic simulation
+  under unit tests and CLI tools without creating an OS window.
+- **Explicit frame callbacks**: Simulation logic hooks into SetUpdateCallback with
+  monotonic frame numbering and clean lifecycle state transitions (Uninitialized ->
+  Initialized -> Running -> Stopping -> Stopped).
+
+
+## 15. CLIENT-003: modern client input boundary
+
+Establishes modern/client/input, providing a platform-independent input model,
+instantaneous per-frame event queue, persistent key/mouse state tracking, and
+seamless integration into the client application loop.
+
+### What it contains
+
+| Unit                                               | Responsibility                                                    |
+| -------------------------------------------------- | ----------------------------------------------------------------- |
+| modern/client/input/InputEvents.h, .cpp        | Portable KeyCode, MouseButton, InputEvent tagged variant    |
+| modern/client/input/InputSystem.h, .cpp        | FIFO per-frame queue, persistent held state, frame boundary clear |
+| modern/client/input/FakeInputSource.h, .cpp    | Scripted deterministic input feeds for headless test harnesses    |
+| modern/client/input/platform/Win32InputAdapter.* | Isolated Win32 virtual key and mouse sample translation seam      |
+
+### Key conventions
+
+- **Platform isolation**: Public modern interfaces expose zero platform headers
+  (<Windows.h>, DirectInput, MFC) and no raw handle types (HWND, WPARAM, LPARAM).
+  Windows key codes (VK_*) are translated to modern KeyCode enums strictly inside
+  Win32InputAdapter.cpp.
+- **Event vs. state separation**: Instantaneous per-frame events (KeyEvent,
+  MouseButtonEvent, MouseMoveEvent, MouseWheelEvent, WindowCloseEvent,
+  WindowResizeEvent) reside in a FIFO queue cleared deterministically each frame via
+  EndFrame(). Persistent querying state (IsKeyDown(), IsMouseButtonDown(),
+  GetMouseX(), GetMouseY(), GetMouseWheelDeltaY()) remains stable across frame
+  boundaries, preserving legacy semantic behavior while eliminating hidden globals.
+- **Single application input pipeline**: Application polls IInputSource, routes
+  events into InputSystem, broadcasts to subscribers, runs the update callback, and
+  calls EndFrame() at frame boundaries in strict, reproducible order.

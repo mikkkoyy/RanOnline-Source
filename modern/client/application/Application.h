@@ -2,9 +2,13 @@
 
 #include "types/Result.h"
 
+#include "input/InputEvents.h"
+#include "input/InputSystem.h"
+
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <vector>
 
 namespace Modern::Client
 {
@@ -37,8 +41,8 @@ const char* ToString(ApplicationState state) noexcept;
 // Platform event boundary.
 //
 // The application loop must not spread Win32 calls through the client.
-// Anything platform specific stays behind this interface; the default
-// implementation is headless so the loop is testable without a window,
+// Anything platform specific stays behind these interfaces; the default
+// implementations are headless so the loop is testable without a window,
 // DirectX, or MFC.
 class IPlatformEvents
 {
@@ -59,6 +63,30 @@ public:
 	bool PumpEvents() override { return true; }
 };
 
+// Input source: the single seam between the platform and Application.
+//
+// A production Win32 pump and the headless test fakes both implement this.
+// PollEvents returns this frame's modern input events in arrival order;
+// Application pushes each into the InputSystem queue. WindowClosed is data
+// here, not control flow: the source reports it as an event and
+// RequestsClose() tells Application the platform asked to exit.
+class IInputSource
+{
+public:
+	virtual ~IInputSource() = default;
+
+	virtual std::vector<InputEvent> PollEvents() = 0;
+	virtual bool RequestsClose() const = 0;
+};
+
+// Headless input: no events, never asks to close.
+class NullInputSource final : public IInputSource
+{
+public:
+	std::vector<InputEvent> PollEvents() override { return {}; }
+	bool RequestsClose() const override { return false; }
+};
+
 struct ApplicationConfig
 {
 	// Maximum frames Run() executes before returning. Zero means unbounded:
@@ -75,6 +103,19 @@ public:
 	explicit Application(std::unique_ptr<IPlatformEvents> platform);
 	Application(ApplicationConfig config, std::unique_ptr<IPlatformEvents> platform);
 
+	// Attaches the input boundary. The application borrows it: the caller
+	// owns the InputSystem and must keep it alive across Run(). Null detaches.
+	void SetInputSystem(InputSystem* input) noexcept { m_input = input; }
+	InputSystem* GetInputSystem() const noexcept { return m_input; }
+
+	// Installs the platform input source. Null installs NullInputSource.
+	void SetInputSource(std::unique_ptr<IInputSource> source);
+
+	// Receives each input event after it is queued, in FIFO order, before the
+	// update callback runs. Frame order is fixed: source -> queue ->
+	// subscribers -> update -> EndFrame.
+	void SubscribeInput(std::function<void(const InputEvent&)> subscriber);
+
 	Application(const Application&)            = delete;
 	Application& operator=(const Application&) = delete;
 	Application(Application&&)                 = default;
@@ -87,7 +128,8 @@ public:
 
 	// Runs the deterministic update loop to completion and ends Stopped:
 	//
-	//   while running { pump platform events; run one update; count one frame }
+	//   while running { pump platform; source -> queue -> subscribers;
+	//                   run one update; EndFrame; count one frame }
 	//
 	// Only valid from Initialized. Returns InvalidState from any other live
 	// state and NotAllowed once stopped. Rendering is intentionally absent:
@@ -120,6 +162,9 @@ private:
 	ApplicationState                  m_state      = ApplicationState::Uninitialized;
 	ApplicationConfig                 m_config{};
 	std::unique_ptr<IPlatformEvents>  m_platform;
+	InputSystem*                     m_input       = nullptr;
+	std::unique_ptr<IInputSource>    m_inputSource;
+	std::vector<std::function<void(const InputEvent&)>> m_inputSubscribers;
 	std::function<void(uint64_t)>     m_update;
 	uint64_t                          m_frameCount = 0;
 };

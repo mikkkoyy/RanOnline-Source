@@ -17,6 +17,9 @@
 #include "types/Result.h"
 
 #include "application/Application.h"
+#include "input/FakeInputSource.h"
+#include "input/InputEvents.h"
+#include "input/InputSystem.h"
 
 #include <cstdio>
 #include <string>
@@ -122,16 +125,36 @@ int main()
 		instance.IsFree() ? "true" : "false",
 		static_cast<unsigned long long>(instance.serial));
 
-	std::printf("\nClient application\n");
+	std::printf("\nClient application & input\n");
 	Modern::Client::ApplicationConfig appConfig;
 	appConfig.maxFrames = 3;
 	Modern::Client::Application app(appConfig);
+
+	Modern::Client::InputSystem input;
+	input.Initialize();
+	app.SetInputSystem(&input);
+
+	std::vector<Modern::Client::InputEvent> script;
+	script.push_back(Modern::Client::InputEvent::MakeKey(Modern::Client::KeyCode::W, true));
+	script.push_back(Modern::Client::InputEvent::MakeMouseMove(100, 200));
+	app.SetInputSource(std::make_unique<Modern::Client::ScriptedInputSource>(std::move(script)));
+
+	app.SubscribeInput([](const Modern::Client::InputEvent& ev)
+	{
+		std::printf("  %-22s event=%s\n", "input event", Modern::Client::ToString(ev.type));
+	});
+
 	std::printf("  %-22s state=%s\n", "created", Modern::Client::ToString(app.GetState()));
 	std::printf("  %-22s %s\n", "initialize", app.Initialize().GetMessage());
 	std::printf("  %-22s state=%s\n", "initialized", Modern::Client::ToString(app.GetState()));
-	app.SetUpdateCallback([](uint64_t frame)
+	app.SetUpdateCallback([&input](uint64_t frame)
 	{
-		std::printf("  %-22s frame=%llu\n", "update", static_cast<unsigned long long>(frame));
+		std::printf("  %-22s frame=%llu KeyW=%s Mouse=(%d,%d)\n",
+			"update",
+			static_cast<unsigned long long>(frame),
+			input.IsKeyDown(Modern::Client::KeyCode::W) ? "down" : "up",
+			input.GetMouseX(),
+			input.GetMouseY());
 	});
 	std::printf("  %-22s %s\n", "run", app.Run().GetMessage());
 	std::printf("  %-22s state=%s frames=%llu\n",

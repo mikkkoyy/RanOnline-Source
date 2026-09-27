@@ -1,8 +1,8 @@
 # Modern client application layer: lifecycle, update loop, platform boundary.
 #
-# Depends on Modern (core Result/Status conventions) and nothing else. No
-# legacy, no Win32, no DirectX, no sockets. modern/core must never depend on
-# this target: the dependency flows one way, client -> core.
+# Depends on Modern (core Result/Status conventions) and ModernClientInput.
+# No legacy, no Win32, no DirectX, no sockets. modern/core must never depend
+# on this target: the dependency flows one way, client -> core.
 
 add_library(ModernClientApplication STATIC
     Application.cpp
@@ -12,7 +12,7 @@ target_include_directories(ModernClientApplication PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
-target_link_libraries(ModernClientApplication PUBLIC Modern)
+target_link_libraries(ModernClientApplication PUBLIC Modern ModernClientInput)
 
 target_compile_features(ModernClientApplication PUBLIC cxx_std_17)
 
