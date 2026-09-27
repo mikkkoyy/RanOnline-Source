@@ -40,6 +40,8 @@ modern/
 │   ├── item/                ItemDefinition, ItemInstance
 │   ├── math/                Vector3
 │   └── types/               Ids, Result
+├── client/                  new RAN client — consumes core, never legacy
+│   └── application/         Application lifecycle, update loop (CLIENT-002)
 ├── tests/                   headless rule tests (ModernCoreTests)
 ├── tools/                   offline / research tooling
 │   ├── exptable_dump.cpp    reads the packed legacy EXP table -> text
@@ -64,8 +66,10 @@ shipped implementation.
 - **`core`** defines the domain. It depends on the standard library and on
   nothing else. It is the only thing every other modern component may depend on.
 - **`network`**, **`database`**, **`server`**, **`client`**, **`tools`** consume
-  `core`. They are created when there is code to put in them; the directories do
-  not exist yet.
+  `core`. `client/application` is the first client slice (CLIENT-002); the
+  remaining client systems (input, rendering, resources, ui, character,
+  world, audio) and the network/database/server layers are created when
+  there is code to put in them.
 - **`compatibility/legacy`** converts between modern types and legacy RAN
   types and formats. Only this layer may see `legacy/`, and nothing in `core`
   may reference it.

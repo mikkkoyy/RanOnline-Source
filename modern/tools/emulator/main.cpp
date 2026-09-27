@@ -16,6 +16,8 @@
 #include "types/Ids.h"
 #include "types/Result.h"
 
+#include "application/Application.h"
+
 #include <cstdio>
 #include <string>
 
@@ -119,6 +121,22 @@ int main()
 		"ItemInstance", instance.IsValid() ? "true" : "false",
 		instance.IsFree() ? "true" : "false",
 		static_cast<unsigned long long>(instance.serial));
+
+	std::printf("\nClient application\n");
+	Modern::Client::ApplicationConfig appConfig;
+	appConfig.maxFrames = 3;
+	Modern::Client::Application app(appConfig);
+	std::printf("  %-22s state=%s\n", "created", Modern::Client::ToString(app.GetState()));
+	std::printf("  %-22s %s\n", "initialize", app.Initialize().GetMessage());
+	std::printf("  %-22s state=%s\n", "initialized", Modern::Client::ToString(app.GetState()));
+	app.SetUpdateCallback([](uint64_t frame)
+	{
+		std::printf("  %-22s frame=%llu\n", "update", static_cast<unsigned long long>(frame));
+	});
+	std::printf("  %-22s %s\n", "run", app.Run().GetMessage());
+	std::printf("  %-22s state=%s frames=%llu\n",
+		"stopped", Modern::Client::ToString(app.GetState()),
+		static_cast<unsigned long long>(app.GetFrameCount()));
 
 	return 0;
 }
