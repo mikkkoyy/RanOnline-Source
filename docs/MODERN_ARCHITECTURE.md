@@ -43,7 +43,7 @@ modern/
 ├── client/                  new RAN client — consumes core, never legacy
 │   ├── application/         Application lifecycle, update loop (CLIENT-002)
 │   ├── input/               Input events, system & platform abstraction (CLIENT-003)
-│   ├── resources/           Resource boundary, identifiers, provider, cache (CLIENT-005)
+│   ├── resources/           Resource boundary, identifiers, providers, cache (CLIENT-005, CLIENT-006)
 │   └── rendering/           Renderer abstraction & headless null backend (CLIENT-004)
 ├── tests/                   headless rule tests (ModernCoreTests)
 ├── tools/                   offline / research tooling
@@ -69,10 +69,11 @@ shipped implementation.
 - **`core`** defines the domain. It depends on the standard library and on
   nothing else. It is the only thing every other modern component may depend on.
 - **`network`**, **`database`**, **`server`**, **`client`**, **`tools`** consume
-  `core`. `client/application`, `client/input`, and `client/rendering` are the first
-  client slices (CLIENT-002, CLIENT-003, CLIENT-004); the remaining client systems
-  (resources, ui, character, world, audio) and the network/database/server layers are
-  created when there is code to put in them.
+  `core`. `client/application`, `client/input`, `client/rendering` and
+  `client/resources` are the client slices built so far (CLIENT-002, CLIENT-003,
+  CLIENT-004, CLIENT-005, CLIENT-006); the remaining client systems (ui,
+  character, world, audio) and the network/database/server layers are created
+  when there is code to put in them.
 - **`compatibility/legacy`** converts between modern types and legacy RAN
   types and formats. Only this layer may see `legacy/`, and nothing in `core`
   may reference it.
@@ -481,7 +482,7 @@ Modern Client
 | `modern/client/resources/ResourceProvider.h`            | Pure abstract contract resolving `ResourceId` -> `ResourceData`    |
 | `modern/client/resources/MemoryResourceProvider.h, .cpp`| Headless test provider storing in-memory registered byte payloads  |
 | `modern/client/resources/ResourceManager.h, .cpp`       | Cache-coordinating manager with deterministic lifecycle            |
-| `modern/client/resources/ClientResourceTests.cpp`       | 10 headless tests covering validation, provider, caching, errors   |
+| `modern/client/resources/ClientResourceTests.cpp`       | 10 CLIENT-005 headless tests (extended by CLIENT-006)              |
 
 ### Key conventions
 
@@ -499,9 +500,10 @@ Modern Client
   A safe, immutable byte container (`std::vector<uint8_t>`) that can be viewed as bytes or
   string views without exposing OS file descriptors or raw pointer ownership.
 - **Provider abstraction**:
-  `IResourceProvider` defines `HasResource(id)` and `Load(id)`. Multiple providers can exist:
-  `MemoryResourceProvider` for headless testing, portable filesystem providers for development,
-  and future archive adapters.
+  `IResourceProvider` defines `HasResource(id)` and `Load(id)`. Several providers exist
+  behind it: `MemoryResourceProvider` for headless testing (CLIENT-005) and
+  `FileSystemResourceProvider` for loose files under a configured root (CLIENT-006).
+  Future archive, patch and remote providers implement the same two methods.
 - **ResourceManager lifecycle**:
   ```text
   Uninitialized -> Ready -> Shutdown
@@ -520,4 +522,170 @@ Modern Client
   These legacy systems are intentionally NOT ported into `modern/client/resources`. Any future
   support for legacy RCC archives or binary formats will be implemented via dedicated, isolated
   adapters under `modern/compatibility/` or future data importer tools.
+
+## 18. CLIENT-006: filesystem asset provider
+
+Gives the CLIENT-005 resource boundary one real storage backend.
+`FileSystemResourceProvider` resolves a logical `ResourceId` against a single
+configured root directory and returns the bytes of the file it finds there.
+Nothing above it changed: `ResourceManager`, `IResourceProvider`, `ResourceId`
+and `ResourceData` are exactly as CLIENT-005 left them.
+
+### Architecture
+
+```text
+ResourceManager
+       ↓
+IResourceProvider
+   ┌───┴───────────────────────┐
+   ↓                           ↓
+MemoryResourceProvider   FileSystemResourceProvider
+                               ↓
+                          local files
+```
+
+The interface is all the manager knows: it holds a pointer, calls
+`HasResource()` and `Load()`, and caches what comes back. Which storage answered
+is invisible above `IResourceProvider`, which is what lets a future provider
+replace the filesystem without the manager noticing.
+
+### What it contains
+
+| Unit                                                           | Responsibility                                                          |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `modern/client/resources/FileSystemResourceProvider.h, .cpp`   | Resolves `ResourceId` to a file under a configured root and returns its bytes |
+| `modern/client/resources/ClientResourceTests.cpp` (extended)   | +21 CLIENT-006 cases: roots, loading, traversal, identifiers, manager integration |
+
+### Root configuration
+
+- The root is a constructor argument: `FileSystemResourceProvider provider(root)`.
+  There is no default, no environment variable, no registry key and no
+  installation directory compiled in. A provider that has to be told where its
+  assets live is a provider that can be pointed at a test directory.
+- The constructor stores the path and performs no I/O. `Initialize()` validates it
+  and resolves it once to a canonical absolute path, kept as the resolved root.
+  Nothing before that point touches the filesystem, so a bad root is a returned
+  code rather than a throw out of a constructor.
+- `Initialize()` never creates the root. A missing root is `NotFound`; a root that
+  exists but is not a directory, or an empty path, is `InvalidArgument`; a second
+  `Initialize()` is `InvalidState`.
+
+### ResourceId to file resolution
+
+- An identifier is a forward-slash logical namespace joined to the root as path
+  components: `ui/textures/login_background` resolves under
+  `<root>/ui/textures/login_background`.
+- No extension is appended and no name is rewritten. A provider that silently
+  tried `login_background.dds` would make the asset-to-file mapping unguessable,
+  and guessability is what the identifier exists to remove.
+- The identifier is preserved exactly; only the path handed to the platform is
+  translated. `ResourceId::Create()` still owns the logical form.
+
+### Path safety
+
+`ResourceId` is a logical name; whether it can escape the root is a property of
+the code that turns it into a path, so the checks live in the provider.
+
+- **Lexical rules** (`IsPortableLogicalName`, applied before any path is built):
+  printable ASCII only (no confusion between a solidus and a lookalike), no `:`
+  (drive letters, NTFS alternate data streams), no `\` (Windows separators, UNC
+  and device paths), no empty components, no leading or trailing separator, no
+  `.` or `..` component, and no component ending in `.` or ` ` (Windows strips
+  those, so `a` and `a.` would otherwise name one file while comparing as two
+  identifiers).
+- **Semantic containment**: the joined path goes through `weakly_canonical()`,
+  which resolves the components that exist - symlinks included - and normalises
+  the rest, and the result must be strictly below the resolved root, compared
+  component by component so that `assets-extra` is not mistaken for `assets`.
+  `weakly_canonical()` rather than `canonical()` because the target need not
+  exist: `HasResource()` has to be able to answer no.
+- Every refusal is `InvalidArgument`, from `HasResource()` as `false` and from
+  `Load()` as an error. An identifier that escapes the root is a bad argument,
+  not a missing file.
+- The lexical half is the primary guard because it is deterministic and needs no
+  I/O; the containment check covers what naming rules cannot see, such as a
+  symlink inside the root pointing out of it.
+- `ResourceId::Create()` already refuses leading, trailing and repeated
+  separators and backslashes, so several of these cases cannot be built through
+  the public identifier API. The provider re-checks them anyway - defense in
+  depth - and the reachable cases (`../x`, `a/../b`, `C:/x`, `file:stream`) are
+  covered by tests.
+
+### Loading and error mapping
+
+`Load()` validates the identifier, resolves the path, confirms a regular file,
+opens it binary and read-only, sizes it, reads it fully and returns the bytes as
+`ResourceData`. `HasResource()` stops after the metadata check: it never opens a
+stream, so it cannot read a file in order to answer a question about existence.
+
+| Situation                             | `Load`            | `HasResource` |
+| ------------------------------------- | ----------------- | ------------- |
+| `Initialize()` has not been called    | `InvalidState`    | `false`       |
+| invalid or unsafe identifier          | `InvalidArgument` | `false`       |
+| no file at the resolved path          | `NotFound`        | `false`       |
+| the resolved path is a directory      | `NotFound`        | `false`       |
+| regular file, zero bytes              | success, 0 bytes  | `true`        |
+| regular file, bytes returned          | success           | `true`        |
+| file opened but not read to the end   | `NotFound`        | `true`        |
+
+- No new error codes were introduced. A read that fails after a successful open
+  reuses `NotFound`, because the core vocabulary has no I/O code by design and
+  adding one is a Core-level decision; either way the provider cannot produce the
+  resource.
+- A file whose size no `size_t` can hold is refused rather than truncated, which
+  matters because this repository builds a 32-bit client.
+- Nothing throws for a resource failure, filesystem calls included: every one of
+  them uses the `std::error_code` overload.
+
+### What the provider deliberately is not
+
+- **Not a cache.** `ResourceManager` owns caching, and a second cache here would
+  make "was this read from disk?" unanswerable. A test asserts the split: the
+  manager serves its cached copy while the provider, asked directly, re-reads the
+  changed file.
+- **Not a decoder.** It returns bytes. No `IRenderer`, no DirectX/Vulkan/OpenGL,
+  no texture or mesh type, no GPU upload, and no dependency between
+  `modern/client/resources` and `modern/client/rendering` in either direction.
+- **Not concurrent.** One call, one synchronous read: no worker threads, no async
+  API, no mutex. Threaded loading remains a future architecture decision.
+- **Not an archive reader.** `CryptionRCC`/`CCrypt`, `FileCrypt`/`IMethod`,
+  `SFileSystem`, the `.isf`/`.ssf`/`.cps`/`.x` formats and the legacy
+  `TextureManager`/`DxMeshTexMan` coupling stay outside this layer. The path is a
+  future `ArchiveResourceProvider` behind `IResourceProvider`, not a dependency of
+  `ResourceManager`:
+
+  ```text
+  legacy archive
+        ↓
+  future ArchiveResourceProvider
+        ↓
+  IResourceProvider
+        ↓
+  ResourceManager
+  ```
+
+  `ArchiveResourceProvider`, `RemoteResourceProvider` and `PatchResourceProvider`
+  can each implement the same two methods, which is the test of whether this
+  boundary is drawn in the right place.
+
+### Tests and verification
+
+`ClientResourceTests.cpp` carries 31 cases: the ten CLIENT-005 cases plus
+twenty-one CLIENT-006 cases covering valid, missing and invalid roots; discovery
+and loading; empty files; directories; nested paths; forward-slash identifiers;
+parent and nested traversal; absolute, drive-letter and alternate-stream
+identifiers; files outside the root; metadata-only `HasResource()`; and
+`ResourceManager` integration, caching and rendering independence.
+
+Every filesystem case builds its own root under the system temporary directory,
+writes deterministic bytes into it and removes it on destruction, so no test
+reads a RAN installation and none needs one. `ModernEmulator` shows the same on a
+temporary root it creates and deletes itself.
+
+```powershell
+cmake --build build --config Debug
+ctest --test-dir build -C Debug --output-on-failure
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+```
 

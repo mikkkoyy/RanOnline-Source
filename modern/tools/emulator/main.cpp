@@ -25,12 +25,16 @@
 #include "rendering/Renderer.h"
 #include "rendering/RenderingTypes.h"
 
+#include "resources/FileSystemResourceProvider.h"
 #include "resources/MemoryResourceProvider.h"
 #include "resources/ResourceData.h"
 #include "resources/ResourceId.h"
 #include "resources/ResourceManager.h"
 
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <system_error>
 #include <string>
 
 using namespace Modern;
@@ -216,6 +220,60 @@ int main()
 	}
 	resourceManager.Shutdown();
 	std::printf("  %-22s state=%s\n", "resource mgr shutdown", Modern::Client::ToString(resourceManager.GetState()));
+
+	std::printf("\nClient filesystem resource provider\n");
+	{
+		// A root created and removed here on purpose. The emulator has no
+		// asset directory of its own and must not grow one: pointing it at a
+		// developer's RAN installation would make this harness depend on a
+		// machine, and the point of the provider is that it depends on none.
+		std::error_code ec;
+		const std::filesystem::path demoRoot =
+			std::filesystem::temp_directory_path(ec) / "modern_emulator_resource_demo";
+		std::filesystem::remove_all(demoRoot, ec);
+		std::filesystem::create_directories(demoRoot / "ui", ec);
+
+		{
+			std::ofstream out(demoRoot / "ui" / "login.bin", std::ios::binary | std::ios::trunc);
+			out << "EMULATOR_FILE_RESOURCE";
+		}
+
+		Modern::Client::FileSystemResourceProvider fsProvider(demoRoot);
+		Modern::Client::ResourceManager fsManager;
+		fsManager.SetProvider(&fsProvider);
+
+		std::printf("  %-22s %s\n", "fs provider init", fsProvider.Initialize().GetMessage());
+		std::printf("  %-22s %s\n", "fs manager init", fsManager.Initialize().GetMessage());
+
+		const auto fsId = Modern::Client::ResourceId::Create("ui/login.bin");
+		if (fsId.IsOk())
+		{
+			const auto fsData = fsManager.Load(fsId.GetValue());
+			if (fsData.IsOk())
+			{
+				std::printf("  %-22s id=%s bytes=%zu cached=%s\n",
+					"fs resource loaded",
+					fsId.GetValue().GetName().c_str(),
+					fsData.GetValue().GetSize(),
+					fsManager.IsCached(fsId.GetValue()) ? "true" : "false");
+			}
+		}
+
+		// The provider refuses to leave its root, and says so with a code
+		// rather than an exception.
+		const auto escapeId = Modern::Client::ResourceId::Create("../secret.bin");
+		if (escapeId.IsOk())
+		{
+			std::printf("  %-22s %s\n", "traversal rejected",
+				Modern::ToString(fsProvider.Load(escapeId.GetValue()).GetError()));
+		}
+
+		fsManager.Shutdown();
+		std::printf("  %-22s state=%s\n", "fs manager shutdown",
+			Modern::Client::ToString(fsManager.GetState()));
+
+		std::filesystem::remove_all(demoRoot, ec);
+	}
 
 	return 0;
 }

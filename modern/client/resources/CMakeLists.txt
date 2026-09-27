@@ -1,12 +1,18 @@
 # Modern client resource layer: platform-independent resource abstraction,
-# identifiers, provider interfaces, memory test provider, and deterministic cache manager.
+# identifiers, provider interfaces, the memory and filesystem providers, and a
+# deterministic cache manager.
 #
-# Depends on Modern (core Result/Status conventions) and nothing else.
-# No legacy, no DirectX/Vulkan/OpenGL headers, no Windows headers in public headers.
+# Depends on Modern (core Result/Status conventions) and on the standard library
+# only. No legacy, no DirectX/Vulkan/OpenGL headers, no Windows headers in public
+# headers.
+#
+# <filesystem> is part of C++17 and needs no extra link library on MSVC 2017+; a
+# pre-9 GCC would need stdc++fs, which this repository does not target.
 
 add_library(ModernClientResources STATIC
     ResourceId.cpp
     MemoryResourceProvider.cpp
+    FileSystemResourceProvider.cpp
     ResourceManager.cpp
 )
 
