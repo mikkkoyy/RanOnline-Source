@@ -44,7 +44,7 @@ modern/
 │   ├── application/         Application lifecycle, update loop (CLIENT-002)
 │   ├── input/               Input events, system & platform abstraction (CLIENT-003)
 │   ├── resources/           Resource boundary, identifiers, providers, cache (CLIENT-005, CLIENT-006)
-│   ├── assets/              Typed CPU-side assets & decoder boundary (CLIENT-007)
+│   ├── assets/              Typed CPU-side assets & decoder boundary (CLIENT-007, CLIENT-008)
 │   └── rendering/           Renderer abstraction & headless null backend (CLIENT-004)
 ├── tests/                   headless rule tests (ModernCoreTests)
 ├── tools/                   offline / research tooling
@@ -72,7 +72,8 @@ shipped implementation.
 - **`network`**, **`database`**, **`server`**, **`client`**, **`tools`** consume
   `core`. `client/application`, `client/input`, `client/rendering`,
   `client/resources` and `client/assets` are the client slices built so far
-  (CLIENT-002, CLIENT-003, CLIENT-004, CLIENT-005, CLIENT-006, CLIENT-007); the
+  (CLIENT-002, CLIENT-003, CLIENT-004, CLIENT-005, CLIENT-006, CLIENT-007,
+  CLIENT-008); the
   remaining client systems (ui, character, world, audio) and the
   network/database/server layers are created when there is code to put in them.
 - **`compatibility/legacy`** converts between modern types and legacy RAN
@@ -976,11 +977,12 @@ What that means in practice:
   offline, in an isolated tool or adapter that is allowed to see `legacy/`; what
   reaches a decoder is already modern bytes. That keeps the exclusion above a
   structural fact rather than a discipline.
-- A mesh asset waits for the same treatment: a validated CPU-side `MeshAsset`
-  next to `ImageAsset`, its own decoder, and the same rule that no backend object
-  appears in its header. CLIENT-007 deliberately adds one asset type rather than
-  a speculative `Asset` variant, because the second type is what will show
-  whether the shared parts were drawn in the right place.
+- A mesh asset received the same treatment as CLIENT-008 (section 20): a
+  validated CPU-side `MeshAsset` next to `ImageAsset`, its own decoder, and the
+  same rule that no backend object appears in its header. CLIENT-007 deliberately
+  added one asset type rather than a speculative `Asset` variant, because the
+  second type is what would show whether the shared parts were drawn in the right
+  place.
 - `ResourceManager` keeps its single responsibility throughout: it caches and
   serves bytes. Decoding stays next to the caller that needs a typed value, which
   is also where a future cache-eviction or threading policy can be decided
@@ -1022,5 +1024,290 @@ ctest --test-dir build -C Debug --output-on-failure
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 build\Debug\ModernClientAssetTests.exe
+```
+
+## 20. CLIENT-008: typed mesh asset / decoder boundary
+
+CLIENT-007 closed by asking what a second asset type would show about where the
+shared parts were drawn. CLIENT-008 is that experiment: the geometry half of the
+asset layer, parallel in shape to the image half rather than folded into it.
+Nothing below it changed — `IResourceProvider`, `MemoryResourceProvider`,
+`FileSystemResourceProvider`, `ResourceId`, `ResourceData` and `ResourceManager`
+are exactly as CLIENT-005 through CLIENT-007 left them — and CLIENT-007's own
+files changed only by gaining mesh vocabulary beside the image vocabulary they
+already carried.
+
+### Architecture
+
+```text
+IResourceProvider
+        |
+        v
+ResourceManager          bytes: cached, untyped
+        |
+        v
+ResourceData
+        |
+        v
+IMeshDecoder             DecodeMesh(ResourceData) -> Result<MeshAsset>
+        |
+        v
+MeshAsset                validated CPU-side mesh: topology, vertices, indices
+        |
+        v
+future renderer adapter  builds vertex/index buffers from a MeshAsset; does not exist yet
+```
+
+### Why a second type, not a general one
+
+The question CLIENT-007 left open was empirical: one asset type proves nothing
+about the boundary, because every decision could have been tailored to images.
+A second type, written independently against the same rules, is what shows which
+decisions were really shared:
+
+- **Shared, and confirmed shared:** `Result<T>` with `ErrorCode::InvalidArgument`
+  as the only failure code; a private constructor behind a
+  `static Result<T> Create(...)` factory; a byte-count calculation in
+  `AssetTypes` formed in 64-bit arithmetic and refused rather than wrapped; a
+  stateless interface over `ResourceData`; a hand-built test container whose
+  encoder lives in the tests, not with the reader.
+- **Not shared, and confirmed separate:** the layout enums (`ImageFormat` vs
+  `MeshVertexFormat`), the geometry rules (payload-length equality vs
+  index grouping and index range), the topology question images do not have, and
+  the containers themselves.
+
+So the asset layer stays two independently typed siblings. There is no `Asset`
+union, no `variant`, no base class and no downcast: `ImageAsset` and `MeshAsset`
+share the vocabulary file and the conventions, and nothing forces a consumer
+that wants one to know the other exists. A generic `Asset` would have answered
+the question in the wrong direction — by making everything know about
+everything.
+
+### What it contains
+
+| Unit                                            | Responsibility                                                                     |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `modern/client/assets/AssetTypes.h, .cpp`       | now also `MeshIndex`, vertex/index byte sizes, mesh ceilings, `MeshVertexFormat`, `PrimitiveTopology`, their names, and the checked mesh byte-count calculation |
+| `modern/client/assets/MeshAsset.h, .cpp`        | Validated, immutable CPU-side mesh: topology, vertices, indices                      |
+| `modern/client/assets/MeshDecoder.h`            | `IMeshDecoder`: the `ResourceData` -> `MeshAsset` contract                           |
+| `modern/client/assets/TestMeshDecoder.h, .cpp`  | The one concrete decoder: the documented MMESH test container                        |
+| `modern/client/assets/ClientMeshTests.cpp`      | 32 headless cases: vocabulary, mesh invariants, decoder, integration, image regression |
+
+`ModernClientAssets` gained the two mesh sources and still links `Modern` and
+`ModernClientResources` only. `ModernClientMeshAssetTests` is a **second** test
+executable — the image suite owns its own `main()` — registered with CTest beside
+`ModernClientAssetTests`, with the same no-renderer linkage rules.
+
+### MeshAsset design
+
+```cpp
+struct MeshVertex
+{
+    Vector3 position;   // where it is
+    Vector3 normal;     // which way it faces (stored as given, not renormalised)
+    float   u, v;       // texture coordinates
+    // sizeof == kMeshVertexBytes (32), static_asserted in MeshAsset.h
+};
+
+class MeshAsset
+{
+public:
+    static Result<MeshAsset> Create(PrimitiveTopology topology,
+                                    std::vector<MeshVertex> vertices,
+                                    std::vector<MeshIndex>  indices);
+
+    PrimitiveTopology           GetTopology()    const noexcept;
+    size_t                      GetVertexCount() const noexcept;
+    size_t                      GetIndexCount()  const noexcept;
+    size_t                      GetTriangleCount() const noexcept;
+    const std::vector<MeshVertex>& GetVertices() const noexcept;
+    const std::vector<MeshIndex>&  GetIndices()  const noexcept;
+};
+```
+
+- **The layout is declared once.** `kMeshVertexBytes` is 32 (eight float32
+  values), and a `static_assert` ties it to `sizeof(MeshVertex)`, so the number
+  the container is counted with and the type that reads it cannot drift apart
+  without a compile error. Position and normal reuse core's `Vector3` rather
+  than growing a second vector type; UV is two floats because CLIENT-008 does
+  not extend core — a `Vector2` belongs in core, for everyone, when someone
+  needs it there.
+- **Normals are stored as given.** Not required to be unit length or to agree
+  with the winding: whether a normal needs renormalising is the consumer's
+  decision (importer, renderer, tool), and enforcing it here would reject data
+  that is valid for every other use. Only finiteness is enforced.
+- **No default constructor.** There is no "empty but valid" mesh and no
+  half-built one, so a `MeshAsset` is either absent or already checked — which
+  is why no case in the suite tests for an invalid state: the state cannot be
+  named.
+- **Immutable by interface.** Vertices and indices leave through const
+  references; to change geometry you build a new `MeshAsset`, which re-runs
+  every check.
+- **CPU-side only.** No `ID3D11Buffer`, `IDirect3DVertexBuffer9`, `VkBuffer`,
+  `GLuint` or device pointer appears in the header, which includes no Windows
+  header at all. Whether indices become 16-bit or 32-bit in a GPU buffer, how
+  the vertex declaration is laid out and which primitive restart is used are
+  questions for a future renderer adapter, and `MeshAsset` never learns that
+  any of them were asked.
+
+Validation, all of it returning `ErrorCode::InvalidArgument` and none of it
+throwing, in the order it runs:
+
+| Input                                                          | Result            |
+| -------------------------------------------------------------- | ----------------- |
+| unknown or unassigned topology                                 | `InvalidArgument` |
+| zero vertices or zero indices                                  | `InvalidArgument` |
+| index count not a whole number of primitives (not `% 3`)       | `InvalidArgument` |
+| count above `kMaxMeshVertices` (262144) / `kMaxMeshIndices` (1048576) | `InvalidArgument` |
+| total above `kMaxMeshBytes` (8 MiB) or no `size_t` can hold it | `InvalidArgument` |
+| any position, normal, u or v component that is NaN or infinite | `InvalidArgument` |
+| any index outside `[0, vertexCount)`                           | `InvalidArgument` |
+| everything above consistent                                   | success           |
+
+Cheap structural rules run first, per-element rules second, so a mesh that
+cannot be valid is never walked — an out-of-range index is checked against the
+vertex count *after* the count is known to be sane, and a million-element
+finiteness loop never runs on a mesh that already failed on its shape. The
+count ceilings are checked while the counts are still `size_t`, before either
+is narrowed for the byte calculation, so the arithmetic never sees a size it
+could misrepresent. The byte ceiling is the binding one: `kMaxMeshVertices`
+vertices alone are exactly 8 MiB, so no index data can fit at the vertex
+ceiling — the suite asserts both the refusal at the line and the acceptance one
+vertex under it.
+
+### Decoder contract
+
+```cpp
+class IMeshDecoder
+{
+public:
+    virtual ~IMeshDecoder() = default;
+
+    virtual Result<MeshAsset> DecodeMesh(const ResourceData& data) = 0;
+};
+```
+
+Deliberately the same shape as `IImageDecoder`, down to the parts that cost
+nothing to keep parallel and that would have been annoying to retrofit later:
+bytes in, one typed value out; no manager, no provider, no id; stateless; the
+call not `const`; `InvalidArgument` for anything undecodable and `NotFound`
+stayed in the layer below, so "these bytes are not a mesh" and "this resource
+does not exist" remain distinguishable. The mesh decoder enforces nothing about
+images and the image decoder enforces nothing about meshes — each accepts its
+own container and refuses the other's, which the suite asserts in both
+directions.
+
+### The one decoder: MMESH
+
+`TestMeshDecoder` implements the container described in its own header — a
+fourteen-byte header (`MESH` magic, version 1, a `MeshVertexFormat` byte,
+little-endian vertex and index counts) followed by exactly
+`vertexCount * 32 + indexCount * 4` bytes: vertices as eight little-endian
+float32 values each (px, py, pz, nx, ny, nz, u, v), then indices as
+little-endian uint32. No compression, no per-vertex stride variation, no index
+width field, no topology field, no padding and no trailing data — everything
+the header claims is checked, so a truncated, oversized or structurally
+impossible payload is refused rather than decoded into a mesh of a different
+shape than the header described.
+
+Two deliberate omissions: the container has no topology field because
+CLIENT-008 has exactly one topology — the decoder passes
+`PrimitiveTopology::TriangleList` explicitly, and a second topology would be a
+new field and a version bump — and no index width, because indices are always
+uint32. Like MIMG, it is named and documented as a **test** container: invented
+for this milestone, not a RAN format, built by hand in the tests from its
+description so the reader is checked against an independent encoder.
+
+### Rendering independence
+
+The dependency direction is one-way, and the asset layer is still the lower end
+of it — it now carries both asset types:
+
+```text
+Modern Core
+     ^
+     |
+Resources (ResourceData)
+     ^
+     |
+Assets / Decoders (ImageAsset, IImageDecoder, MeshAsset, IMeshDecoder)
+     ^
+     |
+future rendering integration
+```
+
+- `ModernClientAssets` does not link `ModernClientRendering`, and no header in
+  `modern/client/assets` includes one from `modern/client/rendering` — the mesh
+  headers added no exception.
+- `IRenderer` still knows nothing about decoders, `MeshAsset` or `IMeshDecoder`.
+  Buffer creation, index format choice and vertex declaration setup are exactly
+  the decisions the future adapter makes *from* a `MeshAsset`; the asset never
+  learns which API made them.
+- A decode failure therefore stays cheap and testable: validating geometry needs
+  no device, so it can happen before the renderer exists, in a tool, in a test
+  or in the background of a loading screen — every case in this milestone runs
+  in a console process, and a mistaken dependency would produce a compile or
+  link error rather than a passing test.
+
+### Legacy format exclusion
+
+> CLIENT-008 does not implement or reverse-engineer RAN legacy mesh formats.
+
+The rule is the one CLIENT-007 set, now with evidence it holds for a second
+type: a legacy model is converted once, offline, by an isolated tool or adapter
+that is allowed to see `legacy/`, and what reaches a decoder is already modern
+bytes. A real mesh format — whatever a future importer writes, or a reader for
+a modern container — is added by implementing `IMeshDecoder` beside
+`TestMeshDecoder`, and nothing above the interface changes when it arrives. The
+MMESH decoder stays what it was declared to be: the deterministic fixture the
+boundary is tested with.
+
+### Tests and verification
+
+`ClientMeshTests.cpp` carries 32 cases in the new `ModernClientMeshAssetTests`
+binary, registered with CTest beside the image suite:
+
+- **Vocabulary:** `MeshVertexFormat` and `PrimitiveTopology` names, including
+  unassigned byte values; bytes per vertex; vertices per primitive as a refusal
+  at zero; the byte-count calculation for valid pairs, unknown layouts, zero
+  counts, both count ceilings, the binding byte ceiling at the line and one
+  vertex under it.
+- **Mesh invariants:** a triangle accepted with its geometry compared
+  component by component; empty geometry refused; non-triangle index counts
+  refused (whole primitives only); out-of-range indices refused across the
+  whole `uint32` domain while any in-range winding is accepted; NaN and
+  ±infinity refused in each vertex component; unknown topology refused before
+  the rules it would have decided; counts and totals above every ceiling
+  refused; copies and moves preserving the value.
+- **Decoder:** usable only through `IMeshDecoder`; deterministic across repeats
+  and across instances; empty data, every truncated header length, each damaged
+  magic position, unsupported versions, unknown format bytes, zero counts,
+  every truncated payload length, trailing bytes and a lying header all refused;
+  ceiling violations refused from a header far too small for its claim, before
+  anything is allocated; vertices and indices of a decoded mesh compared against
+  an independently built container, byte for byte in value; the topology the
+  decoder states rather than one it reads; NaN, infinity and an out-of-range
+  index smuggled into an otherwise perfect payload refused at construction.
+- **Integration and regression:** the decoder over hand-built bytes with no
+  manager anywhere; `MemoryResourceProvider` driven through `ResourceManager`
+  into a decoded `MeshAsset`; a decode failure leaving the cache byte-identical;
+  no legacy format accepted, with the image decoder refusing mesh bytes in the
+  same case; and an `ImageAsset` decoded from a hand-built MIMG container inside
+  this suite, while the unchanged 31-case image suite still passes beside it.
+
+`ModernEmulator` gained a "Client typed mesh decoder" section that mirrors the
+image one: it assembles a quad in MMESH bytes, decodes it through the interface,
+prints topology, triangle count and byte totals, shows a malformed container and
+an out-of-range index each refused with a code, and then walks
+provider -> `ResourceManager` -> `ResourceData` -> decoder -> `MeshAsset` over
+the same manager the image section used. It creates no asset directory and
+loads no real asset file.
+
+```powershell
+cmake --build build --config Debug
+ctest --test-dir build -C Debug --output-on-failure
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+build\Debug\ModernClientMeshAssetTests.exe
 ```
 

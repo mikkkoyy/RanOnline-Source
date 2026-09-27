@@ -1,5 +1,5 @@
 # Modern client asset layer: typed CPU-side assets, and the decoder boundary
-# that turns ResourceData into them (CLIENT-007).
+# that turns ResourceData into them (CLIENT-007 images, CLIENT-008 meshes).
 #
 # Depends on Modern (core Result/Status conventions) and on
 # ModernClientResources, which supplies ResourceData -- the byte payload a
@@ -14,6 +14,8 @@ add_library(ModernClientAssets STATIC
     AssetTypes.cpp
     ImageAsset.cpp
     TestImageDecoder.cpp
+    MeshAsset.cpp
+    TestMeshDecoder.cpp
 )
 
 target_include_directories(ModernClientAssets PUBLIC
@@ -49,6 +51,28 @@ if(MSVC)
     target_compile_options(ModernClientAssetTests PRIVATE /W4 /permissive- /utf-8)
 endif()
 
+# Mesh boundary tests (CLIENT-008). A second executable, because the image
+# suite owns its own main(): the two suites stay independent translation
+# units and both register with CTest. Same linkage rules as above -- no
+# renderer, no graphics API, no legacy library.
+add_executable(ModernClientMeshAssetTests
+    ClientMeshTests.cpp
+)
+
+target_include_directories(ModernClientMeshAssetTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_SOURCE_DIR}/modern/tests
+)
+
+target_link_libraries(ModernClientMeshAssetTests PRIVATE ModernClientAssets ModernClientResources)
+
+target_compile_features(ModernClientMeshAssetTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernClientMeshAssetTests PRIVATE /W4 /permissive- /utf-8)
+endif()
+
 # enable_testing() is called by the top-level CMakeLists.txt, which is where
 # CTest needs it in order to reach this directory.
 add_test(NAME ModernClientAssetTests COMMAND ModernClientAssetTests)
+add_test(NAME ModernClientMeshAssetTests COMMAND ModernClientMeshAssetTests)

@@ -25,6 +25,9 @@
 #include "assets/ImageAsset.h"
 #include "assets/ImageDecoder.h"
 #include "assets/TestImageDecoder.h"
+#include "assets/MeshAsset.h"
+#include "assets/MeshDecoder.h"
+#include "assets/TestMeshDecoder.h"
 
 #include "rendering/NullRenderer.h"
 #include "rendering/Renderer.h"
@@ -38,6 +41,7 @@
 
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <system_error>
@@ -96,6 +100,72 @@ namespace
 		for (size_t i = 0; i < pixelBytes; ++i)
 		{
 			bytes.push_back(static_cast<uint8_t>(i % 256u));
+		}
+
+		return bytes;
+	}
+
+	// Assembles the MMESH container described in assets/TestMeshDecoder.h: a
+	// fourteen-byte header, then vertices as eight little endian float32
+	// values each, then indices as little endian uint32. The sample is a unit
+	// quad - four vertices, two triangles - so the counts and the triangle
+	// count differ visibly in the printout.
+	//
+	// Built by hand for the same reasons as the image sample: the container is
+	// documented rather than written by a library routine, and CLIENT-008
+	// decodes no real mesh format, so showing a decoder in use must not imply
+	// one exists for RAN's models.
+	std::vector<uint8_t> MakeSampleMesh()
+	{
+		auto pushU32 = [](std::vector<uint8_t>& bytes, uint32_t value)
+		{
+			bytes.push_back(static_cast<uint8_t>(value & 0xFFu));
+			bytes.push_back(static_cast<uint8_t>((value >> 8) & 0xFFu));
+			bytes.push_back(static_cast<uint8_t>((value >> 16) & 0xFFu));
+			bytes.push_back(static_cast<uint8_t>((value >> 24) & 0xFFu));
+		};
+		auto pushF32 = [&pushU32](std::vector<uint8_t>& bytes, float value)
+		{
+			uint32_t bits = 0;
+			std::memcpy(&bits, &value, sizeof(bits));
+			pushU32(bytes, bits);
+		};
+
+		std::vector<uint8_t> bytes;
+		bytes.push_back('M');
+		bytes.push_back('E');
+		bytes.push_back('S');
+		bytes.push_back('H');
+		bytes.push_back(Modern::Client::TestMeshDecoder::kVersion);
+		bytes.push_back(static_cast<uint8_t>(Modern::Client::MeshVertexFormat::PositionNormalUvF32));
+		pushU32(bytes, 4);  // vertex count
+		pushU32(bytes, 6);  // index count: two whole triangles
+
+		const float positions[4][3] = {
+			{ -1.0f, -1.0f, 0.0f },
+			{  1.0f, -1.0f, 0.0f },
+			{  1.0f,  1.0f, 0.0f },
+			{ -1.0f,  1.0f, 0.0f },
+		};
+		const float uvs[4][2] = {
+			{ 0.0f, 0.0f }, { 1.0f, 0.0f }, { 1.0f, 1.0f }, { 0.0f, 1.0f },
+		};
+		for (size_t vertex = 0; vertex < 4; ++vertex)
+		{
+			pushF32(bytes, positions[vertex][0]);
+			pushF32(bytes, positions[vertex][1]);
+			pushF32(bytes, positions[vertex][2]);
+			pushF32(bytes, 0.0f);  // normal x
+			pushF32(bytes, 0.0f);  // normal y
+			pushF32(bytes, 1.0f);  // normal z
+			pushF32(bytes, uvs[vertex][0]);
+			pushF32(bytes, uvs[vertex][1]);
+		}
+
+		const uint32_t indices[6] = { 0, 1, 2, 0, 2, 3 };
+		for (const uint32_t index : indices)
+		{
+			pushU32(bytes, index);
 		}
 
 		return bytes;
@@ -379,6 +449,88 @@ int main()
 		std::printf("  %-22s state=%s\n",
 			"asset manager shutdown",
 			Modern::Client::ToString(assetManager.GetState()));
+	}
+
+	std::printf("\nClient typed mesh decoder\n");
+	{
+		// The geometry half of the same boundary: stateless again, with its
+		// own interface and its own asset type rather than a second face on
+		// the image ones.
+		Modern::Client::TestMeshDecoder meshDecoder;
+		std::printf("  %-22s stateless\n", "decoder lifetime");
+
+		// Deterministic in-memory bytes, assembled by hand: CLIENT-008 ships
+		// no decoder for a real mesh format either, so the sample is built
+		// from the documented test container rather than loaded.
+		const std::vector<uint8_t> sample = MakeSampleMesh();
+
+		const auto decodedMesh = meshDecoder.DecodeMesh(Modern::Client::ResourceData(sample));
+		if (decodedMesh.IsOk())
+		{
+			const Modern::Client::MeshAsset& mesh = decodedMesh.GetValue();
+			std::printf("  %-22s topology=%s triangles=%zu\n",
+				"test mesh decoded",
+				Modern::Client::ToString(mesh.GetTopology()),
+				mesh.GetTriangleCount());
+			std::printf("  %-22s vertices=%zu indices=%zu bytes=%zu\n",
+				"mesh metadata",
+				mesh.GetVertexCount(),
+				mesh.GetIndexCount(),
+				mesh.GetTotalByteCount());
+		}
+
+		// Malformed bytes are refused with a code rather than an exception,
+		// and the next call is unaffected - no broken state to recover from.
+		std::vector<uint8_t> corrupted = sample;
+		corrupted[0] = 'X';
+		std::printf("  %-22s %s\n",
+			"malformed rejected",
+			Modern::ToString(meshDecoder.DecodeMesh(Modern::Client::ResourceData(corrupted)).GetError()));
+
+		// A structurally perfect container whose geometry is wrong: the last
+		// index names a vertex that does not exist. The header and the size
+		// checks both pass, and construction is where it is caught - the part
+		// of the boundary that no length field can see.
+		std::vector<uint8_t> badIndex = sample;
+		const size_t lastIndexOffset = Modern::Client::TestMeshDecoder::kHeaderSize +
+			4 * Modern::Client::kMeshVertexBytes + 5 * Modern::Client::kMeshIndexBytes;
+		badIndex[lastIndexOffset + 0] = 99;
+		std::printf("  %-22s %s\n",
+			"index out of range",
+			Modern::ToString(meshDecoder.DecodeMesh(Modern::Client::ResourceData(badIndex)).GetError()));
+
+		// provider -> ResourceManager -> ResourceData -> decoder -> MeshAsset,
+		// the whole CLIENT-008 path in one place, over the same manager the
+		// image section used.
+		Modern::Client::MemoryResourceProvider meshProvider;
+		Modern::Client::ResourceManager        meshManager;
+		meshManager.SetProvider(&meshProvider);
+		std::printf("  %-22s %s\n", "mesh manager init", meshManager.Initialize().GetMessage());
+
+		const auto meshId = Modern::Client::ResourceId::Create("world/test_quad.mmsh");
+		if (meshId.IsOk())
+		{
+			meshProvider.RegisterResource(meshId.GetValue(), Modern::Client::ResourceData(sample));
+
+			const auto loadedMeshBytes = meshManager.Load(meshId.GetValue());
+			if (loadedMeshBytes.IsOk())
+			{
+				const auto meshFromManager = meshDecoder.DecodeMesh(loadedMeshBytes.GetValue());
+				if (meshFromManager.IsOk())
+				{
+					std::printf("  %-22s id=%s triangles=%zu cached=%s\n",
+						"mesh resource decoded",
+						meshId.GetValue().GetName().c_str(),
+						meshFromManager.GetValue().GetTriangleCount(),
+						meshManager.IsCached(meshId.GetValue()) ? "true" : "false");
+				}
+			}
+		}
+
+		meshManager.Shutdown();
+		std::printf("  %-22s state=%s\n",
+			"mesh manager shutdown",
+			Modern::Client::ToString(meshManager.GetState()));
 	}
 
 	return 0;
