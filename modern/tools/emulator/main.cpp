@@ -29,6 +29,7 @@
 #include "assets/MeshAsset.h"
 #include "assets/MeshDecoder.h"
 #include "assets/TestMeshDecoder.h"
+#include "assets/MtfTextureTransform.h"
 
 #include "rendering/AssetUpload.h"
 #include "rendering/NullAssetUploader.h"
@@ -766,6 +767,85 @@ int main()
 		const std::vector<uint8_t> cut(sample.begin(), sample.begin() + 40);
 		std::printf("  %-22s %s\n", "truncated dds",
 			Modern::ToString(decoder.DecodeImage(Modern::Client::ResourceData(cut)).GetError()));
+	}
+
+	// Client RAN MTF texture transform (CLIENT-012)
+	{
+		const std::vector<uint8_t> plainDds = MakeSampleDds();
+
+		// Encrypt: encoded = (plain ^ 0x26) - 0x09
+		std::vector<uint8_t> mtfBytes;
+		auto pushU32 = [](std::vector<uint8_t>& out, uint32_t value)
+		{
+			out.push_back(static_cast<uint8_t>(value & 0xFFu));
+			out.push_back(static_cast<uint8_t>((value >> 8) & 0xFFu));
+			out.push_back(static_cast<uint8_t>((value >> 16) & 0xFFu));
+			out.push_back(static_cast<uint8_t>((value >> 24) & 0xFFu));
+		};
+		pushU32(mtfBytes, 0x100u); // version
+		pushU32(mtfBytes, static_cast<uint32_t>(plainDds.size()));
+		pushU32(mtfBytes, 0u); // fileType = DDS (int32)
+		for (size_t i = 0; i < plainDds.size(); ++i)
+		{
+			mtfBytes.push_back(static_cast<uint8_t>((plainDds[i] ^ 0x26) - 0x09));
+		}
+
+		Modern::Client::MtfTextureTransform transform;
+		const auto mtfResult = transform.Transform(Modern::Client::ResourceData(mtfBytes));
+		std::printf("  %-22s %s\n", "mtf transform", "stateless");
+
+		if (mtfResult.IsOk())
+		{
+			std::printf("  %-22s %zu bytes\n", "mtf -> dds", mtfResult.GetValue().GetSize());
+
+			const auto& ddsBytes = mtfResult.GetValue().GetBytes();
+			bool match = ddsBytes.size() == plainDds.size();
+			if (match)
+			{
+				for (size_t i = 0; i < plainDds.size(); ++i)
+				{
+					if (ddsBytes[i] != plainDds[i]) { match = false; break; }
+				}
+			}
+			std::printf("  %-22s %s\n", "mtf bytes match", match ? "true" : "false");
+
+			Modern::Client::DdsImageDecoder decoder;
+			const auto decoded = decoder.DecodeImage(mtfResult.GetValue());
+			if (decoded.IsOk())
+			{
+				const Modern::Client::ImageAsset& image = decoded.GetValue();
+				std::printf("  %-22s %ux%u %s bytes=%zu\n", "dds decoded",
+					image.GetWidth(), image.GetHeight(),
+					Modern::Client::ToString(image.GetFormat()),
+					image.GetPixelByteCount());
+
+				Modern::Client::NullRenderer ddsRenderer;
+				Modern::Client::NullAssetUploader ddsUploader(&ddsRenderer);
+				const Modern::Client::RendererConfig ddsConfig{ 1, 1, Modern::Client::DisplayMode::Windowed, true };
+				ddsRenderer.Initialize(ddsConfig);
+
+				const auto handle = ddsUploader.UploadImage(image);
+				if (handle.IsOk())
+				{
+					std::printf("  %-22s handle=%llu\n", "dds uploaded",
+						static_cast<unsigned long long>(handle.GetValue().Get()));
+					const auto info = ddsUploader.GetImageInfo(handle.GetValue());
+					if (info.IsOk())
+					{
+						std::printf("  %-22s %ux%u %s bytes=%zu\n", "resource metadata",
+							info.GetValue().width, info.GetValue().height,
+							Modern::Client::ToString(info.GetValue().format),
+							info.GetValue().byteCount);
+					}
+					std::printf("  %-22s %s\n", "dds released",
+						Modern::ToString(ddsUploader.ReleaseImage(handle.GetValue()).GetCode()));
+				}
+			}
+		}
+		else
+		{
+			std::printf("  %-22s %s\n", "mtf transform", Modern::ToString(mtfResult.GetError()));
+		}
 	}
 
 	return 0;

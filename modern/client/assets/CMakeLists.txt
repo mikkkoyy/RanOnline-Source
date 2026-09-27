@@ -17,6 +17,7 @@ add_library(ModernClientAssets STATIC
     DdsImageDecoder.cpp
     MeshAsset.cpp
     TestMeshDecoder.cpp
+    MtfTextureTransform.cpp
 )
 
 target_include_directories(ModernClientAssets PUBLIC
@@ -101,3 +102,25 @@ endif()
 add_test(NAME ModernClientAssetTests COMMAND ModernClientAssetTests)
 add_test(NAME ModernClientMeshAssetTests COMMAND ModernClientMeshAssetTests)
 add_test(NAME ModernClientDdsImageTests COMMAND ModernClientDdsImageTests)
+add_test(NAME ModernClientMtfTests COMMAND ModernClientMtfTests)
+
+# MTF transform tests (CLIENT-012). A fourth executable: each suite
+# owns its own main() so they stay independent translation units
+# registered with CTest. Same linkage rules as above -- no renderer,
+# no graphics API, no legacy library.
+add_executable(ModernClientMtfTests
+    ClientMtfTests.cpp
+)
+
+target_include_directories(ModernClientMtfTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_SOURCE_DIR}/modern/tests
+)
+
+target_link_libraries(ModernClientMtfTests PRIVATE ModernClientAssets ModernClientResources)
+
+target_compile_features(ModernClientMtfTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernClientMtfTests PRIVATE /W4 /permissive- /utf-8)
+endif()

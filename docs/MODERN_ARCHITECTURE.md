@@ -44,7 +44,7 @@ modern/
 │   ├── application/         Application lifecycle, update loop (CLIENT-002)
 │   ├── input/               Input events, system & platform abstraction (CLIENT-003)
 │   ├── resources/           Resource boundary, identifiers, providers, cache (CLIENT-005, CLIENT-006)
-│   ├── assets/              Typed CPU-side assets, decoders & real DDS decoding (CLIENT-007, CLIENT-008, CLIENT-011)
+│   ├── assets/              Typed CPU-side assets, decoders & real DDS decoding (CLIENT-007, CLIENT-008, CLIENT-011, CLIENT-012)
 │   └── rendering/           Renderer abstraction, null backend & asset upload boundary (CLIENT-004, CLIENT-009)
 ├── tests/                   headless rule tests (ModernCoreTests)
 ├── tools/                   offline / research tooling
@@ -72,10 +72,10 @@ shipped implementation.
 - **`network`**, **`database`**, **`server`**, **`client`**, **`tools`** consume
   `core`. `client/application`, `client/input`, `client/rendering`,
   `client/resources` and `client/assets` are the client slices built so far
-  (CLIENT-002, CLIENT-003, CLIENT-004, CLIENT-005, CLIENT-006, CLIENT-007,
-  CLIENT-008, CLIENT-009, CLIENT-011); the remaining client systems (ui, character, world,
-  audio) and the network/database/server layers are created when there is code
-  to put in them.
+   (CLIENT-002, CLIENT-003, CLIENT-004, CLIENT-005, CLIENT-006, CLIENT-007,
+   CLIENT-008, CLIENT-009, CLIENT-011, CLIENT-012); the remaining client systems (ui, character, world,
+   audio) and the network/database/server layers are created when there is code
+   to put in them.
 - **`compatibility/legacy`** converts between modern types and legacy RAN
   types and formats. Only this layer may see `legacy/`, and nothing in `core`
   may reference it.
@@ -1313,6 +1313,119 @@ ctest --test-dir build -C Debug --output-on-failure
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 build\Debug\ModernClientMeshAssetTests.exe
+```
+
+
+## 22. CLIENT-012: RAN MTF texture transform
+
+The RAN client ships `.mtf` files: a 12-byte header (`version`,
+`payloadSize`, `fileType`) followed by an obfuscated payload. This
+milestone adds a small transform boundary that strips the container
+and decrypts the payload back into plain DDS bytes, which the existing
+`DdsImageDecoder` then consumes.
+
+### Why a separate transform
+
+The obfuscation is a byte-level operation, not a decoder: it has no
+pixels, no geometry, and no image format awareness. Folding it into
+`DdsImageDecoder` would make the decoder understand `.mtf`, which
+violates the layered boundary. The transform produces plain DDS bytes
+that are indistinguishable from shipped `.dds` files, so the decoder
+is unchanged and the transform is independently testable.
+
+### Architecture
+
+```text
+ResourceData (MTF bytes)
+        |
+        v
+RAN MTF Transform          validate header, decrypt payload, verify DDS magic
+        |
+        v
+ResourceData (plain DDS)
+        |
+        v
+DdsImageDecoder            unchanged, pure DDS decoder
+        |
+        v
+ImageAsset
+        |
+        v
+IAssetUploader -> ImageResourceHandle
+```
+
+### Header format
+
+```text
+bytes 0..3   int32 version        (must be 0x100)
+bytes 4..7   int32 payloadSize    (must equal inputSize - 12)
+bytes 8..11  int32 fileType       (0 = DDS, the only supported type)
+bytes 12..   payload bytes        (encrypted with XOR 0x26 and +0x09)
+```
+
+### Decryption
+
+For each payload byte:
+```cpp
+byte += 0x09;
+byte ^= 0x26;
+```
+
+This is the inverse of the legacy `EncryptTexture()` operation. The
+transform uses unsigned byte arithmetic to avoid undefined behaviour.
+
+### Validation
+
+The transform rejects any input that is not a valid MTF DDS container:
+
+- Truncated header (less than 12 bytes)
+- Invalid version (anything other than 0x100)
+- Payload size mismatch (total size != 12 + payloadSize)
+- Unsupported file type (only fileType == 0 is supported; TGA and
+  BMP are explicitly rejected)
+- Zero-length payload
+- Bad decrypted DDS magic (output must start with 'D','D','S',' ')
+- Integer overflow in size calculation
+
+The transform is stateless and has no graphics dependencies. It takes
+`ResourceData` and returns `ResourceData`, and is usable in a console
+process without any renderer, device, or legacy library.
+
+### What is in scope
+
+Only MTF -> DDS is implemented for CLIENT-012. MXF (which maps to
+`.x` mesh files) is explicitly out of scope for this milestone.
+
+### Tests
+
+`ClientMtfTests.cpp` registers with CTest as `ModernClientMtfTests`:
+
+- **Valid synthetic MTF -> exact DDS byte recovery**: round-trip
+  encrypts a known DDS file into MTF format, transforms it back, and
+  compares the recovered bytes against the original.
+- **Truncated header**: every length below 12 bytes is refused.
+- **Invalid version**: versions 0, 1, and 0xFFFF are all refused.
+- **Payload size mismatch**: too small and too large are refused.
+- **Truncated payload**: partial payload is refused.
+- **Extra trailing bytes**: one extra byte is refused.
+- **Zero payload**: refused.
+- **Unsupported file types**: TGA (1), BMP (2), and unknown (255)
+  are refused.
+- **Bad decrypted DDS magic**: corrupting the DDS magic after
+  decryption is refused.
+- **Valid MTF -> DdsImageDecoder -> ImageAsset**: the full pipeline
+  works end to end.
+- **Invalid MTF must not reach DDS decoding**: a TGB MTF file is
+  refused before it can produce any data.
+- **Real RAN assets**: when `RAN_ASSET_ROOT` names a client tree,
+  the transform is tested against real `.mtf` files.
+
+```powershell
+cmake --build build --config Debug
+ctest --test-dir build -C Debug --output-on-failure
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+build\Debug\ModernClientMtfTests.exe
 ```
 
 
