@@ -1,6 +1,15 @@
 add_executable(ModernEmulator main.cpp)
 
-target_link_libraries(ModernEmulator PRIVATE Modern ModernClientApplication ModernClientInput ModernClientRendering ModernClientResources)
+# Links every modern slice the demonstration exercises: the asset layer
+# (CLIENT-007) sits above the resource layer, which sits above core.
+target_link_libraries(ModernEmulator PRIVATE
+    Modern
+    ModernClientApplication
+    ModernClientInput
+    ModernClientRendering
+    ModernClientResources
+    ModernClientAssets
+)
 
 target_include_directories(ModernEmulator PRIVATE
     ${CMAKE_SOURCE_DIR}/modern/client

@@ -44,6 +44,7 @@ modern/
 │   ├── application/         Application lifecycle, update loop (CLIENT-002)
 │   ├── input/               Input events, system & platform abstraction (CLIENT-003)
 │   ├── resources/           Resource boundary, identifiers, providers, cache (CLIENT-005, CLIENT-006)
+│   ├── assets/              Typed CPU-side assets & decoder boundary (CLIENT-007)
 │   └── rendering/           Renderer abstraction & headless null backend (CLIENT-004)
 ├── tests/                   headless rule tests (ModernCoreTests)
 ├── tools/                   offline / research tooling
@@ -69,11 +70,11 @@ shipped implementation.
 - **`core`** defines the domain. It depends on the standard library and on
   nothing else. It is the only thing every other modern component may depend on.
 - **`network`**, **`database`**, **`server`**, **`client`**, **`tools`** consume
-  `core`. `client/application`, `client/input`, `client/rendering` and
-  `client/resources` are the client slices built so far (CLIENT-002, CLIENT-003,
-  CLIENT-004, CLIENT-005, CLIENT-006); the remaining client systems (ui,
-  character, world, audio) and the network/database/server layers are created
-  when there is code to put in them.
+  `core`. `client/application`, `client/input`, `client/rendering`,
+  `client/resources` and `client/assets` are the client slices built so far
+  (CLIENT-002, CLIENT-003, CLIENT-004, CLIENT-005, CLIENT-006, CLIENT-007); the
+  remaining client systems (ui, character, world, audio) and the
+  network/database/server layers are created when there is code to put in them.
 - **`compatibility/legacy`** converts between modern types and legacy RAN
   types and formats. Only this layer may see `legacy/`, and nothing in `core`
   may reference it.
@@ -687,5 +688,339 @@ cmake --build build --config Debug
 ctest --test-dir build -C Debug --output-on-failure
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
+```
+
+
+## 19. CLIENT-007: typed asset / decoder boundary
+
+Places a typed CPU-side asset layer above `ResourceData`. CLIENT-005 and
+CLIENT-006 move bytes; CLIENT-007 is where those bytes can become something the
+rest of the client can name. Nothing below it changed: `IResourceProvider`,
+`MemoryResourceProvider`, `FileSystemResourceProvider`, `ResourceId`,
+`ResourceData` and `ResourceManager` are exactly as CLIENT-005 and CLIENT-006
+left them.
+
+### Architecture
+
+```text
+IResourceProvider
+        |
+        v
+ResourceManager          bytes: cached, untyped
+        |
+        v
+ResourceData
+        |
+        v
+IImageDecoder            DecodeImage(ResourceData) -> Result<ImageAsset>
+        |
+        v
+ImageAsset               validated CPU-side image
+        |
+        v
+future renderer adapter  uploads an ImageAsset; does not exist yet
+```
+
+### Why typed assets exist
+
+A `ResourceData` is a bag of bytes that has been checked for exactly one thing:
+that something could produce it. It has no width, no height and no layout, so
+every consumer that needs one would have to ask "is this really an image?"
+separately — and each would answer slightly differently, one silently accepting
+a short payload, another trusting a header field, a third reading past the end.
+
+CLIENT-007 answers that question once, at a boundary, and hands every later
+consumer the same answer as a value that cannot be in an invalid state. Three
+consequences follow, and they are the reason the layer exists:
+
+- **A decode failure is visible where it happens.** The caller gets
+  `InvalidArgument` from `DecodeImage()`, at the call that read the resource,
+  rather than a suspicious texture three systems later.
+- **Consumers do not repeat the checks.** A renderer adapter, a future UI atlas
+  builder and a test all read the same validated `ImageAsset`; none of them
+  re-derives what "24 bytes for a 3 x 2 RGBA image" means.
+- **The renderer is not on the critical path of correctness.** Whether an image
+  is valid is decided without a device, a window or a swap chain, so the rule is
+  testable in a console process.
+
+### What it contains
+
+| Unit                                            | Responsibility                                                                  |
+| ----------------------------------------------- | ------------------------------------------------------------------------------- |
+| `modern/client/assets/AssetTypes.h, .cpp`        | `ImageFormat`, its name, bytes per pixel, and the checked byte-count calculation |
+| `modern/client/assets/ImageAsset.h, .cpp`        | Validated, immutable CPU-side image: geometry, layout, pixel bytes                |
+| `modern/client/assets/ImageDecoder.h`            | `IImageDecoder`: the `ResourceData` -> `ImageAsset` contract                     |
+| `modern/client/assets/TestImageDecoder.h, .cpp`  | The one concrete decoder: the documented MIMG test container                     |
+| `modern/client/assets/ClientAssetTests.cpp`      | 31 headless cases: vocabulary, image invariants, decoder, integration             |
+
+`ModernClientAssets` links `Modern` and `ModernClientResources`. It links **no**
+renderer, no graphics API and no legacy library — see the banner in
+`modern/client/assets/CMakeLists.txt`, which states the direction and the reason
+rather than leaving it implied by an include path.
+
+### ImageAsset design
+
+```cpp
+class ImageAsset
+{
+public:
+    static Result<ImageAsset> Create(uint32_t width, uint32_t height,
+                                     ImageFormat format, std::vector<uint8_t> pixels);
+
+    uint32_t GetWidth() const noexcept;
+    uint32_t GetHeight() const noexcept;
+    ImageFormat GetFormat() const noexcept;
+    size_t GetPixelCount() const noexcept;
+    size_t GetPixelByteCount() const noexcept;
+    const std::vector<uint8_t>& GetPixels() const noexcept;
+};
+```
+
+- **No default constructor.** There is no "empty but valid" image and no
+  half-built one, so an `ImageAsset` is either absent or already checked. That is
+  why no case in the suite tests for an invalid state: the state cannot be named.
+- **Immutable by interface.** Pixels leave through a const reference and the
+  factory is the only way in. Changing pixels means building a new value, which
+  re-runs every check.
+- **Pixels are a copy this layer owns.** `Create()` takes the vector by value, so
+  the source can be reused or destroyed immediately. Pixels are row-major,
+  tightly packed, top row first, with no row padding: the layout has to be stated
+  once, and it is stated here.
+- **CPU-side only.** No `IDirect3DTexture9`, `ID3D11Texture2D`, `VkImage`,
+  `GLuint`, `HWND` or device pointer appears in the header, which includes no
+  Windows header at all. An `ImageAsset` never learns which API eventually reads
+  it.
+
+Validation, all of it returning `ErrorCode::InvalidArgument` and none of it
+throwing:
+
+| Input                                                             | Result            |
+| ----------------------------------------------------------------- | ----------------- |
+| unknown or unassigned pixel layout                                 | `InvalidArgument` |
+| zero width or zero height                                          | `InvalidArgument` |
+| a dimension above `kMaxImageDimension` (16384)                     | `InvalidArgument` |
+| pixel count above `kMaxImageBytes` (256 MiB)                       | `InvalidArgument` |
+| pixel count no `size_t` on this build can hold                     | `InvalidArgument` |
+| payload shorter *or longer* than width x height x bytes per pixel  | `InvalidArgument` |
+| exact geometry and exact payload                                   | success           |
+
+The size check is exact in both directions on purpose. A short payload is a
+truncated decode; a long one means the bytes handed over are not the pixels that
+were described. Accepting "at least" would turn a mismatched header into a
+plausible-looking corrupted image instead of an error.
+
+The two ceilings are **policy, not format limits**, and they are fixed rather
+than derived from `SIZE_MAX`: this repository builds the client 32-bit, and a
+limit that moved with the host would make the same bytes decode on one machine
+and fail on another. They are also what makes the refusal of a 65535 x 65535 RGBA
+header — about 17 GB — identical on a 32-bit and a 64-bit build. The product is
+formed in 64-bit arithmetic and checked twice before it is narrowed, so it cannot
+wrap into a value small enough to look sane.
+
+### Decoder contract
+
+```cpp
+class IImageDecoder
+{
+public:
+    virtual ~IImageDecoder() = default;
+
+    virtual Result<ImageAsset> DecodeImage(const ResourceData& data) = 0;
+};
+```
+
+- **Bytes in, one typed value out.** The decoder is handed `ResourceData`, not a
+  `ResourceId`, not a path, and not a manager. It therefore behaves identically
+  whether those bytes came from a test literal, `MemoryResourceProvider`, a loose
+  file under a `FileSystemResourceProvider` root, or a future archive provider.
+- **Stateless by construction.** No `Initialize()`, no `Shutdown()`, no
+  configuration object, no state machine. A decoder acquires nothing — no device,
+  no thread, no cache — so there is no lifetime to get wrong and no partial state
+  for a failure to leave behind. A decoder that later needs configuration takes it
+  as a constructor argument, and one that needs scratch space owns it as a member;
+  neither turns into a lifecycle.
+- **Error behaviour.** `ErrorCode::InvalidArgument` for input that cannot be
+  decoded: empty, truncated, malformed, unsupported version, or geometry that does
+  not match the payload. Nothing is thrown, no new error code was introduced, and
+  a failed decode leaves the decoder usable — the next call is unaffected because
+  there was never any state to damage. A resource that could not be *found* still
+  fails as `NotFound` in the layer below, so the two failure modes stay
+  distinguishable.
+- **The call is not `const`,** so a decoder that keeps scratch space is not forced
+  to declare it `mutable`. The decoder shipped here holds no state at all.
+
+### What the decoder layer deliberately is not
+
+- **Not a cache.** `ResourceManager` caches bytes, and that is the only cache in
+  the client resource/asset stack. The manager keeps serving container bytes that
+  the decoder has already turned into an image, and a test asserts it: clearing
+  the byte cache changes which bytes were served, not what they decode to.
+- **Not a provider.** It reads no file, opens no archive and knows no root. The
+  same decoder works over any provider, present or future.
+- **Not a renderer.** It creates no GPU object, uploads nothing, and calls no
+  `IRenderer`. There is no `#include "rendering/..."` in this layer, and no
+  `#include "assets/..."` in the rendering layer.
+- **Not concurrent.** One call, one synchronous decode: no worker threads, no
+  async API, no mutex. Threaded decoding remains a future architecture decision.
+- **Not a format registry.** There is no map of extensions to decoders, no
+  by-name lookup and no plugin table. One decoder exists; when a second one
+  arrives, whoever needs both chooses between them at the call site. Adding a
+  registry before there are two entries is inventing a design for a requirement
+  nobody has stated.
+
+### The one decoder: MIMG
+
+`TestImageDecoder` implements the container described in its own header — a
+ten-byte header (`MIMG` magic, version 1, an `ImageFormat` byte, little-endian
+width and height) followed by exactly `width * height * bytes per pixel` of
+pixels, with no compression, no palette, no mip chain and no trailing data. Every
+field the container claims is checked, and a header describing an image that
+cannot be represented is refused before its payload is looked at.
+
+It is named and documented as a **test** decoder because that is what it is: it
+was invented for this milestone so the boundary could be implemented, tested and
+demonstrated honestly. It decodes no production image format. The suite builds
+its containers by hand from that description rather than through a writer from
+the implementation, so the reader is checked against an independent encoder.
+
+### Rendering independence
+
+The dependency direction is one-way, and the asset layer is the lower end of it:
+
+```text
+Modern Core
+     ^
+     |
+Resources (ResourceData)
+     ^
+     |
+Assets / Decoders (ImageAsset, IImageDecoder)
+     ^
+     |
+future rendering integration
+```
+
+- `ModernClientAssets` does not link `ModernClientRendering`, and no header in
+  `modern/client/assets` includes one from `modern/client/rendering`.
+- `IRenderer` knows nothing about decoders, `ImageAsset` or `IImageDecoder`; the
+  only thing that will connect the two is a future adapter that *reads* an
+  `ImageAsset` and uploads it, and that adapter belongs to rendering, not here.
+- The practical consequence is testable in both directions: every case in this
+  milestone runs in a console process with no window, no device and no
+  `IRenderer`, and a linker error is what a mistaken dependency produces rather
+  than a passing test.
+- The separation is also why a decode failure is cheap. Reading and validating a
+  resource needs no GPU, so it can happen before the renderer exists, in a tool,
+  in a test, or in the background of a loading screen.
+
+### Legacy format exclusion
+
+> CLIENT-007 does not implement or reverse-engineer RAN legacy asset formats.
+
+Explicitly **not** implemented, imported, linked or parsed by this milestone:
+
+| Not done                                              | Why it is out of scope here                                    |
+| ----------------------------------------------------- | -------------------------------------------------------------- |
+| `.isf`, `.ssf`, `.mnsf`, `.cps` legacy tables          | game data, not images; they belong to future importers          |
+| `.x` DirectX meshes                                    | a mesh importer needs a mesh asset type, which does not exist yet |
+| `.dds` and every other production texture container    | no decoder was written, and no third-party graphics dependency was added for one |
+| `glogic.rcc`, `CryptionRCC`, `CCrypt`, `FileCrypt`, `SFileSystem` | archive and crypt layers; a future `ArchiveResourceProvider`, not a decoder |
+| D3DX, `IDirect3DDevice9`, `TextureManager`, `DxMeshTexMan` | renderer-era coupling; excluded by the whole point of the boundary |
+| MFC, `<Windows.h>`, Win32 types in any public header    | the layer builds and tests headless                             |
+
+The MIMG decoder refuses anything that is not MIMG, and a case in the suite
+feeds it a DDS-shaped header, a legacy-looking binary blob and plain text to
+assert exactly that. "We do not decode RAN assets yet" is therefore a property
+the build checks, not a promise in a document.
+
+### Future relationship to actual RAN assets
+
+CLIENT-007 establishes the middle and lower part of the pipeline. The upper part
+stays out of the modern build entirely:
+
+```text
+legacy archive (RCC / .isf / .x / encrypted loose files)
+      |
+      v
+future isolated importer/converter      reads legacy, writes modern bytes
+      |                                 (modern/compatibility or modern/tools)
+      v
+modern resource files (loose, or an archive a provider can read)
+      |
+      v
+IResourceProvider                        Memory / FileSystem / future Archive
+      |
+      v
+ResourceManager
+      |
+      v
+ResourceData                             untyped bytes, cached
+      |
+      v
+IImageDecoder                            DecodeImage()
+      |
+      v
+ImageAsset                               validated CPU-side image
+      |
+      v
+future renderer adapter                  GPU upload
+```
+
+What that means in practice:
+
+- A real texture decode is added by writing another `IImageDecoder` — DDS, the
+  output of a future legacy importer, anything — and nothing above the interface
+  changes. The MIMG decoder stays as the deterministic fixture the boundary is
+  tested with.
+- The legacy container is never opened by this layer. Conversion happens once,
+  offline, in an isolated tool or adapter that is allowed to see `legacy/`; what
+  reaches a decoder is already modern bytes. That keeps the exclusion above a
+  structural fact rather than a discipline.
+- A mesh asset waits for the same treatment: a validated CPU-side `MeshAsset`
+  next to `ImageAsset`, its own decoder, and the same rule that no backend object
+  appears in its header. CLIENT-007 deliberately adds one asset type rather than
+  a speculative `Asset` variant, because the second type is what will show
+  whether the shared parts were drawn in the right place.
+- `ResourceManager` keeps its single responsibility throughout: it caches and
+  serves bytes. Decoding stays next to the caller that needs a typed value, which
+  is also where a future cache-eviction or threading policy can be decided
+  without the decoder participating.
+
+### Tests and verification
+
+`ClientAssetTests.cpp` carries 31 cases in one new `ModernClientAssetTests`
+binary, registered with CTest:
+
+- **Vocabulary:** format names and bytes per pixel, including unassigned byte
+  values; the byte-count calculation for every layout, the inclusive ceilings, and
+  the refusal of unknown layouts, zero dimensions, oversized geometry and
+  arithmetic that would otherwise overflow.
+- **Image invariants:** valid geometry accepted; zero width, zero height and both
+  refused; unsupported layouts refused; payload size exact in both directions;
+  oversized and overflowing images refused; all 256 byte values preserved;
+  ownership, copies and the absence of an invalid default state.
+- **Decoder:** usable only through `IImageDecoder`; deterministic across repeats
+  and across instances; empty data, every truncated header length, damaged magic,
+  unsupported versions, unknown format bytes, zero dimensions, every truncated
+  payload length and trailing bytes all refused, each with `InvalidArgument`; and
+  the pixel bytes of a decoded image compared against an independently built
+  container.
+- **Integration:** `MemoryResourceProvider` and `FileSystemResourceProvider` each
+  driven through `ResourceManager` into a decoded `ImageAsset`; the byte cache
+  cleared between decodes; a decode failure leaving the resource layer untouched;
+  no RAN installation and no legacy format.
+
+Every filesystem case builds its own root under the system temporary directory
+and removes it on destruction, so no case reads a RAN installation and none needs
+one. `ModernEmulator` decodes an in-memory sample through the same decoder and
+prints the resulting size, layout and byte count; it creates no asset directory
+and loads no real asset file.
+
+```powershell
+cmake --build build --config Debug
+ctest --test-dir build -C Debug --output-on-failure
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+build\Debug\ModernClientAssetTests.exe
 ```
 

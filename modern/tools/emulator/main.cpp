@@ -21,6 +21,11 @@
 #include "input/InputEvents.h"
 #include "input/InputSystem.h"
 
+#include "assets/AssetTypes.h"
+#include "assets/ImageAsset.h"
+#include "assets/ImageDecoder.h"
+#include "assets/TestImageDecoder.h"
+
 #include "rendering/NullRenderer.h"
 #include "rendering/Renderer.h"
 #include "rendering/RenderingTypes.h"
@@ -32,10 +37,12 @@
 #include "resources/ResourceManager.h"
 
 #include <cstdio>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <system_error>
 #include <string>
+#include <vector>
 
 using namespace Modern;
 
@@ -62,6 +69,36 @@ namespace
 	void ReportRejected(const char* what, const Status& status)
 	{
 		std::printf("  %-22s %s\n", what, ToString(status.GetCode()));
+	}
+
+	// Assembles the MIMG container described in assets/TestImageDecoder.h: a
+	// ten-byte header followed by width * height * bytes per pixel of pixels.
+	//
+	// Built by hand because the container is documented rather than written by
+	// a library routine, and because CLIENT-007 decodes no real image format:
+	// showing a decoder in use must not imply one exists for RAN's textures.
+	std::vector<uint8_t> MakeSampleImage(uint16_t width, uint16_t height, Modern::Client::ImageFormat format)
+	{
+		std::vector<uint8_t> bytes;
+		bytes.push_back('M');
+		bytes.push_back('I');
+		bytes.push_back('M');
+		bytes.push_back('G');
+		bytes.push_back(Modern::Client::TestImageDecoder::kVersion);
+		bytes.push_back(static_cast<uint8_t>(format));
+		bytes.push_back(static_cast<uint8_t>(width & 0xFFu));
+		bytes.push_back(static_cast<uint8_t>((width >> 8) & 0xFFu));
+		bytes.push_back(static_cast<uint8_t>(height & 0xFFu));
+		bytes.push_back(static_cast<uint8_t>((height >> 8) & 0xFFu));
+
+		const size_t pixelBytes = static_cast<size_t>(width) * static_cast<size_t>(height) *
+		                          static_cast<size_t>(Modern::Client::BytesPerPixel(format));
+		for (size_t i = 0; i < pixelBytes; ++i)
+		{
+			bytes.push_back(static_cast<uint8_t>(i % 256u));
+		}
+
+		return bytes;
 	}
 }
 
@@ -273,6 +310,75 @@ int main()
 			Modern::Client::ToString(fsManager.GetState()));
 
 		std::filesystem::remove_all(demoRoot, ec);
+	}
+
+	std::printf("\nClient typed asset decoder\n");
+	{
+		// A decoder is stateless: nothing is acquired, so there is no
+		// Initialize() to call and no Shutdown() to forget.
+		Modern::Client::TestImageDecoder decoder;
+		std::printf("  %-22s stateless\n", "decoder lifetime");
+
+		// Deterministic in-memory bytes: the emulator has no asset directory of
+		// its own and must not grow one, and CLIENT-007 ships no decoder for a
+		// real image format, so the sample is assembled rather than loaded.
+		const std::vector<uint8_t> sample =
+			MakeSampleImage(3, 2, Modern::Client::ImageFormat::R8G8B8A8_UNorm);
+
+		const auto decoded = decoder.DecodeImage(Modern::Client::ResourceData(sample));
+		if (decoded.IsOk())
+		{
+			const Modern::Client::ImageAsset& image = decoded.GetValue();
+			std::printf("  %-22s size=%ux%u format=%s\n",
+				"test image decoded",
+				image.GetWidth(),
+				image.GetHeight(),
+				Modern::Client::ToString(image.GetFormat()));
+			std::printf("  %-22s payload=%zu bytes (%zu pixels)\n",
+				"image metadata",
+				image.GetPixelByteCount(),
+				image.GetPixelCount());
+		}
+
+		// Malformed bytes are refused with a code rather than an exception, and
+		// the next call is unaffected: there is no broken state to recover from.
+		std::vector<uint8_t> corrupted = sample;
+		corrupted[0] = 'X';
+		std::printf("  %-22s %s\n",
+			"malformed rejected",
+			Modern::ToString(decoder.DecodeImage(Modern::Client::ResourceData(corrupted)).GetError()));
+
+		// provider -> ResourceManager -> ResourceData -> decoder -> asset, the
+		// whole CLIENT-007 path in one place.
+		Modern::Client::MemoryResourceProvider assetProvider;
+		Modern::Client::ResourceManager assetManager;
+		assetManager.SetProvider(&assetProvider);
+		std::printf("  %-22s %s\n", "asset manager init", assetManager.Initialize().GetMessage());
+
+		const auto assetId = Modern::Client::ResourceId::Create("ui/test_image.mimg");
+		if (assetId.IsOk())
+		{
+			assetProvider.RegisterResource(assetId.GetValue(), Modern::Client::ResourceData(sample));
+
+			const auto loadedBytes = assetManager.Load(assetId.GetValue());
+			if (loadedBytes.IsOk())
+			{
+				const auto fromManager = decoder.DecodeImage(loadedBytes.GetValue());
+				if (fromManager.IsOk())
+				{
+					std::printf("  %-22s id=%s bytes=%zu cached=%s\n",
+						"resource decoded",
+						assetId.GetValue().GetName().c_str(),
+						fromManager.GetValue().GetPixelByteCount(),
+						assetManager.IsCached(assetId.GetValue()) ? "true" : "false");
+				}
+			}
+		}
+
+		assetManager.Shutdown();
+		std::printf("  %-22s state=%s\n",
+			"asset manager shutdown",
+			Modern::Client::ToString(assetManager.GetState()));
 	}
 
 	return 0;
