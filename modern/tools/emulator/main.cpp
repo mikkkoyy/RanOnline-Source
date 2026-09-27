@@ -25,6 +25,7 @@
 #include "assets/ImageAsset.h"
 #include "assets/ImageDecoder.h"
 #include "assets/TestImageDecoder.h"
+#include "assets/DdsImageDecoder.h"
 #include "assets/MeshAsset.h"
 #include "assets/MeshDecoder.h"
 #include "assets/TestMeshDecoder.h"
@@ -117,6 +118,68 @@ namespace
 	// documented rather than written by a library routine, and CLIENT-008
 	// decodes no real mesh format, so showing a decoder in use must not imply
 	// one exists for RAN's models.
+	// Assembles a 4x4 DXT1 DDS file: the 128-byte header described in
+	// assets/DdsImageDecoder.h, followed by one 8-byte colour block. The two
+	// endpoints are pure red and pure blue, and every texel indexes the red
+	// one, so a correct decoder produces a solid red 4x4.
+	//
+	// Built by hand for the same reason the MIMG and MMESH samples are: the
+	// demo must not depend on a RAN asset being installed, and showing the
+	// decoder in use must not imply it has read one.
+	std::vector<uint8_t> MakeSampleDds()
+	{
+		std::vector<uint8_t> bytes;
+
+		auto pushU16 = [](std::vector<uint8_t>& out, uint16_t value)
+		{
+			out.push_back(static_cast<uint8_t>(value & 0xFFu));
+			out.push_back(static_cast<uint8_t>((value >> 8) & 0xFFu));
+		};
+		auto pushU32 = [](std::vector<uint8_t>& out, uint32_t value)
+		{
+			out.push_back(static_cast<uint8_t>(value & 0xFFu));
+			out.push_back(static_cast<uint8_t>((value >> 8) & 0xFFu));
+			out.push_back(static_cast<uint8_t>((value >> 16) & 0xFFu));
+			out.push_back(static_cast<uint8_t>((value >> 24) & 0xFFu));
+		};
+
+		bytes.push_back('D');
+		bytes.push_back('D');
+		bytes.push_back('S');
+		bytes.push_back(' ');
+		pushU32(bytes, 124u);          // dwSize
+		pushU32(bytes, 0x00001007u);   // caps | height | width | pixelformat
+		pushU32(bytes, 4u);            // dwHeight
+		pushU32(bytes, 4u);            // dwWidth
+		pushU32(bytes, 8u);            // dwPitchOrLinearSize: one DXT1 block
+		pushU32(bytes, 0u);            // dwDepth
+		pushU32(bytes, 0u);            // dwMipMapCount
+		for (int reserved = 0; reserved < 11; ++reserved)
+		{
+			pushU32(bytes, 0u);
+		}
+
+		pushU32(bytes, 32u);           // ddspf.dwSize
+		pushU32(bytes, 0x4u);          // ddspf.dwFlags: DDPF_FOURCC
+		pushU32(bytes, 0x31545844u);   // 'D','X','T','1'
+		pushU32(bytes, 0u);            // dwRGBBitCount
+		pushU32(bytes, 0u);            // masks
+		pushU32(bytes, 0u);
+		pushU32(bytes, 0u);
+		pushU32(bytes, 0u);
+		pushU32(bytes, 0x00001000u);   // dwCaps: texture
+		pushU32(bytes, 0u);            // dwCaps2
+		pushU32(bytes, 0u);            // dwCaps3
+		pushU32(bytes, 0u);            // dwCaps4
+		pushU32(bytes, 0u);            // dwReserved2
+
+		pushU16(bytes, 0xF800u);       // colour0: red
+		pushU16(bytes, 0x001Fu);       // colour1: blue
+		pushU32(bytes, 0u);            // sixteen 2-bit indices, all zero
+
+		return bytes;
+	}
+
 	std::vector<uint8_t> MakeSampleMesh()
 	{
 		auto pushU32 = [](std::vector<uint8_t>& bytes, uint32_t value)
@@ -639,6 +702,70 @@ int main()
 					uploader.IsValidImage(late.GetValue()) ? "valid" : "invalid");
 			}
 		}
+	}
+
+	std::printf("\nClient real DDS decoder\n");
+	{
+		// CLIENT-011: a real shipped format through the real decoder. The
+		// bytes are a 4x4 DXT1 file assembled above, so the demo needs no RAN
+		// installation -- and reading a hand-built buffer is not a claim of
+		// having read a RAN asset, which the test suite checks separately
+		// against real files when one is available.
+		Modern::Client::DdsImageDecoder decoder;
+		const std::vector<uint8_t> sample = MakeSampleDds();
+
+		const auto decoded = decoder.DecodeImage(Modern::Client::ResourceData(sample));
+		std::printf("  %-22s %s\n", "dds decoder", "stateless");
+
+		if (decoded.IsOk())
+		{
+			const Modern::Client::ImageAsset& image = decoded.GetValue();
+			const std::vector<uint8_t>& pixels = image.GetPixels();
+			std::printf("  %-22s %ux%u %s bytes=%zu\n", "dds decoded",
+				image.GetWidth(),
+				image.GetHeight(),
+				Modern::Client::ToString(image.GetFormat()),
+				image.GetPixelByteCount());
+
+			// The first texel proves the block was decoded, not merely
+			// accepted: the c0 endpoint was pure red and every index was 0.
+			std::printf("  %-22s (%u, %u, %u, %u)\n", "first texel",
+				pixels[0], pixels[1], pixels[2], pixels[3]);
+
+			// And the same asset crosses the CLIENT-009 upload boundary, so
+			// the two milestones meet exactly where the architecture says.
+			Modern::Client::NullRenderer ddsRenderer;
+			Modern::Client::NullAssetUploader ddsUploader(&ddsRenderer);
+			const Modern::Client::RendererConfig ddsConfig{ 1, 1, Modern::Client::DisplayMode::Windowed, true };
+			ddsRenderer.Initialize(ddsConfig);
+
+			const auto handle = ddsUploader.UploadImage(image);
+			if (handle.IsOk())
+			{
+				std::printf("  %-22s handle=%llu\n", "dds uploaded",
+					static_cast<unsigned long long>(handle.GetValue().Get()));
+				const auto info = ddsUploader.GetImageInfo(handle.GetValue());
+				if (info.IsOk())
+				{
+					std::printf("  %-22s %ux%u %s bytes=%zu\n", "resource metadata",
+						info.GetValue().width, info.GetValue().height,
+						Modern::Client::ToString(info.GetValue().format),
+						info.GetValue().byteCount);
+				}
+				std::printf("  %-22s %s\n", "dds released",
+					Modern::ToString(ddsUploader.ReleaseImage(handle.GetValue()).GetCode()));
+			}
+		}
+		else
+		{
+			std::printf("  %-22s %s\n", "dds decoded", Modern::ToString(decoded.GetError()));
+		}
+
+		// A truncated header is refused rather than half-read, which is the
+		// property that matters for untrusted bytes.
+		const std::vector<uint8_t> cut(sample.begin(), sample.begin() + 40);
+		std::printf("  %-22s %s\n", "truncated dds",
+			Modern::ToString(decoder.DecodeImage(Modern::Client::ResourceData(cut)).GetError()));
 	}
 
 	return 0;

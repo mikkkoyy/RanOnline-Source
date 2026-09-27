@@ -10,7 +10,7 @@
 # Slices built so far: application (CLIENT-002), input (CLIENT-003),
 # rendering (CLIENT-004 renderer, CLIENT-009 asset upload boundary),
 # resources (CLIENT-005, CLIENT-006), assets (CLIENT-007 images, CLIENT-008
-# meshes).
+# meshes, CLIENT-011 real DDS decoder).
 
 add_subdirectory(input)
 add_subdirectory(resources)

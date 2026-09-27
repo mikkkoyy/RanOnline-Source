@@ -14,6 +14,7 @@ add_library(ModernClientAssets STATIC
     AssetTypes.cpp
     ImageAsset.cpp
     TestImageDecoder.cpp
+    DdsImageDecoder.cpp
     MeshAsset.cpp
     TestMeshDecoder.cpp
 )
@@ -72,7 +73,31 @@ if(MSVC)
     target_compile_options(ModernClientMeshAssetTests PRIVATE /W4 /permissive- /utf-8)
 endif()
 
+# Real DDS decoder tests (CLIENT-011). A third executable, for the same reason
+# as the second one: each suite owns its own main(). The DDS fixtures are built
+# in the test binary from the published format description, so nothing
+# proprietary is committed; the optional real-asset case reads a client tree
+# only when RAN_ASSET_ROOT names one. Same linkage as the image suite -- asset
+# layer plus resource layer, no renderer, no graphics API, no legacy library.
+add_executable(ModernClientDdsImageTests
+    ClientDdsTests.cpp
+)
+
+target_include_directories(ModernClientDdsImageTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_SOURCE_DIR}/modern/tests
+)
+
+target_link_libraries(ModernClientDdsImageTests PRIVATE ModernClientAssets ModernClientResources)
+
+target_compile_features(ModernClientDdsImageTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernClientDdsImageTests PRIVATE /W4 /permissive- /utf-8)
+endif()
+
 # enable_testing() is called by the top-level CMakeLists.txt, which is where
 # CTest needs it in order to reach this directory.
 add_test(NAME ModernClientAssetTests COMMAND ModernClientAssetTests)
 add_test(NAME ModernClientMeshAssetTests COMMAND ModernClientMeshAssetTests)
+add_test(NAME ModernClientDdsImageTests COMMAND ModernClientDdsImageTests)

@@ -44,7 +44,7 @@ modern/
 │   ├── application/         Application lifecycle, update loop (CLIENT-002)
 │   ├── input/               Input events, system & platform abstraction (CLIENT-003)
 │   ├── resources/           Resource boundary, identifiers, providers, cache (CLIENT-005, CLIENT-006)
-│   ├── assets/              Typed CPU-side assets & decoder boundary (CLIENT-007, CLIENT-008)
+│   ├── assets/              Typed CPU-side assets, decoders & real DDS decoding (CLIENT-007, CLIENT-008, CLIENT-011)
 │   └── rendering/           Renderer abstraction, null backend & asset upload boundary (CLIENT-004, CLIENT-009)
 ├── tests/                   headless rule tests (ModernCoreTests)
 ├── tools/                   offline / research tooling
@@ -73,7 +73,7 @@ shipped implementation.
   `core`. `client/application`, `client/input`, `client/rendering`,
   `client/resources` and `client/assets` are the client slices built so far
   (CLIENT-002, CLIENT-003, CLIENT-004, CLIENT-005, CLIENT-006, CLIENT-007,
-  CLIENT-008, CLIENT-009); the remaining client systems (ui, character, world,
+  CLIENT-008, CLIENT-009, CLIENT-011); the remaining client systems (ui, character, world,
   audio) and the network/database/server layers are created when there is code
   to put in them.
 - **`compatibility/legacy`** converts between modern types and legacy RAN
@@ -1676,4 +1676,131 @@ ctest --test-dir build -C Debug --output-on-failure
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 build\Debug\ModernClientAssetUploadTests.exe
+
+## 22. CLIENT-011: real DDS image decoder boundary
+
+CLIENT-007 proved the byte-to-asset boundary with MIMG, a container invented
+for the milestone. CLIENT-011 replaces the proof with the real thing: RAN
+ships **12,732 `.dds` files** in its `textures` tree, the ASURA client hands
+those bytes straight to D3DX, and none of that needs Direct3D to *read* it. A
+DDS file is a 128-byte header followed by block-compressed or uncompressed
+texels, so this milestone moves the decode itself into the modern asset layer
+and leaves every Direct3D type outside it.
+
+```text
+ResourceData
+    ↓
+DdsImageDecoder          DecodeImage(ResourceData) -> Result<ImageAsset>
+    ↓
+ImageAsset               validated CPU-side image
+    ↓
+IAssetUploader           CLIENT-009, unchanged
+    ↓
+ImageResourceHandle
+```
+
+The decoder is a leaf behind the existing `IImageDecoder`. `IImageDecoder`,
+`ImageAsset`, `AssetTypes.h` and `TestImageDecoder` were not modified, and the
+asset target still links only `Modern` and `ModernClientResources`.
+
+### Supported formats, chosen from the shipped assets
+
+Scope was decided by reading the headers of all 12,732 shipped `.dds` files,
+not by assumption:
+
+| Layout                   | RAN files | Decoded to         | Why it is in                  |
+| ------------------------ | --------- | ------------------ | ----------------------------- |
+| DXT1 / BC1               | 6,661     | `R8G8B8A8_UNorm`   | 89% of all shipped textures   |
+| DXT3 / BC2               | 2,731     | `R8G8B8A8_UNorm`   | explicit 4-bit alpha          |
+| DXT5 / BC3               | 1,921     | `R8G8B8A8_UNorm`   | interpolated alpha            |
+| uncompressed 32-bit RGBA | 390       | `R8G8B8A8_UNorm`   | a copy, no conversion invented |
+| uncompressed 32-bit BGRA | 53        | `B8G8R8A8_UNorm`   | keeps the file's channel order |
+
+That is 92.7% of the shipped set decoded by code that exists, and the rest
+refused for stated reasons rather than decoded approximately.
+
+### Refused, and why
+
+| Refused                               | RAN files | Reason                                                      |
+| ------------------------------------- | --------- | ----------------------------------------------------------- |
+| DXT2, DXT4                            | 126       | premultiplied alpha; un-premultiplying invents precision the format does not store |
+| 16-bit RGB565 / 24-bit RGB / RGBA4444  | 806       | widening them is a conversion this milestone does not write  |
+| cubemaps                              | 14        | six faces; `ImageAsset` is one 2D image, not the first of six |
+| volume textures                       | 6         | a stack of slices, which is not one image                    |
+| DX10 extension header                 | 0         | unused by RAN; half-supporting it would misread the layout   |
+| anything malformed                    | --        | wrong magic, bad header size, zero or overflowing dimensions, truncated payload, contradictory linear size |
+
+Every refusal is `ErrorCode::InvalidArgument`, returned by value, never thrown
+-- the same code and convention the MIMG decoder established.
+
+### Validation order and arithmetic
+
+Identity (magic, `dwSize`, `ddspf.dwSize`) before shape (dimensions, caps2),
+before layout (pixel format), before size. Every size is formed in 64-bit
+arithmetic and refused rather than wrapped, a header claiming
+`0xFFFFFFFF x 0xFFFFFFFF` cannot make a small allocation look correct, and
+the existing 16384-per-side and 256 MiB ceilings are applied through
+`ComputeImageByteCount` before anything is allocated. `dwPitchOrLinearSize` is
+treated as the writer's own claim: zero means "not stated" and is accepted, a
+stated value that disagrees with the geometry is refused.
+
+Output is a plain `ImageAsset`: row-major, top row first, four bytes per
+texel, and nothing DDS-specific escapes the decoder.
+
+### What this milestone does not do
+
+`.mtf -> DDS` is **not** here. The RAN obfuscation that wraps a DDS file is a
+byte transform, not a format, and CLIENT-010 identified that seam and
+deferred it deliberately. CLIENT-012 will add the transform; this decoder
+consumes ordinary DDS bytes and is what that adapter will feed. No `.mxf`, no
+`.x`, no GPU backend, no renderer change, and no Direct3D, D3DX, MFC, Windows
+or legacy dependency anywhere in the asset layer.
+
+### Tests and verification
+
+`ClientDdsTests.cpp` carries **22 cases** in a new `ModernClientDdsImageTests`
+binary. Every fixture is written by hand from the published format
+description and never by calling the decoder, so a decoder checked against
+its own output would prove nothing. Compressed formats are verified on
+**actual decoded pixels** -- endpoint colours, all four DXT1 palette entries,
+the DXT1 three-colour transparent branch, the DXT3 nibble table, and both DXT5
+alpha tables -- not merely on an accepted header. The negative suite covers
+empty data, every truncation below 128 bytes, wrong magic (including a real
+PNG header), bad header and pixel-format sizes, zero and overflowing
+dimensions, payload truncation at every length, unsupported FourCCs and
+uncompressed layouts, cubemaps, volumes and the DX10 flag.
+
+**Real RAN validation, performed:** with `RAN_ASSET_ROOT` pointing at the
+shipped client, the suite read **200 real `.dds` files** -- **178 decoded**
+(33,862,704 texels) and **22 refused**, and every refusal was accounted for:
+19 files that are PNG under a `.dds` name, 2 cubemaps, 1 truncated file. No
+file in a supported layout was refused. That case is env-gated so the suite
+stays hermetic in CI, and no proprietary asset is committed here.
+
+`ModernEmulator` gained a "Client real DDS decoder" section that assembles a
+4x4 DXT1 file in code, decodes it (first texel `(255, 0, 0, 255)` -- the pure
+red endpoint every index points at), uploads the result through the
+CLIENT-009 boundary, reads back the retained metadata, releases the handle,
+and shows a truncated file refused with `InvalidArgument`.
+
+```powershell
+cmake --build build --config Debug
+ctest --test-dir build -C Debug --output-on-failure
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+build\Debug\ModernClientDdsImageTests.exe
+```
+
+
+**A real finding, not a hypothetical one:** 40 of the 12,732 files are PNG
+data under a `.dds` name. The magic check is what refuses them.
+
+### Mip policy
+
+`ImageAsset` holds exactly one 2D image, so this decoder decodes **the top
+level only** and ignores the levels after it. This matters because 78% of
+shipped textures carry a 9-11 level chain, so trailing data is the normal
+case: a file is accepted when it contains the top level and refused only when
+it ends before it. The chain is not preserved, and nothing pretends otherwise.
+
 ```
