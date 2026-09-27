@@ -12,7 +12,7 @@ target_include_directories(ModernClientApplication PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
-target_link_libraries(ModernClientApplication PUBLIC Modern ModernClientInput)
+target_link_libraries(ModernClientApplication PUBLIC Modern ModernClientInput ModernClientRendering)
 
 target_compile_features(ModernClientApplication PUBLIC cxx_std_17)
 

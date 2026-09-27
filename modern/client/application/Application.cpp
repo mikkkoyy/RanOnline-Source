@@ -1,4 +1,6 @@
 #include "Application.h"
+#include "rendering/Renderer.h"
+
 
 namespace Modern::Client
 {
@@ -109,13 +111,24 @@ Status Application::Run()
 			break;
 		}
 
-		// Frame order is fixed: source -> queue -> subscribers -> update ->
-		// EndFrame. A WindowClosed event is queued like any other event so
-		// subscribers observe the frame it arrived in; RequestsClose ends
-		// the loop after dispatch instead of skipping it.
+		// Frame order is fixed:
+		// 1. Source -> Queue -> Process Resize -> Subscribers
+		// 2. Update callback
+		// 3. Renderer BeginFrame -> Render callback -> Renderer EndFrame
+		// 4. InputSystem EndFrame
 		const std::vector<InputEvent> frameEvents = m_inputSource->PollEvents();
 		for (const InputEvent& event : frameEvents)
 		{
+			if (event.type == InputEventType::WindowResized && m_renderer != nullptr)
+			{
+				const auto& resize = std::get<WindowResizeEvent>(event.payload);
+				if (resize.width > 0 && resize.height > 0 && m_renderer->IsInitialized())
+				{
+					// Propagate resize to renderer abstraction before subscribers
+					m_renderer->Resize(resize.width, resize.height);
+				}
+			}
+
 			if (m_input != nullptr)
 			{
 				m_input->PushEvent(event);
@@ -133,6 +146,18 @@ Status Application::Run()
 		if (m_update)
 		{
 			m_update(m_frameCount);
+		}
+
+		if (m_renderer != nullptr && m_renderer->IsInitialized())
+		{
+			if (m_renderer->BeginFrame().IsOk())
+			{
+				if (m_render)
+				{
+					m_render(m_frameCount);
+				}
+				m_renderer->EndFrame();
+			}
 		}
 
 		if (m_input != nullptr)
@@ -199,5 +224,10 @@ void Application::SetUpdateCallback(std::function<void(uint64_t)> callback)
 {
 	m_update = std::move(callback);
 }
+void Application::SetRenderCallback(std::function<void(uint64_t)> callback)
+{
+	m_render = std::move(callback);
+}
+
 
 } // namespace Modern::Client

@@ -42,7 +42,8 @@ modern/
 │   └── types/               Ids, Result
 ├── client/                  new RAN client — consumes core, never legacy
 │   ├── application/         Application lifecycle, update loop (CLIENT-002)
-│   └── input/               Input events, system & platform abstraction (CLIENT-003)
+│   ├── input/               Input events, system & platform abstraction (CLIENT-003)
+│   └── rendering/           Renderer abstraction & headless null backend (CLIENT-004)
 ├── tests/                   headless rule tests (ModernCoreTests)
 ├── tools/                   offline / research tooling
 │   ├── exptable_dump.cpp    reads the packed legacy EXP table -> text
@@ -67,9 +68,9 @@ shipped implementation.
 - **`core`** defines the domain. It depends on the standard library and on
   nothing else. It is the only thing every other modern component may depend on.
 - **`network`**, **`database`**, **`server`**, **`client`**, **`tools`** consume
-  `core`. `client/application` and `client/input` are the first client slices
-  (CLIENT-002, CLIENT-003); the remaining client systems (rendering, resources,
-  ui, character, world, audio) and the network/database/server layers are
+  `core`. `client/application`, `client/input`, and `client/rendering` are the first
+  client slices (CLIENT-002, CLIENT-003, CLIENT-004); the remaining client systems
+  (resources, ui, character, world, audio) and the network/database/server layers are
   created when there is code to put in them.
 - **`compatibility/legacy`** converts between modern types and legacy RAN
   types and formats. Only this layer may see `legacy/`, and nothing in `core`
@@ -371,3 +372,78 @@ seamless integration into the client application loop.
 - **Single application input pipeline**: Application polls IInputSource, routes
   events into InputSystem, broadcasts to subscribers, runs the update callback, and
   calls EndFrame() at frame boundaries in strict, reproducible order.
+
+
+## 16. CLIENT-004: modern client rendering / RHI boundary
+
+Establishes `modern/client/rendering`, providing a platform-independent renderer
+abstraction (`IRenderer`), rendering configuration model (`RendererConfig`),
+deterministic headless backend (`NullRenderer`), and seamless integration into
+the client application pipeline without introducing any GPU API, Win32 handle, or
+legacy DirectX code dependencies.
+
+### Architecture
+
+```text
+Modern Core
+    ↑
+Modern Client
+    ├── Application
+    │     ├── InputSystem (CLIENT-003)
+    │     └── IRenderer (CLIENT-004)
+    │           └── NullRenderer
+    ├── Input
+    └── Rendering
+```
+
+Application frame semantics:
+
+```text
+Platform / Input Source
+      ↓
+InputSystem (FIFO events queued)
+      ↓
+Window Resize Check -> Application updates IRenderer::Resize
+      ↓
+Input Subscribers
+      ↓
+Application Update Callback (game state)
+      ↓
+IRenderer::BeginFrame()
+      ↓
+Application Render Callback (render passes)
+      ↓
+IRenderer::EndFrame()
+      ↓
+InputSystem::EndFrame()
+```
+
+### What it contains
+
+| Unit                                                    | Responsibility                                                     |
+| ------------------------------------------------------- | ------------------------------------------------------------------ |
+| `modern/client/rendering/RenderingTypes.h, .cpp`        | Portable `RendererConfig`, `RenderColor`, `RendererState`, enums    |
+| `modern/client/rendering/Renderer.h, .cpp`              | Clean, pure abstract `IRenderer` interface contract                |
+| `modern/client/rendering/NullRenderer.h, .cpp`          | Deterministic headless renderer implementation tracking state/stats|
+| `modern/client/rendering/ClientRenderingTests.cpp`      | 16 targeted unit tests covering lifecycle, resize, clear, frame    |
+
+### Key conventions
+
+- **Strict API isolation**: Public modern client rendering headers never include
+  `<Windows.h>`, Direct3D (`d3d9.h`, `d3d11.h`), DXGI, Vulkan, OpenGL, or MFC.
+  No `HWND`, `HINSTANCE`, `ID3D11Device`, or `VkInstance` leaks past the boundary.
+- **Renderer lifecycle state machine**:
+  ```text
+  Uninitialized -> Initialized <-> InFrame -> Shutdown
+  ```
+  Invalid state transitions return standard `Status(ErrorCode::InvalidState)` or
+  `Status(ErrorCode::NotAllowed)` rather than throwing exceptions or crashing.
+- **Decoupled input and rendering**: `InputSystem` has zero knowledge of `IRenderer`.
+  The `Application` orchestrates resize event translation: when a `WindowResized`
+  input event arrives, `Application` calls `m_renderer->Resize(width, height)`.
+- **Headless testability**: `NullRenderer` provides a complete working implementation
+  enabling CI, automated testing, and headless server/emulator execution without
+  requiring an active GPU, display adapter, or OS window.
+- **Future backend strategy**: DirectX 12, Vulkan, or other modern graphics APIs
+  will be implemented as concrete backends implementing `IRenderer` under
+  `modern/client/rendering/backends/` without altering the modern application or core.

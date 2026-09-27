@@ -21,6 +21,10 @@
 #include "input/InputEvents.h"
 #include "input/InputSystem.h"
 
+#include "rendering/NullRenderer.h"
+#include "rendering/Renderer.h"
+#include "rendering/RenderingTypes.h"
+
 #include <cstdio>
 #include <string>
 
@@ -125,14 +129,20 @@ int main()
 		instance.IsFree() ? "true" : "false",
 		static_cast<unsigned long long>(instance.serial));
 
-	std::printf("\nClient application & input\n");
+	std::printf("\nClient application, input & rendering\n");
 	Modern::Client::ApplicationConfig appConfig;
-	appConfig.maxFrames = 3;
+	appConfig.maxFrames = 2;
 	Modern::Client::Application app(appConfig);
 
 	Modern::Client::InputSystem input;
 	input.Initialize();
 	app.SetInputSystem(&input);
+
+	Modern::Client::NullRenderer renderer;
+	Modern::Client::RendererConfig renConfig{ 1280, 720, Modern::Client::DisplayMode::Windowed, true };
+	const auto renStatus = renderer.Initialize(renConfig);
+	std::printf("  %-22s %s\n", "renderer init", renStatus.GetMessage());
+	app.SetRenderer(&renderer);
 
 	std::vector<Modern::Client::InputEvent> script;
 	script.push_back(Modern::Client::InputEvent::MakeKey(Modern::Client::KeyCode::W, true));
@@ -147,6 +157,7 @@ int main()
 	std::printf("  %-22s state=%s\n", "created", Modern::Client::ToString(app.GetState()));
 	std::printf("  %-22s %s\n", "initialize", app.Initialize().GetMessage());
 	std::printf("  %-22s state=%s\n", "initialized", Modern::Client::ToString(app.GetState()));
+
 	app.SetUpdateCallback([&input](uint64_t frame)
 	{
 		std::printf("  %-22s frame=%llu KeyW=%s Mouse=(%d,%d)\n",
@@ -156,10 +167,26 @@ int main()
 			input.GetMouseX(),
 			input.GetMouseY());
 	});
+
+	app.SetRenderCallback([&renderer](uint64_t frame)
+	{
+		std::printf("  %-22s frame=%llu state=%s\n",
+			"render callback",
+			static_cast<unsigned long long>(frame),
+			Modern::Client::ToString(renderer.GetState()));
+		renderer.Clear(Modern::Client::RenderColor::ClearCornflowerBlue);
+	});
+
 	std::printf("  %-22s %s\n", "run", app.Run().GetMessage());
 	std::printf("  %-22s state=%s frames=%llu\n",
 		"stopped", Modern::Client::ToString(app.GetState()),
 		static_cast<unsigned long long>(app.GetFrameCount()));
+	std::printf("  %-22s rendered=%llu clears=%llu\n",
+		"renderer stats",
+		static_cast<unsigned long long>(renderer.GetRenderedFrameCount()),
+		static_cast<unsigned long long>(renderer.GetClearCount()));
+	renderer.Shutdown();
+	std::printf("  %-22s state=%s\n", "renderer shutdown", Modern::Client::ToString(renderer.GetState()));
 
 	return 0;
 }

@@ -5,6 +5,12 @@
 #include "input/InputEvents.h"
 #include "input/InputSystem.h"
 
+
+namespace Modern::Client
+{
+class IRenderer;
+}
+
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -108,6 +114,15 @@ public:
 	void SetInputSystem(InputSystem* input) noexcept { m_input = input; }
 	InputSystem* GetInputSystem() const noexcept { return m_input; }
 
+	// Attaches a renderer abstraction. The application borrows it: caller
+	// owns the IRenderer and keeps it alive across Run(). Null detaches.
+	void SetRenderer(IRenderer* renderer) noexcept { m_renderer = renderer; }
+	IRenderer* GetRenderer() const noexcept { return m_renderer; }
+
+	// Configures an optional render callback executed between IRenderer::BeginFrame
+	// and IRenderer::EndFrame.
+	void SetRenderCallback(std::function<void(uint64_t)> callback);
+
 	// Installs the platform input source. Null installs NullInputSource.
 	void SetInputSource(std::unique_ptr<IInputSource> source);
 
@@ -166,6 +181,9 @@ private:
 	std::unique_ptr<IInputSource>    m_inputSource;
 	std::vector<std::function<void(const InputEvent&)>> m_inputSubscribers;
 	std::function<void(uint64_t)>     m_update;
+	IRenderer*                        m_renderer   = nullptr;
+	std::function<void(uint64_t)>     m_render;
+
 	uint64_t                          m_frameCount = 0;
 };
 

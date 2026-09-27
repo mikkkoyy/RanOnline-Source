@@ -7,5 +7,7 @@
 # that exists only to hold a placeholder is a directory whose dependency rules
 # nobody has checked yet.
 
-add_subdirectory(application)
 add_subdirectory(input)
+add_subdirectory(rendering)
+add_subdirectory(application)
+
