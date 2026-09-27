@@ -15,15 +15,25 @@ foreach(cfg DEBUG RELEASE)
     set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${cfg} ${CMAKE_BINARY_DIR}/${cfg})
 endforeach()
 
-add_subdirectory(Lib_Helper)
-add_subdirectory(Lib_ZLib)
-add_subdirectory(BugTrap)
-add_subdirectory(Lib_Engine)
-add_subdirectory(Lib_Network)
-add_subdirectory(Lib_ClientUI)
-add_subdirectory(Lib_Client)
+# ---------------------------------------------------------------------------
+# Repository layout
+#
+#   legacy/  original RAN implementation - reference only, never modernised
+#   modern/  new authoritative RAN implementation
+#
+# See docs/MODERN_ARCHITECTURE.md for the dependency rules.
+# ---------------------------------------------------------------------------
 
-add_subdirectory(Modern)
-add_subdirectory(Modern/Tools)
-add_subdirectory(ModernEmulator)
-add_subdirectory(ModernLegacyAdapter)
+# Legacy libraries. These are built because modern/compatibility/legacy
+# (the one sanctioned bridge) links Lib_Client. The modern core itself has
+# no legacy dependency.
+add_subdirectory(legacy/Lib_Helper)
+add_subdirectory(legacy/Lib_ZLib)
+add_subdirectory(legacy/BugTrap)
+add_subdirectory(legacy/Lib_Engine)
+add_subdirectory(legacy/Lib_Network)
+add_subdirectory(legacy/Lib_ClientUI)
+add_subdirectory(legacy/Lib_Client)
+
+# Modern source.
+add_subdirectory(modern)
