@@ -34,19 +34,18 @@ For the two governing rules see the repository [README](../README.md):
 ```
 modern/
 ├── core/                    game rules and domain models — legacy-free
-│   ├── character/           Character, CharacterBaseData, CombatStats,
-│   │                        CodexContribution, PassiveSkillData
+│   ├── character/           Character
 │   ├── data/                portable text exports of legacy binary tables
 │   ├── entity/              Entity
-│   ├── item/                ItemData, InstanceCustomContribution
+│   ├── item/                ItemDefinition, ItemInstance
 │   ├── math/                Vector3
-│   ├── progression/         ProgressionData
-│   └── types/               shared primitive types
+│   └── types/               Ids, Result
+├── tests/                   headless rule tests (ModernCoreTests)
 ├── tools/                   offline / research tooling
 │   ├── exptable_dump.cpp    reads the packed legacy EXP table -> text
-│   └── emulator/            headless ModernEmulator harness
+│   └── emulator/            ModernEmulator demonstration harness
 └── compatibility/legacy/    the single sanctioned modern -> legacy bridge
-    └── CharacterAdapter.*
+    └── CharacterAdapter.*   (sources present, not built — see section 6)
 ```
 
 `reference/` and `docs/` live outside `modern/` because neither is part of the
@@ -70,6 +69,10 @@ shipped implementation.
 - **`compatibility/legacy`** converts between modern types and legacy RAN
   types and formats. Only this layer may see `legacy/`, and nothing in `core`
   may reference it.
+
+A layer is added when there is code for it, not before. A directory that exists
+only to hold a placeholder is a directory whose dependency rules nobody has
+checked yet.
 
 ## 5. Core rules
 
@@ -106,11 +109,31 @@ Planned adapters, as the format surface is taken on one at a time:
 | Adapter                 | Responsibility                                     |
 | ----------------------- | -------------------------------------------------- |
 | `LegacyCharacterAdapter`| `GLChar` / `CharacterBase` -> `modern::Character`   |
-| `LegacyItemAdapter`     | `SITEM` / `GLItemMan` -> `modern::ItemData`         |
+| `LegacyItemAdapter`     | `SITEM` / `GLItemMan` -> `modern::ItemDefinition`   |
 | `LegacyPacketAdapter`   | legacy packet headers -> modern message structs     |
 | `LegacyDataImporter`    | legacy binary tables -> `modern/core/data` exports  |
 
-`CharacterAdapter` is implemented; the rest are planned.
+### Status: not built during CORE-001
+
+`CharacterAdapter` exists on disk but is not in the build.
+
+Two reasons, both deliberate:
+
+1. CORE-001 is scoped to `modern/core`. Legacy compatibility is a later phase.
+2. The existing adapter maps `GLChar` fields that the clean `Character`
+   deliberately does not have — HP/MP/SP pools, the `ActState` bitfield,
+   die/revive. It has to be rewritten against the new type, not patched, and a
+   half-migrated adapter that compiles against a character model already known
+   to be wrong is worse than one that is visibly absent.
+
+For the same reason the root `CMakeLists.txt` no longer adds the legacy
+libraries: with the bridge out of the build, nothing in the CMake build needs
+`legacy/` at all, and the only remaining modern -> legacy reference is an
+include in `modern/tools/exptable_dump.cpp`, which reaches its headers by
+relative path and links nothing.
+
+The legacy tree is unaffected. It builds on its own through
+`legacy/RanOnline.sln` (section 8).
 
 ## 7. Data model
 
@@ -149,14 +172,14 @@ and are not expected to run unmodified.
   `compatibility/legacy`, and is explicitly a compatibility test rather than a
   rules test.
 - Data-conversion checks live with the converter tool that owns the format.
-- `modern/tests/` is created when the first suite lands; it does not exist yet.
+- `modern/tests/` holds the first suite: `ModernCoreTests` covers CORE-001.
+  It is registered with CTest, so `ctest` in the build directory runs it.
 
 ## 10. Tooling
 
-- CMake drives the modern tree; the root `CMakeLists.txt` adds `modern/` and
-  the legacy libraries needed by the one adapter.
-- Target names (`Modern`, `ModernEmulator`, `ModernLegacyAdapter`) were kept
-  from the pre-move layout to avoid churn.
+- CMake drives the modern tree; the root `CMakeLists.txt` adds `modern/` only.
+- Target names (`Modern`, `ModernEmulator`, `ModernCoreTests`) were kept from
+  the pre-move layout to avoid churn.
 - `vcpkg.json` pins the modern dependency set (spdlog, fmt, zlib, tbb).
 - The legacy tree builds with MSBuild and the Visual Studio solution, not
   CMake.
@@ -179,5 +202,112 @@ Work on the modern tree is complete when:
   dependency outside `compatibility/legacy`;
 - it is covered by headless tests that pass without legacy libraries;
 - any legacy data it needs has a committed portable export;
-- it runs under `Emulator.exe` — the only executable allowed to be launched;
+- it is verified by running the headless test binary. No client, server or
+  other production executable is launched;
 - the dependency rules above still hold.
+
+## 13. CORE-001: base core foundation
+
+The first implemented slice of `core`. It is deliberately small, and the
+smallness is the point.
+
+### What it contains
+
+| Unit                     | Responsibility                                                     |
+| ------------------------ | ------------------------------------------------------------------ |
+| `types/Ids.h`            | `EntityId`, `CharacterId`, `ItemId`, `AccountId`, `WorldId`         |
+| `types/Result.h`         | `ErrorCode`, `Status`, `Result<T>`                                  |
+| `math/Vector3.h`         | Position and direction arithmetic                                   |
+| `entity/Entity.h`        | Identity, position, direction, lifecycle state                       |
+| `character/Character.h`  | Identity, class, level, experience, lifecycle                       |
+| `item/ItemDefinition.h`  | Item type identity                                                  |
+| `item/ItemInstance.h`    | Item copy identity                                                  |
+
+### Conventions
+
+**Identifiers are strongly typed.** Each is a distinct type, so an `ItemId`
+cannot be passed where a `CharacterId` is expected. Construction is explicit, a
+default-constructed id is invalid, invalidity is a single well-known sentinel,
+and ordering is defined so ids work as ordered container keys. The invalid
+sentinel is the all-ones pattern, matching the legacy `INVALID_*` constants, so
+a default-constructed id compares equal to an explicitly invalidated one.
+
+**Failure is a value, not an exception.** The core runs in a fixed-order
+simulation loop where an exception thrown from inside a calculation is much
+harder to reason about than a returned code. `ErrorCode` covers `None`,
+`InvalidArgument`, `NotFound`, `AlreadyExists`, `InvalidState` and
+`NotAllowed`. This is an enum and a small wrapper, not a framework.
+
+`InvalidState` and `NotAllowed` are distinct on purpose. `InvalidState` means
+the object is in the wrong state for this operation — spawning something already
+spawned. `NotAllowed` means the state is coherent but the operation is barred
+outright, such as any transition out of a terminal state.
+
+**Entities own their lifecycle.** `Entity<IdType>` holds identity, position,
+direction and one `EntityState`. It is templated on the identity type so each
+entity carries exactly one id of the right type, rather than a generic
+`EntityId` that has to be narrowed at every use.
+
+The state machine is:
+
+```
+Uninitialized -> Created -> Spawned <-> Despawned -> Destroyed
+      ^                                                    |
+      +---------------------- Reset() ---------------------+
+```
+
+`Destroyed` is terminal: it releases identity, so the object is safe to return
+to a pool. `Reset()` is the only unconditional transition, and after it the
+object behaves exactly like a default-constructed one.
+
+`IsActive()` and `IsAlive()` are the same question in two domains — the
+simulation asks whether it is active, gameplay asks whether it is alive — and
+both mean "currently spawned".
+
+**A character owns facts, not derived state.** Level and experience are facts
+about the character. How much experience a level costs is data and belongs to a
+future progression system. The following were deliberately left out, and each
+one was present in the earlier port:
+
+- HP / MP / SP and recovery rates. In RAN these are recomputed from base stats,
+  equipment, passive skills and codex effects. Owning them on the character is
+  what forced the core to know about all five.
+- Attack, defence, hit, avoid, resistances: calculated combat state.
+- Equipment and contribution aggregates: per-system inputs, not character
+  state.
+- Movement targets, speeds, and the `ActState` bitfield: animation state.
+
+They come back when the systems that own them exist, and not before. A field
+that exists only because the old calculation architecture required it is a
+field nobody has justified yet.
+
+**Validation happens at the boundary.** NaN and infinity are rejected on the
+way in, so one bad value cannot propagate into every downstream rule.
+Directions are stored normalised, so no consumer has to ask whether it was
+handed a unit vector. Experience saturates rather than wrapping, because a
+wrapped total reads as a plausible small number instead of an obviously broken
+one. A name at the 32-character limit is accepted and a longer one is rejected
+rather than truncated, because silently shortening an identity shows up much
+later as two characters sharing a name.
+
+### What was moved out
+
+An earlier work-in-progress port of RAN's derived-stat chain
+(`GLOGICEX` → 21 equipment slots, HP/MP/SP pools, `SSUM_ITEM`,
+`m_sSUM_PASSIVE`, codex contributions, `ActState`) is preserved in
+`reference/legacy-calculation-port/` and is not part of any build. It is a
+faithful record of the legacy formulas and the right starting point if those
+systems are rebuilt; it is not a reference implementation and is not
+maintained. See the README there for the specific defects that stopped it
+compiling.
+
+### Verifying
+
+```
+cmake -S . -B build
+cmake --build build --config Debug
+.\build\Debug\ModernCoreTests.exe
+```
+
+`ModernEmulator` prints the same conventions in use. It is a demonstration, not
+the authority.

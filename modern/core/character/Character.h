@@ -1,227 +1,124 @@
 #pragma once
 
-#include "../types/Types.h"
-#include "../math/Vector3.h"
 #include "../entity/Entity.h"
-#include "../progression/ProgressionData.h"
-#include "../item/ItemData.h"
-#include "../item/InstanceCustomContribution.h"
-#include "CharacterBaseData.h"
-#include "PassiveSkillData.h"
-#include "CombatStats.h"
-#include "CodexContribution.h"
+#include "../math/Vector3.h"
+#include "../types/Ids.h"
+#include "../types/Result.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
-#include <array>
 
 namespace Modern
 {
-	constexpr uint16_t kDefaultMaxLevel = 255;
-	constexpr size_t   kExpTableCapacity = 300;
-
-	enum class Gender : uint8_t
+	// The set of character classes.
+	//
+	// RAN encodes class and gender together in EMCHARINDEX, giving sixteen
+	// distinct values for eight classes. Gender carries no meaning in the core
+	// — it only existed to index the legacy class tables — so the class is
+	// modelled as the eight types it actually is.
+	enum class CharacterClass : uint8_t
 	{
-		Female = 0,
-		Male   = 1,
+		Unset     = 0,
+		Brawler   = 1,
+		Swordsman = 2,
+		Archer    = 3,
+		Shaman    = 4,
+		Gunner    = 5,
+		Assassin  = 6,
+		Tricker   = 7,
+		Extreme   = 8,
 	};
 
-	struct CharacterInfo
-	{
-		EntityId    id        = EntityId::MakeInvalid();
-		std::string name;
-		uint32_t    classId   = 0;
-		Gender      gender    = Gender::Female;
-		uint16_t    school    = 0;
-		uint16_t    level     = 1;
-		int64_t     expNow    = 0;
-		int64_t     expMax    = 0;
-		uint32_t    hpNow     = 0;
-		uint32_t    hpMax     = 0;
-		uint32_t    mpNow     = 0;
-		uint32_t    mpMax     = 0;
-		uint32_t    spNow     = 0;
-		uint32_t    spMax     = 0;
-		Vector3     position;
-		Vector3     direction;
-		ActionType  action    = ActionType::Idle;
-		uint32_t    actState  = ActState::None;
+	const char* ToString(CharacterClass value) noexcept;
 
-		bool IsAlive() const;
-		bool IsDead() const;
-	};
-
-	class Character
+	// A player character.
+	//
+	// What a character owns: its identity, its class, its level and
+	// experience, where it is, and whether it is in the world. That is the
+	// whole of it in CORE-001.
+	//
+	// What it deliberately does not own, and why:
+	//
+	//   - HP / MP / SP and recovery rates. These are derived values in RAN,
+	//     recomputed from base stats, equipment, passive skills and codex
+	//     effects. Owning them on the character is what forced the core to
+	//     know about all five. They belong to a future StatsSystem.
+	//   - Attack, defence, hit, avoid and resistances. Calculated combat
+	//     state, for a future CombatSystem.
+	//   - Equipment and contribution aggregates. They are per-stat-system
+	//     inputs, not character state, and belong to a future
+	//     EquipmentSystem.
+	//   - Movement targets, speeds and action/animation state. Belong to a
+	//     future MovementSystem.
+	//   - The experience curve. Level and experience are facts about the
+	//     character; how much experience a level costs is data, and belongs to
+	//     a future ProgressionSystem.
+	//
+	// The lifecycle is explicit and deterministic — Create, Spawn, Despawn,
+	// Destroy, Reset — with no global state, no clock and no I/O, so the same
+	// call sequence always produces the same state.
+	class Character : public Entity<CharacterId>
 	{
 	public:
-		static constexpr float WalkSpeed    = 8.0f;
-		static constexpr float RunSpeed     = 14.0f;
-		static constexpr size_t NameCapacity = 32;
-		static constexpr size_t EquipSlotCount = 21;  // SLOT_NSIZE_S_2
-
-		static constexpr float kDefaultHpRecoverPerSec = 0.003f;
-		static constexpr float kDefaultMpRecoverPerSec = 0.003f;
-		static constexpr float kDefaultSpRecoverPerSec = 0.005f;
+		// Matches the legacy m_szName buffer, which is 32 characters plus a
+		// terminator.
+		static constexpr size_t   kNameCapacity = 32;
+		static constexpr uint16_t kMinLevel     = 1;
+		static constexpr uint16_t kMaxLevel     = 255;
 
 		Character() = default;
-		Character(EntityId id, const std::string& name);
 
-		// Lifecycle
-		void Spawn(const Vector3& position, const Vector3& direction);
-		void Despawn();
+		// Assigns identity and moves to EntityState::Created.
+		//
+		// Fails with InvalidArgument if the id is invalid, the name is empty,
+		// or the name exceeds kNameCapacity.
+		static Result<Character> Create(const CharacterId& id, const std::string& name);
 
-		// Movement
-		void MoveTo(const Vector3& target);
-		void Walk();
-		void Run();
-		void Stop();
-		void TurnTo(const Vector3& direction);
+		// Places the character in the world at a position, facing a direction.
+		// The direction is stored normalised.
+		//
+		// Fails with InvalidArgument if the position is not finite or the
+		// direction has no length, InvalidState if the character is already
+		// spawned or was never created, and NotAllowed once destroyed.
+		Status Spawn(const Vector3& position, const Vector3& direction);
 
-		// Life/Death
-		void Die();
-		void Revive(const Vector3& position, const Vector3& direction);
+		// Removes the character from the world, keeping its identity.
+		//
+		// Fails with InvalidState unless the character is currently spawned.
+		Status Despawn();
 
-		// Update
-		void Update(float elapsedSeconds);
+		// Terminal transition. Releases identity, so the object is safe to
+		// hand back to a pool.
+		//
+		// Fails with InvalidState if the character was never created, and
+		// NotAllowed if it is already destroyed.
+		Status Destroy();
 
-		// Identity
-		void SetName(const std::string& name);
-		void SetClass(uint32_t classId, Gender gender);
-		void SetSchool(uint16_t school);
-		void SetLevel(uint16_t level);
+		// Returns the character to its default-constructed condition from any
+		// state, including Destroyed. The only unconditional transition.
+		void Reset();
 
-		// Resource max setters
-		void SetMaxHP(uint32_t max);
-		void SetMaxMP(uint32_t max);
-		void SetMaxSP(uint32_t max);
+		const std::string& GetName() const { return m_name; }
+		Status SetName(const std::string& name);
 
-		// Resource current setters
-		void SetHP(uint32_t now);
-		void SetMP(uint32_t now);
-		void SetSP(uint32_t now);
+		CharacterClass GetClass() const { return m_class; }
+		bool HasClass() const { return m_class != CharacterClass::Unset; }
+		Status SetClass(CharacterClass value);
 
-		// Resource modification
-		void DamageHP(uint32_t amount);
-		void HealHP(uint32_t amount);
-		void ConsumeMP(uint32_t amount);
-		void ConsumeSP(uint32_t amount);
-		void RecoverMP(uint32_t amount);
-		void RecoverSP(uint32_t amount);
+		uint16_t GetLevel() const { return m_level; }
+		Status SetLevel(uint16_t level);
 
-		// Recovery rates
-		void SetRecoveryRates(float hpPerSec, float mpPerSec, float spPerSec);
-		void RecoverAll(float elapsedSeconds);
-
-		// Data providers (non-owning, must remain valid for Character lifetime)
-		void SetProgressionData(const ProgressionData& data);
-		void SetBaseDataProvider(const ICharacterBaseDataProvider& provider);
-		void SetItemDataProvider(const IItemDataProvider& provider);
-		void SetPassiveSkillProvider(const IPassiveSkillProvider& provider);
-		void SetCodexProvider(const ICodexProvider& provider);
-		void SetMaxLevel(uint16_t maxLevel) { m_maxLevel = maxLevel; }
-		void AddExperience(int64_t amount);
-
-		// Equipment
-		bool EquipItem(EquipSlot slot, uint32_t itemId);
-		void UnequipItem(EquipSlot slot);
-		const ItemInstanceData* GetEquippedItem(EquipSlot slot) const;
-		bool IsSlotValid(EquipSlot slot) const;
-
-		// Transform
-		void SetPosition(const Vector3& position);
-		void SetDirection(const Vector3& direction);
-		void SetAction(ActionType action);
-		void SetActState(uint32_t state) { m_actState = state; }
-		void AddActState(uint32_t state) { m_actState |= state; }
-		void RemoveActState(uint32_t state) { m_actState &= ~state; }
-
-		// Getters
-		EntityId        GetId() const { return m_entity.id; }
-		const std::string& GetName() const { return m_nameString; }
-		const Vector3&  GetPosition() const { return m_entity.position; }
-		const Vector3&  GetDirection() const { return m_entity.direction; }
-		ActionType      GetAction() const { return m_action; }
-		uint32_t        GetActState() const { return m_actState; }
-		bool            IsActState(uint32_t state) const { return (m_actState & state) != 0; }
-		uint16_t        GetLevel() const { return m_level; }
-		uint16_t        GetSchool() const { return m_school; }
-		uint32_t        GetClassId() const { return m_classId; }
-		Gender          GetGender() const { return m_gender; }
-		uint16_t        GetMaxLevel() const { return m_maxLevel; }
-
-		uint32_t GetHP() const { return m_hpNow; }
-		uint32_t GetMP() const { return m_mpNow; }
-		uint32_t GetSP() const { return m_spNow; }
-		uint32_t GetMaxHP() const { return m_hpMax; }
-		uint32_t GetMaxMP() const { return m_mpMax; }
-		uint32_t GetMaxSP() const { return m_spMax; }
-
-		int64_t GetExp() const { return m_expNow; }
-		int64_t GetExpMax() const { return m_expMax; }
-
-		float CurrentSpeed() const;
-		bool IsMoving() const { return m_moving; }
-		bool IsAlive() const;
-		bool IsDead() const;
-
-		CharacterInfo Inspect() const;
-
-		// Combat stats
-		const CombatStats& GetCombatStats() const { return m_combatStats; }
-
-		// Confrontation point rate (legacy fCONFT_POINT_RATE)
-		void SetConftPointRate(float rate) { m_conftPointRate = rate; }
-		float GetConftPointRate() const { return m_conftPointRate; }
+		int64_t GetExperience() const { return m_experience; }
+		Status SetExperience(int64_t experience);
+		Status AddExperience(int64_t amount);
 
 	private:
-		void DieInternal();
-		void RefreshExpMax();
-		void RefreshBaseData();
-		void ApplyLevelUpStats();
-		void RecalculateStats();  // Recalculate including item contributions
+		Character(CharacterId id, std::string name);
 
-		Entity                              m_entity;
-		std::string                         m_nameString;
-		char                                m_name[NameCapacity + 1] = {};
-		uint32_t                            m_classId = 0;
-		Gender                              m_gender  = Gender::Female;
-		uint16_t                            m_school  = 0;
-		uint16_t                            m_level   = 1;
-		uint16_t                            m_maxLevel = kDefaultMaxLevel;
-		int64_t                             m_expNow  = 0;
-		int64_t                             m_expMax  = 0;
-		const ProgressionData*              m_progression = nullptr;
-		const ICharacterBaseDataProvider*   m_baseDataProvider = nullptr;
-		const IItemDataProvider*            m_itemDataProvider = nullptr;
-		const IPassiveSkillProvider*        m_passiveSkillProvider = nullptr;
-		const ICodexProvider*               m_codexProvider = nullptr;
-		const CharacterBaseData*            m_baseData = nullptr;
-		CharacterStats                      m_currentStats;
-
-		// Equipment state
-		std::array<ItemInstanceData, EquipSlotCount> m_equippedItems;
-		ItemContribution                    m_itemContribution;
-		InstanceCustomContribution          m_instanceContribution;
-		CombatStats                         m_combatStats;
-
-		uint32_t                            m_hpNow = 0;
-		uint32_t                            m_hpMax = 0;
-		uint32_t                            m_mpNow = 0;
-		uint32_t                            m_mpMax = 0;
-		uint32_t                            m_spNow = 0;
-		uint32_t                            m_spMax = 0;
-
-		float                               m_hpRecoverPerSec = kDefaultHpRecoverPerSec;
-		float                               m_mpRecoverPerSec = kDefaultMpRecoverPerSec;
-		float                               m_spRecoverPerSec = kDefaultSpRecoverPerSec;
-
-		// Confrontation point rate (legacy fCONFT_POINT_RATE)
-		// Default 1.0f; when in confrontation, set to m_sCONFTING.sOption.fHP_RATE
-		float                               m_conftPointRate = 1.0f;
-
-		ActionType                          m_action  = ActionType::Idle;
-		uint32_t                            m_actState = ActState::None;
-		bool                                m_moving  = false;
-		Vector3                             m_moveTarget;
+		std::string      m_name;
+		CharacterClass   m_class     = CharacterClass::Unset;
+		uint16_t         m_level     = kMinLevel;
+		int64_t          m_experience = 0;
 	};
 }

@@ -11,6 +11,7 @@ if(MSVC)
     target_compile_options(exptable_dump PRIVATE /W3 /permissive- /utf-8)
 endif()
 
-# Runtime testing target. Per the project rule only Emulator.exe is run;
-# MiniA.exe is never launched.
+# Demonstration target: prints the core foundation in use. The authority is
+# the headless suite in modern/tests/, which is what gets run and what gates
+# changes. No client or server executable is ever launched.
 add_subdirectory(emulator)

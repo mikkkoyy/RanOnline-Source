@@ -24,16 +24,38 @@ endforeach()
 # See docs/MODERN_ARCHITECTURE.md for the dependency rules.
 # ---------------------------------------------------------------------------
 
-# Legacy libraries. These are built because modern/compatibility/legacy
-# (the one sanctioned bridge) links Lib_Client. The modern core itself has
-# no legacy dependency.
-add_subdirectory(legacy/Lib_Helper)
-add_subdirectory(legacy/Lib_ZLib)
-add_subdirectory(legacy/BugTrap)
-add_subdirectory(legacy/Lib_Engine)
-add_subdirectory(legacy/Lib_Network)
-add_subdirectory(legacy/Lib_ClientUI)
-add_subdirectory(legacy/Lib_Client)
+# The legacy tree is deliberately NOT added here.
+#
+# It used to be built only because modern/compatibility/legacy linked
+# Lib_Client. That adapter is not built during CORE-001, so nothing in the
+# CMake build needs legacy/ any more, and configuring it would only slow every
+# build down and invite a dependency nobody intended.
+#
+# The one remaining modern -> legacy reference is an include in
+# modern/tools/exptable_dump.cpp, which reaches its headers by relative path
+# and links nothing.
+#
+# The legacy tree still builds on its own, with MSBuild and the Visual Studio
+# solution: legacy/RanOnline.sln. See docs/MODERN_ARCHITECTURE.md.
+#
+# To re-enable the bridge, restore the add_subdirectory() calls below and
+# re-add modern/compatibility/legacy to modern/CMakeLists.txt.
+#
+#   add_subdirectory(legacy/Lib_Helper)
+#   add_subdirectory(legacy/Lib_ZLib)
+#   add_subdirectory(legacy/BugTrap)
+#   add_subdirectory(legacy/Lib_Engine)
+#   add_subdirectory(legacy/Lib_Network)
+#   add_subdirectory(legacy/Lib_ClientUI)
+#   add_subdirectory(legacy/Lib_Client)
+
+# Headless rule tests.
+#
+# enable_testing() must be called here, before the add_subdirectory() calls:
+# CTest generates a CTestTestfile.cmake per directory, and a directory only
+# gets one — along with its subdirs() list — if testing was already enabled
+# when it was processed. Calling it afterwards silently registers nothing.
+enable_testing()
 
 # Modern source.
 add_subdirectory(modern)

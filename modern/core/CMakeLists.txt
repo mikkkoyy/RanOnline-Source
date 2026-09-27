@@ -3,12 +3,18 @@
 # This target must stay free of Windows UI, DirectX, sockets, PostgreSQL and
 # any legacy RAN type (GLChar, GLItemMan, SITEM, ...). If a change needs one
 # of those, it belongs in modern/compatibility/legacy instead.
+#
+# CORE-001 deliberately keeps this list short. Calculated stats, equipment,
+# passive skills, codex effects and the experience curve are not here: they are
+# derived state, they belong to their own systems, and until those systems
+# exist there is nothing for them to compute. See
+# reference/legacy-calculation-port/README.md for what was moved out and why.
 
 set(MODERN_SOURCES
     character/Character.cpp
-    character/CharacterBaseData.cpp
-    item/ItemData.cpp
-    progression/ProgressionData.cpp
+    entity/Entity.cpp
+    item/ItemDefinition.cpp
+    types/Result.cpp
 )
 
 add_library(Modern STATIC ${MODERN_SOURCES})
