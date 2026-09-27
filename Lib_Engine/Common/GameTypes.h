@@ -114,6 +114,7 @@ using GameInt32  = GameTypes::GameInt32;
 using GameUInt32 = GameTypes::GameUInt32;
 using GameInt64  = GameTypes::GameInt64;
 using GameUInt64 = GameTypes::GameUInt64;
+using GameSizeT  = GameTypes::GameSizeT;
 using GameVec3   = GameTypes::GameVec3;
 using GameVec2   = GameTypes::GameVec2;
 using GameVec4   = GameTypes::GameVec4;

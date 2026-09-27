@@ -1,5 +1,6 @@
 #include "Character/Character.h"
 #include "Character/CharacterBaseData.h"
+#include "Character/PassiveSkillData.h"
 #include "Item/ItemData.h"
 #include "Progression/ProgressionData.h"
 #include "Core/Types.h"
@@ -227,8 +228,8 @@ static void RunBaseDataChecks()
 	// Test Swordsman Male (index 1)
 	{
 		Character c(EntityId(10), "SwordsmanTest");
-		c.SetBaseDataProvider(&baseProvider);
-		c.SetProgressionData(&testProgression);
+		c.SetBaseDataProvider(baseProvider);
+		c.SetProgressionData(testProgression);
 		c.SetClass(static_cast<uint32_t>(CharIndex::SwordsmanM), Gender::Male);
 		c.SetSchool(0);
 		c.Spawn({0, 0, 0}, {0, 0, 1});
@@ -261,8 +262,8 @@ static void RunBaseDataChecks()
 	// Test Swordsman Female (index 7)
 	{
 		Character c(EntityId(11), "SwordsmanFTest");
-		c.SetBaseDataProvider(&baseProvider);
-		c.SetProgressionData(&testProgression);
+		c.SetBaseDataProvider(baseProvider);
+		c.SetProgressionData(testProgression);
 		c.SetClass(static_cast<uint32_t>(CharIndex::SwordsmanW), Gender::Female);
 		c.SetSchool(0);
 		c.Spawn({0, 0, 0}, {0, 0, 1});
@@ -281,8 +282,8 @@ static void RunBaseDataChecks()
 	// Test Brawler Male (index 0)
 	{
 		Character c(EntityId(12), "BrawlerTest");
-		c.SetBaseDataProvider(&baseProvider);
-		c.SetProgressionData(&testProgression);
+		c.SetBaseDataProvider(baseProvider);
+		c.SetProgressionData(testProgression);
 		c.SetClass(static_cast<uint32_t>(CharIndex::BrawlerM), Gender::Male);
 		c.SetSchool(0);
 		c.Spawn({0, 0, 0}, {0, 0, 1});
@@ -349,7 +350,7 @@ static void RunRealDataTest()
 
 		// Compatibility check: use with Character
 		Character c(EntityId(99), "RanTest");
-		c.SetProgressionData(&ranProgression);
+		c.SetProgressionData(ranProgression);
 		c.SetMaxHP(100); c.SetMaxMP(50); c.SetMaxSP(30);
 		c.Spawn({0,0,0}, {0,0,1});
 		c.SetLevel(1);
@@ -368,18 +369,93 @@ static void RunRealDataTest()
 	std::cout << "\n";
 }
 
-static void RunEquipmentChecks()
+static void RunPassiveSkillChecks()
 {
-	std::cout << "== Unit checks: Equipment ==\n";
+	std::cout << "== Unit checks: Passive Skill Provider ==\n";
+
+	TestCharacterBaseDataProvider baseProvider;
+	TestProgressionData testProgression(10);
+	TestPassiveSkillProvider passiveProvider;
+
+	Character c(EntityId(30), "PassiveTest");
+	c.SetBaseDataProvider(baseProvider);
+	c.SetProgressionData(testProgression);
+	c.SetPassiveSkillProvider(passiveProvider);
+	c.SetClass(static_cast<uint32_t>(CharIndex::SwordsmanM), Gender::Male);
+	c.SetSchool(0);
+	c.Spawn({0, 0, 0}, {0, 0, 1});
+
+	// At level 1, test provider returns zero passive contribution
+	assert(c.GetMaxHP() > 0);
+	assert(c.GetMaxMP() > 0);
+	assert(c.GetMaxSP() > 0);
+	uint32_t baseHP = c.GetMaxHP();
+	uint32_t baseMP = c.GetMaxMP();
+	uint32_t baseSP = c.GetMaxSP();
+
+	// Level up to 10 to trigger passive contributions
+	c.SetLevel(10);
+	c.AddExperience(testProgression.GetRequiredExperience(1) * 9); // reach level 10
+
+	// At level 10, passive provider adds +50 HP, +30 MP, +20 SP flat
+	// and 10% HP rate, 5% MP rate, 5% SP rate
+	// Base STR=15, factor=5.0 -> 75, baseHP clamped to 100
+	// With level 10: STR = 15 + 9*0.5 = 19.5 -> 19 (int)
+	// HP base = 19 * 5.0 = 95 (clamped to 100 min? Wait, the clamp is only initial)
+	// Actually CalculateStatsAtLevel gives STR=15 + 9*0.5 = 19 (truncated)
+	// HP = STR * 5.0 = 95, no item HP, passive HP 50 = 145, * 1.1 = 159.5 -> 159
+	// Let's just verify it's greater than base
+	assert(c.GetMaxHP() > baseHP);
+	assert(c.GetMaxMP() > baseMP);
+	assert(c.GetMaxSP() > baseSP);
+
+	// Verify passive stats added
+	// PA = 5, SA = 3, MA = 2
+	// STR = 19 + PA 5 = 24
+	// SPI = 10 + 9*0.5 + SA 3 = 10+4+3 = 17
+	// INT = 10 + MA 2 = 12
+	// Note: the stats include passive PA/SA/MA
+	// We'll check that max HP increased more than just STR factor
+
+	std::cout << "Base HP: " << baseHP << ", With Passive L10: " << c.GetMaxHP() << "\n";
+	std::cout << "Base MP: " << baseMP << ", With Passive L10: " << c.GetMaxMP() << "\n";
+	std::cout << "Base SP: " << baseSP << ", With Passive L10: " << c.GetMaxSP() << "\n";
+
+	// Verify passive contributions affected the calculation
+	// HP: base = STR * factor + passiveHP = 19*5 + 50 = 145, * (1 + 0.1) = 159.5 -> 159
+	// Actually base STR at L10 = 15 + 9*0.5 = 19 (truncated)
+	// HP = (19 * 5.0 + 50) * 1.1 = (95 + 50) * 1.1 = 159.5 -> 159
+	// MP = (SPI * 3.0 + 30) * 1.05 = ((10+4) * 3 + 30) * 1.05 = (42 + 30) * 1.05 = 75.6 -> 75
+	// SPI = 10 + 9*0.5 = 14 (truncated), + passive SA 3 = 17
+	// Wait: passive SA goes to SPI in CalculateStatsAtLevel? Let me check
+	// Actually: m_currentStats.spi gets passiveContribution.sa added
+	// So SPI = 14 (from level) + 3 (passive SA) = 17
+	// MP = 17 * 3.0 + 30 = 51 + 30 = 81 * 1.05 = 85.05 -> 85
+	// But wait, itemContribution is also added. No items equipped so itemContribution = 0
+	// Let's verify the exact numbers
+	assert(c.GetMaxHP() == 159);  // (19*5 + 50) * 1.1 = 145 * 1.1 = 159.5 -> 159
+	assert(c.GetMaxMP() == 85);   // (17*3 + 30) * 1.05 = (51+30)*1.05 = 85.05 -> 85
+	// SP: STA = 12 + 9*0.5 = 16 (truncated), + passive MA 2 = 18
+	// SP = 18 * 4.0 + 20 = 72 + 20 = 92 * 1.05 = 96.6 -> 96
+	// Wait, factor is 4.0? Let me check test provider
+	// TestCharacterBaseDataProvider has spStaFactor = 4.0f for SwordsmanM
+	// But wait - the STA factor might be different
+	// Actually check CharacterBaseData.h - TestCharacterBaseDataProvider uses:
+	// spStaFactor = 4.0f
+	// So SP = (18 * 4.0 + 20) * 1.05 = (72 + 20) * 1.05 = 96.6 -> 96
+	assert(c.GetMaxSP() == 96);   // (18*4 + 20) * 1.05 = 92 * 1.05 = 96.6 -> 96
+
+	std::cout << "All passive skill checks passed.\n\n";
+}
 
 	TestItemDataProvider itemProvider;
 	TestCharacterBaseDataProvider baseProvider;
 	TestProgressionData testProgression(10);
 
 	Character c(EntityId(20), "EquipTest");
-	c.SetBaseDataProvider(&baseProvider);
-	c.SetItemDataProvider(&itemProvider);
-	c.SetProgressionData(&testProgression);
+	c.SetBaseDataProvider(baseProvider);
+	c.SetItemDataProvider(itemProvider);
+	c.SetProgressionData(testProgression);
 	c.SetClass(static_cast<uint32_t>(CharIndex::SwordsmanM), Gender::Male);
 	c.SetSchool(0);
 	c.Spawn({0, 0, 0}, {0, 0, 1});
@@ -601,6 +677,7 @@ int main()
 	RunRecoveryChecks();
 	RunBaseDataChecks();
 	RunLevelChecks();
+	RunPassiveSkillChecks();
 	RunRealDataTest();
 	RunEquipmentChecks();
 	RunScenario();

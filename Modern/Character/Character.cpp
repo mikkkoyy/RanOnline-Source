@@ -3,6 +3,9 @@
 #include "../Progression/ProgressionData.h"
 #include "CharacterBaseData.h"
 #include "../Item/ItemData.h"
+#include "../Item/InstanceCustomContribution.h"
+#include "CombatStats.h"
+#include "CodexContribution.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -89,23 +92,35 @@ namespace Modern
 			m_expMax = 0;
 	}
 
-	void Character::SetProgressionData(const ProgressionData* data)
-	{
-		m_progression = data;
-		RefreshExpMax();
-	}
+void Character::SetProgressionData(const ProgressionData& data)
+{
+	m_progression = &data;
+	RefreshExpMax();
+}
 
-	void Character::SetBaseDataProvider(const ICharacterBaseDataProvider* provider)
-	{
-		m_baseDataProvider = provider;
-		RefreshBaseData();
-	}
+void Character::SetBaseDataProvider(const ICharacterBaseDataProvider& provider)
+{
+	m_baseDataProvider = &provider;
+	RefreshBaseData();
+}
 
-	void Character::SetItemDataProvider(const IItemDataProvider* provider)
-	{
-		m_itemDataProvider = provider;
-		RecalculateStats();
-	}
+void Character::SetItemDataProvider(const IItemDataProvider& provider)
+{
+	m_itemDataProvider = &provider;
+	RecalculateStats();
+}
+
+void Character::SetPassiveSkillProvider(const IPassiveSkillProvider& provider)
+{
+	m_passiveSkillProvider = &provider;
+	RecalculateStats();
+}
+
+void Character::SetCodexProvider(const ICodexProvider& provider)
+{
+	m_codexProvider = &provider;
+	RecalculateStats();
+}
 
 	void Character::RefreshBaseData()
 	{
@@ -143,70 +158,272 @@ namespace Modern
 		RefreshBaseData();
 	}
 
-	void Character::RecalculateStats()
+void Character::RecalculateStats()
+{
+	if (!m_baseData)
+		return;
+
+	// Calculate current stats based on level (includes base stats + level-up gains)
+	m_currentStats = CalculateStatsAtLevel(*m_baseData, m_level);
+
+	// Calculate item contributions
+	m_itemContribution.Reset();
+	if (m_itemDataProvider)
 	{
-		if (!m_baseData)
-			return;
-
-		// Calculate current stats based on level
-		m_currentStats = CalculateStatsAtLevel(*m_baseData, m_level);
-
-		// Calculate item contributions
-		m_itemContribution.Reset();
-		if (m_itemDataProvider)
-		{
-			m_itemContribution = CalculateItemContribution(
-				m_itemDataProvider,
-				m_equippedItems.data(),
-				EquipSlotCount);
-		}
-
-		// Add item stat contributions to current stats (legacy behavior: stats include item bonuses before HP/MP/SP calc)
-		m_currentStats.pow  += m_itemContribution.pow;
-		m_currentStats.str  += m_itemContribution.str;
-		m_currentStats.spi  += m_itemContribution.spi;
-		m_currentStats.dex  += m_itemContribution.dex;
-		m_currentStats.intel += m_itemContribution.intel;
-		m_currentStats.sta  += m_itemContribution.sta;
-
-		// Calculate max resources from stats + class factors + item contributions
-		// HP = (STR * fHP_STR + itemHP) * (1 + itemHPRate) + itemHPVolume
-		// Note: passive skills and conft rates handled elsewhere if needed
-		float strFactor = m_baseData->hpStrFactor;
-		float spiFactor = m_baseData->mpSpiFactor;
-		float staFactor = m_baseData->spStaFactor;
-
-		float baseHP = m_currentStats.str * strFactor;
-		float baseMP = m_currentStats.spi * spiFactor;
-		float baseSP = m_currentStats.sta * staFactor;
-
-		// Add flat item HP/MP/SP
-		baseHP += m_itemContribution.hp;
-		baseMP += m_itemContribution.mp;
-		baseSP += m_itemContribution.sp;
-
-		// Apply rate multipliers (1 + rate)
-		baseHP *= (1.0f + m_itemContribution.hpRate);
-		baseMP *= (1.0f + m_itemContribution.mpRate);
-		baseSP *= (1.0f + m_itemContribution.spRate);
-
-		// Add volume (flat)
-		baseHP += m_itemContribution.hpVolume;
-		baseMP += m_itemContribution.mpVolume;
-		baseSP += m_itemContribution.spVolume;
-
-		// Apply class base resources as minimum (removed - legacy formula doesn't clamp to class base)
-		// The class baseHP/baseMP/baseSP are naturally produced by the formula at level 1 with no items
-
-		m_hpMax = static_cast<uint32_t>(baseHP);
-		m_mpMax = static_cast<uint32_t>(baseMP);
-		m_spMax = static_cast<uint32_t>(baseSP);
-
-		// Clamp current values to new max
-		if (m_hpNow > m_hpMax) m_hpNow = m_hpMax;
-		if (m_mpNow > m_mpMax) m_mpNow = m_mpMax;
-		if (m_spNow > m_spMax) m_spNow = m_spMax;
+		m_itemContribution = CalculateItemContribution(
+			m_itemDataProvider,
+			m_equippedItems.data(),
+			EquipSlotCount);
 	}
+
+	// Calculate instance custom contributions (GETADDPA, GETADDSA, GETDAMAGE, etc.)
+	m_instanceContribution.Reset();
+	if (m_itemDataProvider)
+	{
+		m_instanceContribution = CalculateInstanceCustomContribution(
+			m_itemDataProvider,
+			m_equippedItems.data(),
+			EquipSlotCount);
+	}
+
+	// Get passive skill contributions
+	PassiveSkillContribution passiveContribution;
+	if (m_passiveSkillProvider)
+	{
+		passiveContribution = m_passiveSkillProvider->GetContribution(*this);
+	}
+
+	// Get codex contributions
+	CodexContribution codexContribution;
+	if (m_codexProvider)
+	{
+		codexContribution = m_codexProvider->GetCodexContribution();
+	}
+
+	// Add item stat contributions to current stats (legacy behavior: stats include item bonuses before HP/MP/SP calc)
+	m_currentStats.pow  += m_itemContribution.pow;
+	m_currentStats.str  += m_itemContribution.str;
+	m_currentStats.spi  += m_itemContribution.spi;
+	m_currentStats.dex  += m_itemContribution.dex;
+	m_currentStats.intel += m_itemContribution.intel;
+	m_currentStats.sta  += m_itemContribution.sta;
+
+	// Add passive stat contributions (legacy: m_sSUM_PASSIVE.m_nPA/SA/MA added to stats)
+	m_currentStats.pow  += passiveContribution.pa;
+	m_currentStats.spi  += passiveContribution.sa;
+	m_currentStats.intel += passiveContribution.ma;
+
+	// Calculate max resources from stats + class factors + item contributions + passive contributions
+	// Legacy formula (GLOGICEX::SUM_ADDITION):
+	//   1. base = STAT * factor + itemFlatHP + passiveFlatHP  -> DWORD truncation
+	//   2. base = base * (1 + itemRate + passiveRate) * conftRate  -> DWORD truncation
+	//   3. base += itemVolume
+	//   4. base += codexIncrease
+	//   5. LIMIT()
+	// Modern: match truncation steps; passive and conft integrated; codex not yet
+	// TODO(verification): Integrate codex increases (m_dwHPIncrease, etc.)
+	// TODO(verification): Instance custom values
+	// TODO(verification): Additional random options
+	// TODO(verification): Charm handling
+	float strFactor = m_baseData->hpStrFactor;
+	float spiFactor = m_baseData->mpSpiFactor;
+	float staFactor = m_baseData->spStaFactor;
+
+	// Step 1: base = STAT * factor + itemFlatHP + passiveFlatHP (truncated to integer, matching legacy DWORD cast)
+	uint32_t baseHP = static_cast<uint32_t>(m_currentStats.str * strFactor + m_itemContribution.hp + passiveContribution.hp);
+	uint32_t baseMP = static_cast<uint32_t>(m_currentStats.spi * spiFactor + m_itemContribution.mp + passiveContribution.mp);
+	uint32_t baseSP = static_cast<uint32_t>(m_currentStats.sta * staFactor + m_itemContribution.sp + passiveContribution.sp);
+
+	// Step 2: Apply rate multipliers (1 + itemRate + passiveRate) * conftPointRate with truncation (matching legacy second DWORD cast)
+	// Legacy SUM_ADDITION: DWORD(base * (1 + passiveRate) * fCONFT_POINT_RATE)
+	// Legacy UPDATE_MAX_POINT: DWORD(base * (1 + passiveRate + activeRate) * fCONFT_POINT_RATE)
+	// Modern: itemRate + passiveRate combined, conft rate applied at same position
+	baseHP = static_cast<uint32_t>(baseHP * (1.0f + m_itemContribution.hpRate + passiveContribution.hpRate) * m_conftPointRate);
+	baseMP = static_cast<uint32_t>(baseMP * (1.0f + m_itemContribution.mpRate + passiveContribution.mpRate) * m_conftPointRate);
+	baseSP = static_cast<uint32_t>(baseSP * (1.0f + m_itemContribution.spRate + passiveContribution.spRate) * m_conftPointRate);
+
+	// Step 3: Add volume (flat, no further truncation in legacy before LIMIT)
+	baseHP += static_cast<uint32_t>(m_itemContribution.hpVolume);
+	baseMP += static_cast<uint32_t>(m_itemContribution.mpVolume);
+	baseSP += static_cast<uint32_t>(m_itemContribution.spVolume);
+
+	// Step 4: Add codex increases (legacy: m_dwHPIncrease added AFTER rate multiplication)
+	// Legacy: m_sHP.dwMax += m_dwHPIncrease
+	baseHP += codexContribution.hpIncrease;
+	baseMP += codexContribution.mpIncrease;
+	baseSP += codexContribution.spIncrease;
+
+	// Step 5: Final max values (legacy LIMIT() clamps to max DWORD, not needed here)
+	m_hpMax = baseHP;
+	m_mpMax = baseMP;
+	m_spMax = baseSP;
+
+	// Clamp current values to new max
+	if (m_hpNow > m_hpMax) m_hpNow = m_hpMax;
+	if (m_mpNow > m_mpMax) m_mpNow = m_mpMax;
+	if (m_spNow > m_spMax) m_spNow = m_spMax;
+
+	// Calculate combat stats (legacy GLOGICEX::SUM_ADDITION order)
+	// Note: This mirrors the legacy calculation sequence exactly
+	// 1. Base values from stats
+	// 2. Item flat contributions
+	// 3. Passive flat contributions
+	// 4. Item rate multipliers
+	// 5. Passive rate multipliers
+	// 6. Skill/buff/pet/land effects (not yet implemented)
+
+	// Character constants (legacy cCHARCONST)
+	constexpr float kHitDexFactor   = 1.0f;  // cCHARCONST.fHIT_DEX
+	constexpr float kAvoidDexFactor = 1.0f;  // cCHARCONST.fAVOID_DEX
+	constexpr float kDefenseDexFactor = 1.0f; // cCHARCONST.fDEFENSE_DEX
+
+	// Base DP/AP from character base data (m_wSUM_DP, m_wSUM_AP)
+	// These would come from class-specific formulas; for now use baseData placeholders
+	// Legacy: m_wSUM_DP = class base defense + level scaling
+	// Legacy: m_wSUM_AP = class base attack + level scaling
+	const int32_t baseDP = m_baseData->baseDefense; // placeholder
+	const int32_t baseAP = m_baseData->baseAttack;  // placeholder
+
+	// Reset combat stats
+	m_combatStats.Reset();
+
+	// --- HIT ---
+	// Legacy: int ( DEX * fHIT_DEX + itemHit + passiveHit + codexHit )
+	// Then: int ( hit * (100 + itemHitRatePer + instanceHitRatePer) * 0.01f )
+	{
+		int32_t hit = static_cast<int32_t>(m_currentStats.dex * kHitDexFactor
+			+ m_itemContribution.hitRate
+			+ passiveContribution.hitRate
+			+ static_cast<int32_t>(codexContribution.hitRateIncrease));
+		// Item rate multiplier (percentage) + instance rate
+		hit = static_cast<int32_t>(hit * (100.0f + m_itemContribution.hitRatePer + m_instanceContribution.hitRatePer) * 0.01f);
+		m_combatStats.hitRate = hit;
+	}
+
+	// --- AVOID ---
+	// Legacy: int ( DEX * fAVOID_DEX + itemAvoid + passiveAvoid + codexAvoid )
+	// Then: int ( avoid * (100 + itemAvoidRatePer + instanceAvoidRatePer) * 0.01f )
+	{
+		int32_t avoid = static_cast<int32_t>(m_currentStats.dex * kAvoidDexFactor
+			+ m_itemContribution.avoidRate
+			+ passiveContribution.avoidRate
+			+ static_cast<int32_t>(codexContribution.avoidRateIncrease));
+		avoid = static_cast<int32_t>(avoid * (100.0f + m_itemContribution.avoidRatePer + m_instanceContribution.avoidRatePer) * 0.01f);
+		m_combatStats.avoidRate = avoid;
+	}
+
+	// --- DEFENSE ---
+	// Legacy: int ( DP + DEX * fDEFENSE_DEX ) = m_nDEFENSE_BODY
+	// Then: int ( m_nDEFENSE_BODY + itemDefense + passiveDefense + instanceDefense + codexDefense ) = m_nDEFENSE
+	// Then: ApplyDefenseRate( defense, defenseRate )
+	{
+		int32_t defenseBody = static_cast<int32_t>(baseDP + m_currentStats.dex * kDefenseDexFactor);
+		m_combatStats.defenseBody = defenseBody;
+
+		int32_t defense = defenseBody
+			+ m_itemContribution.defense
+			+ passiveContribution.defense
+			+ m_instanceContribution.defense
+			+ static_cast<int32_t>(codexContribution.defenseIncrease);
+		m_combatStats.defense = defense;
+
+		// Defense rate: base 1.0 + passive + later skill/buff/pet/land
+		m_combatStats.defenseRate = 1.0f + passiveContribution.defenseRate;
+		// Apply rate
+		m_combatStats.defenseSkill = static_cast<int32_t>(defense * m_combatStats.defenseRate);
+	}
+
+	// --- DAMAGE ---
+	// Legacy: int ( AP + passiveDamage + codexAttack ) = m_gdDAMAGE (low=high for melee)
+	// Then: m_gdDAMAGE_SKILL = m_gdDAMAGE
+	// Then: m_gdDAMAGE_PHYSIC = m_gdDAMAGE_SKILL + itemDamage + instanceDamage
+	// Then: VAR_PARAM with PA (melee) or SA (range) + instance PA
+	// Then: ApplyDamageRate to physical damage
+	{
+		CombatStats::DamageRange baseDamage;
+		baseDamage.low = baseAP + passiveContribution.damage + static_cast<int32_t>(codexContribution.attackIncrease);
+		baseDamage.high = baseAP + passiveContribution.damage + static_cast<int32_t>(codexContribution.attackIncrease);
+		m_combatStats.baseDamage = baseDamage;
+
+		// Skill damage (after skill buffs, not yet implemented)
+		m_combatStats.skillDamage = baseDamage;
+
+		// Physical damage: add item damage
+		CombatStats::DamageRange physicalDamage = baseDamage;
+		physicalDamage.low += static_cast<int32_t>(m_itemContribution.damageLow);
+		physicalDamage.high += static_cast<int32_t>(m_itemContribution.damageHigh);
+
+		// Add instance custom damage (legacy: GETDAMAGE() added to m_sSUMITEM.gdDamage)
+		physicalDamage.low += static_cast<int32_t>(m_instanceContribution.damageLow);
+		physicalDamage.high += static_cast<int32_t>(m_instanceContribution.damageHigh);
+
+		// VAR_PARAM: add PA (melee) or SA (ranged) - for now assume melee
+		physicalDamage.low += m_currentStats.pow;  // PA equivalent
+		physicalDamage.high += m_currentStats.pow;
+
+		// Add instance custom PA/SA (legacy: GETADDPA/GETADDSA added to m_sSUMITEM.nPA/nSA)
+		physicalDamage.low += m_instanceContribution.addPA;
+		physicalDamage.high += m_instanceContribution.addPA;
+
+		// Damage rate: base 1.0 + passive + later skill/buff/pet/land
+		m_combatStats.damageRate = 1.0f + passiveContribution.damageRate;
+
+		// Apply damage rate with DWORD truncation (legacy behavior)
+		physicalDamage.low = static_cast<uint32_t>(physicalDamage.low * m_combatStats.damageRate);
+		physicalDamage.high = static_cast<uint32_t>(physicalDamage.high * m_combatStats.damageRate);
+
+		// Legacy clamp: if >= 50000, set to 1
+		if (physicalDamage.low >= 50000) physicalDamage.low = 1;
+		if (physicalDamage.high >= 50000) physicalDamage.high = 1;
+
+		m_combatStats.physicalDamage = physicalDamage;
+	}
+
+	// --- RESIST ---
+	// Legacy: passiveResist + itemResist + codexResist
+	// Later: skill/buff/pet/land add, then LIMIT()
+	{
+		int32_t codexResist = static_cast<int32_t>(codexContribution.resistanceIncrease);
+		m_combatStats.resistFire   = CombatStats::ApplyResistanceLimit(passiveContribution.resistFire   + m_itemContribution.resistFire + codexResist);
+		m_combatStats.resistIce    = CombatStats::ApplyResistanceLimit(passiveContribution.resistIce    + m_itemContribution.resistIce + codexResist);
+		m_combatStats.resistElec   = CombatStats::ApplyResistanceLimit(passiveContribution.resistElec   + m_itemContribution.resistElec + codexResist);
+		m_combatStats.resistPoison = CombatStats::ApplyResistanceLimit(passiveContribution.resistPoison + m_itemContribution.resistPoison + codexResist);
+		m_combatStats.resistSpirit = CombatStats::ApplyResistanceLimit(passiveContribution.resistSpirit + m_itemContribution.resistSpirit + codexResist);
+		// Legacy LIMIT() applied: clamp negative to 0 (no upper bound)
+	}
+
+	// --- PIERCE ---
+	// Legacy: passivePierce + skillPierce
+	m_combatStats.pierce = passiveContribution.pierce;
+
+	// --- TARGET RANGE ---
+	// Legacy: passiveTargetRange + skillTargetRange
+	m_combatStats.targetRange = passiveContribution.targetRange;
+
+	// --- SKILL RANGES ---
+	// Legacy: passive + skill
+	m_combatStats.skillAttackRange = passiveContribution.skillAttackRange;
+	m_combatStats.skillApplyRange  = passiveContribution.skillApplyRange;
+
+	// --- VELOCITY ---
+	// Legacy: move = passiveMove + stateMove + pet/land
+	// Legacy: attack = passiveAttack + stateAttack + pet/land
+	m_combatStats.moveVelocity  = passiveContribution.moveVelocity;
+	m_combatStats.attackVelocity = passiveContribution.attackVelocity;
+
+	// --- SKILL DELAY ---
+	// Legacy: delay = passiveDelay + stateDelay + skill/quest/pet
+	m_combatStats.skillDelay = passiveContribution.skillDelay;
+
+	// --- DAMAGE SPEC ---
+	// Legacy: passiveDamageSpec copied, then skills can max-increase values
+	m_combatStats.damageSpec = passiveContribution.damageSpec;
+
+	// TODO(verification): Integrate skill/buff/pet/land effects
+	// TODO(verification): Instance custom values for PA/SA/MA (GETADDMA)
+	// TODO(verification): Additional random options
+	// TODO(verification): Charm handling
+}
 
 	// Equipment methods
 	bool Character::EquipItem(EquipSlot slot, uint32_t itemId)

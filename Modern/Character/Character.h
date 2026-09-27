@@ -5,7 +5,11 @@
 #include "../Entity/Entity.h"
 #include "../Progression/ProgressionData.h"
 #include "../Item/ItemData.h"
+#include "../Item/InstanceCustomContribution.h"
 #include "CharacterBaseData.h"
+#include "PassiveSkillData.h"
+#include "CombatStats.h"
+#include "CodexContribution.h"
 
 #include <cstdint>
 #include <string>
@@ -62,32 +66,41 @@ namespace Modern
 		Character() = default;
 		Character(EntityId id, const std::string& name);
 
+		// Lifecycle
 		void Spawn(const Vector3& position, const Vector3& direction);
 		void Despawn();
 
+		// Movement
 		void MoveTo(const Vector3& target);
 		void Walk();
 		void Run();
 		void Stop();
 		void TurnTo(const Vector3& direction);
 
+		// Life/Death
 		void Die();
 		void Revive(const Vector3& position, const Vector3& direction);
 
+		// Update
 		void Update(float elapsedSeconds);
 
+		// Identity
 		void SetName(const std::string& name);
 		void SetClass(uint32_t classId, Gender gender);
 		void SetSchool(uint16_t school);
 		void SetLevel(uint16_t level);
 
+		// Resource max setters
 		void SetMaxHP(uint32_t max);
 		void SetMaxMP(uint32_t max);
 		void SetMaxSP(uint32_t max);
+
+		// Resource current setters
 		void SetHP(uint32_t now);
 		void SetMP(uint32_t now);
 		void SetSP(uint32_t now);
 
+		// Resource modification
 		void DamageHP(uint32_t amount);
 		void HealHP(uint32_t amount);
 		void ConsumeMP(uint32_t amount);
@@ -95,12 +108,16 @@ namespace Modern
 		void RecoverMP(uint32_t amount);
 		void RecoverSP(uint32_t amount);
 
+		// Recovery rates
 		void SetRecoveryRates(float hpPerSec, float mpPerSec, float spPerSec);
 		void RecoverAll(float elapsedSeconds);
 
-		void SetProgressionData(const ProgressionData* data);
-		void SetBaseDataProvider(const ICharacterBaseDataProvider* provider);
-		void SetItemDataProvider(const IItemDataProvider* provider);
+		// Data providers (non-owning, must remain valid for Character lifetime)
+		void SetProgressionData(const ProgressionData& data);
+		void SetBaseDataProvider(const ICharacterBaseDataProvider& provider);
+		void SetItemDataProvider(const IItemDataProvider& provider);
+		void SetPassiveSkillProvider(const IPassiveSkillProvider& provider);
+		void SetCodexProvider(const ICodexProvider& provider);
 		void SetMaxLevel(uint16_t maxLevel) { m_maxLevel = maxLevel; }
 		void AddExperience(int64_t amount);
 
@@ -110,6 +127,7 @@ namespace Modern
 		const ItemInstanceData* GetEquippedItem(EquipSlot slot) const;
 		bool IsSlotValid(EquipSlot slot) const;
 
+		// Transform
 		void SetPosition(const Vector3& position);
 		void SetDirection(const Vector3& direction);
 		void SetAction(ActionType action);
@@ -117,6 +135,7 @@ namespace Modern
 		void AddActState(uint32_t state) { m_actState |= state; }
 		void RemoveActState(uint32_t state) { m_actState &= ~state; }
 
+		// Getters
 		EntityId        GetId() const { return m_entity.id; }
 		const std::string& GetName() const { return m_nameString; }
 		const Vector3&  GetPosition() const { return m_entity.position; }
@@ -147,6 +166,13 @@ namespace Modern
 
 		CharacterInfo Inspect() const;
 
+		// Combat stats
+		const CombatStats& GetCombatStats() const { return m_combatStats; }
+
+		// Confrontation point rate (legacy fCONFT_POINT_RATE)
+		void SetConftPointRate(float rate) { m_conftPointRate = rate; }
+		float GetConftPointRate() const { return m_conftPointRate; }
+
 	private:
 		void DieInternal();
 		void RefreshExpMax();
@@ -167,12 +193,16 @@ namespace Modern
 		const ProgressionData*              m_progression = nullptr;
 		const ICharacterBaseDataProvider*   m_baseDataProvider = nullptr;
 		const IItemDataProvider*            m_itemDataProvider = nullptr;
+		const IPassiveSkillProvider*        m_passiveSkillProvider = nullptr;
+		const ICodexProvider*               m_codexProvider = nullptr;
 		const CharacterBaseData*            m_baseData = nullptr;
 		CharacterStats                      m_currentStats;
 
 		// Equipment state
 		std::array<ItemInstanceData, EquipSlotCount> m_equippedItems;
 		ItemContribution                    m_itemContribution;
+		InstanceCustomContribution          m_instanceContribution;
+		CombatStats                         m_combatStats;
 
 		uint32_t                            m_hpNow = 0;
 		uint32_t                            m_hpMax = 0;
@@ -184,6 +214,10 @@ namespace Modern
 		float                               m_hpRecoverPerSec = kDefaultHpRecoverPerSec;
 		float                               m_mpRecoverPerSec = kDefaultMpRecoverPerSec;
 		float                               m_spRecoverPerSec = kDefaultSpRecoverPerSec;
+
+		// Confrontation point rate (legacy fCONFT_POINT_RATE)
+		// Default 1.0f; when in confrontation, set to m_sCONFTING.sOption.fHP_RATE
+		float                               m_conftPointRate = 1.0f;
 
 		ActionType                          m_action  = ActionType::Idle;
 		uint32_t                            m_actState = ActState::None;

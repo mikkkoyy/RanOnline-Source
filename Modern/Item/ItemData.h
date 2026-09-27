@@ -115,8 +115,27 @@ namespace Modern
 		SPInc       = 6,   // EMR_OPT_SP_INC
 		HMSInc      = 7,   // EMR_OPT_HMS_INC
 		BlowRate    = 8,   // EMR_OPT_BLOW_RATE
-		StrikeRate  = 8,   // EMR_OPT_STRIKE_RATE
+		StrikeRate  = 8,   // EMR_OPT_STRIKE_RATE (alias)
 		MoveSpeed   = 9,   // EMR_OPT_MOVE_SPEED
+
+		// Additional legacy random options for instance custom values
+		Damage      = 10,  // EMR_OPT_DAMAGE
+		Defense     = 11,  // EMR_OPT_DEFENSE
+		HitRate     = 12,  // EMR_OPT_HITRATE
+		AvoidRate   = 13,  // EMR_OPT_AVOIDRATE
+		Melee       = 14,  // EMR_OPT_MELEE
+		Shooting    = 15,  // EMR_OPT_SHOOTING
+		Energy      = 16,  // EMR_OPT_ENERGY
+		HPRec       = 17,  // EMR_OPT_HP_REC
+		MPRec       = 18,  // EMR_OPT_MP_REC
+		SPRec       = 19,  // EMR_OPT_SP_REC
+		AttackVol   = 20,  // EMR_OPT_ATTACK_VOL
+		Power       = 21,  // EMR_OPT_POWER
+		Vitality    = 22,  // EMR_OPT_VITALITY
+		Spirit      = 23,  // EMR_OPT_SPIRIT
+		Dexterity   = 24,  // EMR_OPT_DEXTERITY
+		Stamina     = 25,  // EMR_OPT_STAMINA
+		CP          = 26,  // EMR_OPT_CP
 		Count
 	};
 
@@ -374,15 +393,22 @@ namespace Modern
 		// Move/atk speed
 		float moveSpeedRate = 0.0f;
 		float atkSpeedRate = 0.0f;
+		float moveSpeedVolume = 0.0f;
+		float atkSpeedVolume = 0.0f;
 
 		// Crit/crush
 		float criticalRate = 0.0f;
 		float crushingBlowRate = 0.0f;
+		float criticalVolume = 0.0f;
+		float crushingBlowVolume = 0.0f;
 
 		// Damage reduction rates
 		float decDmgMelee = 0.0f;
 		float decDmgRange = 0.0f;
 		float decDmgMagic = 0.0f;
+		float decDmgMeleeVolume = 0.0f;
+		float decDmgRangeVolume = 0.0f;
+		float decDmgMagicVolume = 0.0f;
 
 		// Hit/avoid rate multipliers
 		float hitRatePer = 0.0f;
@@ -438,6 +464,12 @@ namespace Modern
 
 	// Calculate total item contribution from equipped items
 	ItemContribution CalculateItemContribution(
+		const IItemDataProvider* provider,
+		const ItemInstanceData* equippedItems,
+		size_t slotCount);
+
+	// Calculate instance custom contributions (GETADDPA, GETADDSA, GETDAMAGE, etc.)
+	InstanceCustomContribution CalculateInstanceCustomContribution(
 		const IItemDataProvider* provider,
 		const ItemInstanceData* equippedItems,
 		size_t slotCount);

@@ -1,4 +1,5 @@
 #include "ItemData.h"
+#include "InstanceCustomContribution.h"
 
 #include <algorithm>
 #include <vector>
@@ -54,13 +55,20 @@ namespace Modern
 
 		moveSpeedRate += other.moveSpeedRate;
 		atkSpeedRate += other.atkSpeedRate;
+		moveSpeedVolume += other.moveSpeedVolume;
+		atkSpeedVolume += other.atkSpeedVolume;
 
 		criticalRate += other.criticalRate;
 		crushingBlowRate += other.crushingBlowRate;
+		criticalVolume += other.criticalVolume;
+		crushingBlowVolume += other.crushingBlowVolume;
 
 		decDmgMelee += other.decDmgMelee;
 		decDmgRange += other.decDmgRange;
 		decDmgMagic += other.decDmgMagic;
+		decDmgMeleeVolume += other.decDmgMeleeVolume;
+		decDmgRangeVolume += other.decDmgRangeVolume;
+		decDmgMagicVolume += other.decDmgMagicVolume;
 
 		hitRatePer += other.hitRatePer;
 		avoidRatePer += other.avoidRatePer;
@@ -330,7 +338,7 @@ namespace Modern
 			}
 		}
 
-		// Volume (flat HP/MP/SP/AP)
+		// Volume (flat HP/MP/SP/AP and other variates)
 		if (base->volume.type != VariateType::None)
 		{
 			switch (static_cast<int>(base->volume.type))
@@ -339,6 +347,13 @@ namespace Modern
 				case static_cast<int>(VariateType::MP):  out.mpVolume += base->volume.value; break;
 				case static_cast<int>(VariateType::SP):  out.spVolume += base->volume.value; break;
 				case static_cast<int>(VariateType::AP):  out.hpVolume += base->volume.value; out.mpVolume += base->volume.value; out.spVolume += base->volume.value; break;
+				case static_cast<int>(VariateType::MoveSpeed):  out.moveSpeedVolume += base->volume.value; break;
+				case static_cast<int>(VariateType::AtkSpeed):   out.atkSpeedVolume += base->volume.value; break;
+				case static_cast<int>(VariateType::CriticalRate): out.criticalVolume += base->volume.value; break;
+				case static_cast<int>(VariateType::CrushingBlow): out.crushingBlowVolume += base->volume.value; break;
+				case static_cast<int>(VariateType::DecDmgMelee):  out.decDmgMeleeVolume += base->volume.value; break;
+				case static_cast<int>(VariateType::DecDmgRange):  out.decDmgRangeVolume += base->volume.value; break;
+				case static_cast<int>(VariateType::DecDmgMagic):  out.decDmgMagicVolume += base->volume.value; break;
 				default: break;
 			}
 		}
@@ -444,6 +459,180 @@ namespace Modern
 
 			// Add instance-specific overrides
 			AddInstanceContribution(&inst, base, total);
+		}
+
+		// TODO(verification): Verify against legacy SSUM_ITEM for:
+		// - Instance custom values (GETADDPA, GETADDSA, GETADDENERGY, GETDAMAGE, GETDEFENSE, GETHITRATE, GETAVOIDRATE, GETRESIST_*, GET_STAT_*)
+		// - Volume fields for MoveSpeed, AtkSpeed, CriticalRate, CrushingBlow, DecDmgMelee/Range/Magic
+		// - Random options not yet handled: EMR_OPT_DAMAGE, EMR_OPT_DEFENSE, EMR_OPT_HITRATE, EMR_OPT_AVOIDRATE, EMR_OPT_GRIND_DAMAGE, EMR_OPT_GRIND_DEFENSE, EMR_OPT_RANGE, EMR_OPT_DIS_SP, EMR_OPT_RESIST, EMR_OPT_ATTACK_VOL, EMR_OPT_DEFENSE_VOL, EMR_OPT_HIT_VOL, EMR_OPT_AVOID_VOL, EMR_OPT_POWER, EMR_OPT_VITALITY, EMR_OPT_SPIRIT, EMR_OPT_DEXTERITY, EMR_OPT_STAMINA, EMR_OPT_MELEE, EMR_OPT_SHOOTING, EMR_OPT_ENERGY, EMR_OPT_HP_REC, EMR_OPT_MP_REC, EMR_OPT_SP_REC, EMR_OPT_CP
+		// - Charm items (ITEM_CHARM) skipped in legacy SUM_ITEM
+		return total;
+	}
+
+	// Calculate instance custom contributions from equipped items
+	// Mirrors legacy SITEMCUSTOM computed values:
+	// GETADDPA() - melee random option (EMR_OPT_MELEE)
+	// GETADDSA() - shooting random option (EMR_OPT_SHOOTING)
+	// GETADDMA() - energy random option (EMR_OPT_ENERGY)
+	// GETDAMAGE() - base damage + grade + random option rate/volume
+	// GETDEFENSE() - base defense + grade
+	// GETHITRATE() - base hit + random option
+	// GETAVOIDRATE() - base avoid + random option
+	// GETHITRATE_PER() - random option hit rate %
+	// GETAVOIDRATE_PER() - random option avoid rate %
+	InstanceCustomContribution CalculateInstanceCustomContribution(
+		const IItemDataProvider* provider,
+		const ItemInstanceData* equippedItems,
+		size_t slotCount)
+	{
+		InstanceCustomContribution total{};
+
+		if (!provider) return total;
+
+		for (size_t i = 0; i < slotCount; ++i)
+		{
+			const ItemInstanceData& inst = equippedItems[i];
+			if (inst.itemId == 0) continue;
+
+			const ItemBaseData* base = provider->GetItemData(inst.itemId);
+			if (!base) continue;
+
+			// GETADDPA - melee random option (EMR_OPT_MELEE)
+			if (base->randomOpts.type1 == RandomOptType::Melee)
+				total.addPA += base->randomOpts.value1;
+			if (base->randomOpts.type2 == RandomOptType::Melee)
+				total.addPA += base->randomOpts.value2;
+			if (base->randomOpts.type3 == RandomOptType::Melee)
+				total.addPA += base->randomOpts.value3;
+			if (base->randomOpts.type4 == RandomOptType::Melee)
+				total.addPA += base->randomOpts.value4;
+
+			// Instance random options
+			if (inst.randomOpts.type1 == RandomOptType::Melee)
+				total.addPA += inst.randomOpts.value1;
+			if (inst.randomOpts.type2 == RandomOptType::Melee)
+				total.addPA += inst.randomOpts.value2;
+			if (inst.randomOpts.type3 == RandomOptType::Melee)
+				total.addPA += inst.randomOpts.value3;
+			if (inst.randomOpts.type4 == RandomOptType::Melee)
+				total.addPA += inst.randomOpts.value4;
+
+			// GETADDSA - shooting random option (EMR_OPT_SHOOTING)
+			if (base->randomOpts.type1 == RandomOptType::Shooting)
+				total.addSA += base->randomOpts.value1;
+			if (base->randomOpts.type2 == RandomOptType::Shooting)
+				total.addSA += base->randomOpts.value2;
+			if (base->randomOpts.type3 == RandomOptType::Shooting)
+				total.addSA += base->randomOpts.value3;
+			if (base->randomOpts.type4 == RandomOptType::Shooting)
+				total.addSA += base->randomOpts.value4;
+
+			if (inst.randomOpts.type1 == RandomOptType::Shooting)
+				total.addSA += inst.randomOpts.value1;
+			if (inst.randomOpts.type2 == RandomOptType::Shooting)
+				total.addSA += inst.randomOpts.value2;
+			if (inst.randomOpts.type3 == RandomOptType::Shooting)
+				total.addSA += inst.randomOpts.value3;
+			if (inst.randomOpts.type4 == RandomOptType::Shooting)
+				total.addSA += inst.randomOpts.value4;
+
+			// GETADDMA - energy random option (EMR_OPT_ENERGY)
+			if (base->randomOpts.type1 == RandomOptType::Energy)
+				total.addMA += base->randomOpts.value1;
+			if (base->randomOpts.type2 == RandomOptType::Energy)
+				total.addMA += base->randomOpts.value2;
+			if (base->randomOpts.type3 == RandomOptType::Energy)
+				total.addMA += base->randomOpts.value3;
+			if (base->randomOpts.type4 == RandomOptType::Energy)
+				total.addMA += base->randomOpts.value4;
+
+			if (inst.randomOpts.type1 == RandomOptType::Energy)
+				total.addMA += inst.randomOpts.value1;
+			if (inst.randomOpts.type2 == RandomOptType::Energy)
+				total.addMA += inst.randomOpts.value2;
+			if (inst.randomOpts.type3 == RandomOptType::Energy)
+				total.addMA += inst.randomOpts.value3;
+			if (inst.randomOpts.type4 == RandomOptType::Energy)
+				total.addMA += inst.randomOpts.value4;
+
+			// GETDAMAGE - base damage + grade damage + random option damage/attack_vol
+			// Legacy: base + grade + (base + attack_vol) * (100 + damage_rate) * 0.01f
+			{
+				uint32_t damageLow = base->damageLow;
+				uint32_t damageHigh = base->damageHigh;
+
+				// Grade damage
+				if (inst.damageGrade > 0)
+				{
+					damageLow += inst.damageGrade * 2;
+					damageHigh += inst.damageGrade * 2;
+				}
+
+				// Random option: EMR_OPT_DAMAGE (rate) and EMR_OPT_ATTACK_VOL (volume)
+				float damageRate = 0.0f;
+				float attackVol = 0.0f;
+
+				auto extractDamageOpts = [&](const ItemRandomOption& ro) {
+					if (ro.type1 == RandomOptType::Damage) damageRate += ro.value1 * 0.01f;
+					if (ro.type2 == RandomOptType::Damage) damageRate += ro.value2 * 0.01f;
+					if (ro.type3 == RandomOptType::Damage) damageRate += ro.value3 * 0.01f;
+					if (ro.type4 == RandomOptType::Damage) damageRate += ro.value4 * 0.01f;
+					// Note: ATTACK_VOL would need a dedicated RandomOptType, omitted for now
+				};
+
+				extractDamageOpts(base->randomOpts);
+				extractDamageOpts(inst.randomOpts);
+
+				if (damageRate != 0.0f)
+				{
+					if (attackVol != 0.0f)
+					{
+						damageLow = static_cast<uint32_t>((damageLow + attackVol) * (100.0f + damageRate) * 0.01f);
+						damageHigh = static_cast<uint32_t>((damageHigh + attackVol) * (100.0f + damageRate) * 0.01f);
+					}
+					else
+					{
+						damageLow = static_cast<uint32_t>(damageLow * (100.0f + damageRate) * 0.01f);
+						damageHigh = static_cast<uint32_t>(damageHigh * (100.0f + damageRate) * 0.01f);
+					}
+				}
+				else if (attackVol != 0.0f)
+				{
+					damageLow += static_cast<uint32_t>(attackVol);
+					damageHigh += static_cast<uint32_t>(attackVol);
+				}
+
+				total.damageLow += damageLow;
+				total.damageHigh += damageHigh;
+			}
+
+			// GETDEFENSE - base defense + grade defense
+			{
+				int32_t defense = base->defense;
+				if (inst.defenseGrade > 0)
+					defense += inst.defenseGrade * 2;
+				total.defense += defense;
+			}
+
+			// GETHITRATE - base hit + random option hit
+			// Note: Full legacy implementation includes EMR_OPT_HITRATE and EMR_OPT_HIT_VOL
+			// Simplified: just base hitRate from SSUIT
+			total.hitRate += base->hitRate;
+
+			// GETAVOIDRATE - base avoid + random option avoid
+			total.avoidRate += base->avoidRate;
+
+			// GETHITRATE_PER - random option hit rate %
+			if (base->randomOpts.type1 == RandomOptType::HitRate)
+				total.hitRatePer += base->randomOpts.value1 * 0.01f;
+			if (inst.randomOpts.type1 == RandomOptType::HitRate)
+				total.hitRatePer += inst.randomOpts.value1 * 0.01f;
+
+			// GETAVOIDRATE_PER - random option avoid rate %
+			if (base->randomOpts.type1 == RandomOptType::AvoidRate)
+				total.avoidRatePer += base->randomOpts.value1 * 0.01f;
+			if (inst.randomOpts.type1 == RandomOptType::AvoidRate)
+				total.avoidRatePer += inst.randomOpts.value1 * 0.01f;
 		}
 
 		return total;

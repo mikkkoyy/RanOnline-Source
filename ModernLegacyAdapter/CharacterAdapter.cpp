@@ -18,14 +18,17 @@ namespace Modern
 			CharClassToGender(src.m_emClass) == GLGENDER_M ? Gender::Male : Gender::Female);
 		c.SetSchool(src.m_wSchool);
 		c.SetLevel(src.m_wLevel);
-		c.SetExperience(static_cast<uint64_t>(src.m_sExperience.lnNow),
-						static_cast<uint64_t>(src.m_sExperience.lnMax));
+		
+		// Set experience by adding the current amount (starts at 0 after Spawn)
+		if (src.m_sExperience.lnNow > 0)
+			c.AddExperience(static_cast<int64_t>(src.m_sExperience.lnNow));
 
-		Stats stats;
-		stats.hpNow = src.m_sHP.dwNow; stats.hpMax = src.m_sHP.dwMax;
-		stats.mpNow = src.m_sMP.dwNow; stats.mpMax = src.m_sMP.dwMax;
-		stats.spNow = src.m_sSP.dwNow; stats.spMax = src.m_sSP.dwMax;
-		c.SetStats(stats);
+		c.SetMaxHP(src.m_sHP.dwMax);
+		c.SetMaxMP(src.m_sMP.dwMax);
+		c.SetMaxSP(src.m_sSP.dwMax);
+		c.SetHP(src.m_sHP.dwNow);
+		c.SetMP(src.m_sMP.dwNow);
+		c.SetSP(src.m_sSP.dwNow);
 
 		const D3DXVECTOR3& pos = src.GetPosition();
 		c.SetPosition(Vector3(pos.x, pos.y, pos.z));
@@ -53,10 +56,9 @@ namespace Modern
 		dst.m_sExperience.lnNow = static_cast<LONGLONG>(info.expNow);
 		dst.m_sExperience.lnMax = static_cast<LONGLONG>(info.expMax);
 
-		const Stats s = src.GetStats();
-		dst.m_sHP.dwNow = s.hpNow; dst.m_sHP.dwMax = s.hpMax;
-		dst.m_sMP.dwNow = s.mpNow; dst.m_sMP.dwMax = s.mpMax;
-		dst.m_sSP.dwNow = s.spNow; dst.m_sSP.dwMax = s.spMax;
+		dst.m_sHP.dwNow = info.hpNow; dst.m_sHP.dwMax = info.hpMax;
+		dst.m_sMP.dwNow = info.mpNow; dst.m_sMP.dwMax = info.mpMax;
+		dst.m_sSP.dwNow = info.spNow; dst.m_sSP.dwMax = info.spMax;
 
 		const Vector3& pos = src.GetPosition();
 		const Vector3& dir = src.GetDirection();

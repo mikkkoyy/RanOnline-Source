@@ -87,6 +87,10 @@ namespace Modern
 		uint32_t baseMP = 0;
 		uint32_t baseSP = 0;
 
+		// Base combat values (from class initialization)
+		int32_t baseDefense = 0; // m_wSUM_DP equivalent
+		int32_t baseAttack = 0;  // m_wSUM_AP equivalent
+
 		// Movement
 		float walkSpeed = 8.0f;
 		float runSpeed = 14.0f;
@@ -98,6 +102,11 @@ namespace Modern
 		float hpRecoverPerSec = 0.003f;
 		float mpRecoverPerSec = 0.003f;
 		float spRecoverPerSec = 0.005f;
+
+		// TODO(verification): Passive skill contributions not yet modeled
+		// Legacy m_sSUM_PASSIVE has: m_nHP, m_nMP, m_nSP, m_fHP_RATE, m_fMP_RATE, m_fSP_RATE
+		// Also: m_nPA, m_nSA, m_nMA, m_nHIT, m_nAVOID, m_nDEFENSE, m_nDAMAGE, m_sSUMRESIST, m_fINCR_HP/MP/SP
+		// TODO(verification): Codex increases (m_dwHPIncrease, m_dwMPIncrease, m_dwSPIncrease) not yet modeled
 
 		bool IsValid() const { return classId != 0xFFFFFFFF; }
 	};
