@@ -45,7 +45,7 @@ modern/
 │   ├── input/               Input events, system & platform abstraction (CLIENT-003)
 │   ├── resources/           Resource boundary, identifiers, providers, cache (CLIENT-005, CLIENT-006)
 │   ├── assets/              Typed CPU-side assets & decoder boundary (CLIENT-007, CLIENT-008)
-│   └── rendering/           Renderer abstraction & headless null backend (CLIENT-004)
+│   └── rendering/           Renderer abstraction, null backend & asset upload boundary (CLIENT-004, CLIENT-009)
 ├── tests/                   headless rule tests (ModernCoreTests)
 ├── tools/                   offline / research tooling
 │   ├── exptable_dump.cpp    reads the packed legacy EXP table -> text
@@ -73,9 +73,9 @@ shipped implementation.
   `core`. `client/application`, `client/input`, `client/rendering`,
   `client/resources` and `client/assets` are the client slices built so far
   (CLIENT-002, CLIENT-003, CLIENT-004, CLIENT-005, CLIENT-006, CLIENT-007,
-  CLIENT-008); the
-  remaining client systems (ui, character, world, audio) and the
-  network/database/server layers are created when there is code to put in them.
+  CLIENT-008, CLIENT-009); the remaining client systems (ui, character, world,
+  audio) and the network/database/server layers are created when there is code
+  to put in them.
 - **`compatibility/legacy`** converts between modern types and legacy RAN
   types and formats. Only this layer may see `legacy/`, and nothing in `core`
   may reference it.
@@ -451,6 +451,10 @@ InputSystem::EndFrame()
 - **Future backend strategy**: DirectX 12, Vulkan, or other modern graphics APIs
   will be implemented as concrete backends implementing `IRenderer` under
   `modern/client/rendering/backends/` without altering the modern application or core.
+- **Asset upload boundary (CLIENT-009, section 21)**: `IAssetUploader` sits
+  beside this renderer boundary as its own target (`ModernClientAssetUpload`)
+  and consumes CPU assets through opaque handles. `IRenderer` itself still
+  knows nothing about assets, storage or upload.
 
 ## 17. CLIENT-005: modern client resource / asset boundary
 
@@ -719,7 +723,7 @@ IImageDecoder            DecodeImage(ResourceData) -> Result<ImageAsset>
 ImageAsset               validated CPU-side image
         |
         v
-future renderer adapter  uploads an ImageAsset; does not exist yet
+asset upload boundary     IAssetUploader -> opaque handle (CLIENT-009)
 ```
 
 ### Why typed assets exist
@@ -964,7 +968,7 @@ IImageDecoder                            DecodeImage()
 ImageAsset                               validated CPU-side image
       |
       v
-future renderer adapter                  GPU upload
+asset upload boundary                    opaque handle (CLIENT-009)
 ```
 
 What that means in practice:
@@ -1055,7 +1059,7 @@ IMeshDecoder             DecodeMesh(ResourceData) -> Result<MeshAsset>
 MeshAsset                validated CPU-side mesh: topology, vertices, indices
         |
         v
-future renderer adapter  builds vertex/index buffers from a MeshAsset; does not exist yet
+asset upload boundary     returns an opaque MeshResourceHandle (CLIENT-009); GPU buffers do not exist yet
 ```
 
 ### Why a second type, not a general one
@@ -1311,3 +1315,365 @@ ctest --test-dir build -C Release --output-on-failure
 build\Debug\ModernClientMeshAssetTests.exe
 ```
 
+
+## 21. CLIENT-009: renderer asset upload boundary
+
+CLIENT-004 drew the renderer side (`IRenderer`, `NullRenderer`) and CLIENT-007 /
+CLIENT-008 drew the asset side (`ImageAsset`, `MeshAsset`, the decoder
+boundary). Both ends were complete and neither could see the other:
+`ImageAsset.h` and `MeshAsset.h` say in their own comments that uploading
+belongs to a future renderer adapter, and `IRenderer` says nothing at all
+about assets. CLIENT-009 is that adapter's *contract* -- the seam where a
+validated CPU asset becomes a renderer resource -- built so the crossing can
+be specified, tested and demonstrated without a device.
+
+Nothing below the seam changed. `IRenderer`, `NullRenderer`,
+`RenderingTypes.h`, `ImageAsset`, `MeshAsset`, `AssetTypes.h`, both decoders
+and the whole resource layer are exactly as their milestones left them. The
+asset target's CMake block was not edited at all, and no asset header gained
+an include.
+
+### Architecture
+
+```text
+ResourceData
+      |
+      v
+Decoder                            IImageDecoder / IMeshDecoder (CLIENT-007, CLIENT-008)
+      |
+      v
+CPU Asset                          ImageAsset / MeshAsset: validated, immutable
+      |
+      v
+Renderer Asset Boundary            IAssetUploader  (CLIENT-009, this section)
+      |
+      v
+Opaque Resource Handle             ImageResourceHandle / MeshResourceHandle
+      |
+      v
+future GPU backend                 builds the real texture / buffer; not this milestone
+```
+
+Two independently typed assets enter the same boundary, and each produces its
+own handle type. As in section 20, there is no `Asset` union, no `variant` and
+no base class: a consumer that wants an image handle is not required to know
+that mesh handles exist, and the two id spaces cannot be mixed even by
+accident (the types are unrelated and non-convertible, which is
+`static_assert`ed in `AssetUpload.h`).
+
+The dependency direction is the whole point of the design:
+
+```text
+                     Modern Core
+                          ^
+              +-----------+-----------+
+              |                       |
+          Client Assets           Rendering
+              |                       |
+              +-----------+-----------+
+                          |
+                   ModernClientAssetUpload
+```
+
+`ModernClientAssetUpload` is a separate target precisely so that "rendering
+may consume assets" is one link edge in a small adapter instead of a mutual
+dependency between two slices. `ModernClientAssets` still links only `Modern`
+and `ModernClientResources`; `ModernClientRendering` still links only `Modern`;
+neither links the other, and neither links the adapter. The edge points one
+way, so a cycle is not merely avoided by convention -- it is unrepresentable.
+
+### Why the renderer receives assets, not ResourceIds
+
+The tempting design is to hand the renderer what it already has: a
+`ResourceId`, or the `ResourceData` the manager cached. CLIENT-009 refuses
+that, for four reasons that each hold on their own:
+
+- **It would make the renderer a resource loader.** The moment a renderer
+  takes a `ResourceId` it needs a `ResourceManager`, a provider and a
+  filesystem or archive to answer it. The renderer would grow the loading
+  half of the client while the resource layer grew the policy half, and every
+  backend would repeat that. The renderer consumes *content*; how bytes
+  became that content is a layer below it.
+- **The renderer cannot do the work anyway.** An `ImageAsset` is what
+  CLIENT-007 made validation produce: width, height, layout and pixels already
+  checked. Re-deriving those from `ResourceData` inside a backend would undo
+  the boundary and re-implement the decoder's refusal rules per API.
+- **It keeps decoding testable without a renderer.** `ImageAsset` /
+  `MeshAsset` construction needs no device, so assets can be built and
+  verified in a tool, in a test or on a loading thread with no GPU anywhere in
+  the process. The upload boundary is the first point that needs a renderer,
+  and it needs only a live one.
+- **It matches how the layers are already split.** The resource layer owns
+  raw `ResourceData` caching, the decoder converts bytes to a CPU asset, and
+  the renderer boundary converts a CPU asset to a renderer resource. Three
+  responsibilities, three places, no overlap.
+
+Consequently no `ResourceId`, `ResourceData`, `ResourceManager` or
+`IResourceProvider` appears anywhere in `AssetUpload.h` or
+`NullAssetUploader.h`, and the suite pins the signatures as exact types so
+adding one would not compile.
+
+### Handle design
+
+```cpp
+using ImageResourceHandle = detail::StrongId<struct ImageResourceHandleTag, uint64_t>;
+using MeshResourceHandle  = detail::StrongId<struct MeshResourceHandleTag,  uint64_t>;
+```
+
+Both handles reuse the core's existing strongly typed id
+(`modern/core/types/Ids.h`) rather than inventing a new scheme: one
+`Underlying` member, default-constructed to the all-ones invalid sentinel,
+with `IsValid()`, `Get()`, `operator==`, `operator!=` and ordering. That reuse
+buys the properties the milestone asks for, and each is asserted in the header
+and again in the suite:
+
+- **Cheap to copy** -- 8 bytes, trivially copyable, `static_assert`ed
+  against `sizeof(uint64_t)`. Copy and move preserve identity; moving one
+  leaves the source still holding its number.
+- **Explicit invalid state** -- the default-constructed value *is* the invalid
+  state, and `IsValid()` is the only question a caller has to ask. There is no
+  "maybe valid" handle.
+- **No pointer to a GPU object** -- there is no pointer at all, so no
+  `IDirect3DTexture9`, `ID3D11Texture2D`, `ID3D11Buffer`, `VkImage`,
+  `VkBuffer`, `GLuint`, `HWND` or device pointer can leak through it. The
+  header asserts the types are not convertible to `const void*`, and the
+  public headers include no `<Windows.h>` at all.
+- **Deterministic identity** -- an uploader assigns ids `1, 2, 3, ...` per
+  asset kind, in upload order, from a fresh instance. The same sequence of
+  uploads in a new uploader yields the same handles in every run, which is
+  what makes an emulator printout comparable to a test assertion. Ids are
+  never recycled after a release, so a stale handle can never alias a newer
+  resource.
+- **Meaningful only to the issuing uploader** -- a fabricated id names nothing
+  and is refused, and the invalid sentinel is refused more specifically, so
+  "you passed nonsense" and "that resource is not here" stay distinguishable.
+
+The header also states what the handles deliberately are not: there is no
+generic `Asset` handle and no public object combining an image and a mesh.
+Two handle types, because two resource kinds, is the honest answer.
+
+### The null / headless implementation
+
+`NullAssetUploader` is the "null backend" of uploading, the counterpart of
+`NullRenderer`. `UploadImage` reads the asset's metadata and returns a handle;
+`UploadMesh` does the same for geometry. It then retains that metadata so a
+test can prove the values survived the crossing:
+
+| Kind   | Retained                                                                            |
+| ------ | ----------------------------------------------------------------------------------- |
+| Image  | `width`, `height`, `format`, `byteCount`                                             |
+| Mesh   | `vertexCount`, `indexCount`, `triangleCount`, `topology`, `byteCount`                |
+
+What it does *not* do matters as much:
+
+- It allocates no GPU resource, no device, no context and no OS object. The
+  handle names bookkeeping, and a future backend gives it a real object
+  behind the same number.
+- It does not retain asset bytes. The pixels, the vertices and the indices are
+  read during the call and dropped; the registry holds the numbers above and
+  nothing else. A second byte cache would be a second `ResourceManager`, and
+  the milestone explicitly refuses that.
+- It does not load anything. No `ResourceId`, provider or filesystem appears
+  in its sources or its headers.
+- It does not know which `IRenderer` implementation it observes.
+
+### Lifetime and error conventions
+
+`IAssetUploader` has no `Initialize()` and no `Shutdown()`. A second lifecycle
+would be a second state machine that could disagree with the renderer's, so
+instead the implementation observes a **borrowed** `IRenderer` (the same
+borrowing convention `Application` uses for its renderer) and answers with the
+codes `IRenderer` already documents. Every method decides in the same order:
+
+| Situation                                              | Result          |
+| ------------------------------------------------------ | --------------- |
+| renderer `Uninitialized`, or no renderer attached       | `InvalidState`  |
+| renderer `ShutdownState` (terminal)                    | `NotAllowed`    |
+| the invalid handle sentinel passed as an argument      | `InvalidArgument` |
+| an id that names nothing live (unknown or released)    | `NotFound`      |
+| a live handle, release, or a valid upload              | `Ok`            |
+
+Those are the existing core codes, unchanged: `InvalidState` for a live-but-
+wrong state, `NotAllowed` from the terminal state, `InvalidArgument` for a
+caller-supplied nonsense id ("an invalid id" in the core's own words),
+`NotFound` for a lookup that found nothing -- exactly the split
+`ResourceManager::Load` uses. No new error code was invented for this
+milestone, and none is needed.
+
+Two consequences are worth naming because they are policies rather than
+accidents:
+
+- **Lifecycle precedes handle.** A shut-down renderer refuses *everything*
+  uniformly with `NotAllowed`, including handles that were live a moment
+  earlier. There is no ordering in which a caller can observe a
+  post-shutdown `NotFound` and wonder whether the resource still exists.
+- **Uploading while `InFrame` is legal.** `IRenderer::IsInitialized()` covers
+  `InFrame`, so a texture can be uploaded mid-frame and the frame loop never
+  has to end a frame to load one. A resource's lifetime is not tied to a
+  frame's.
+
+### Ownership and shutdown policy
+
+Ownership is deliberately dull, because the alternative is a lifetime nobody
+has to reason about:
+
+- The **uploader owns only its registry entries**: a handle and the metadata
+  recorded for it. Not the asset, not the bytes, not the renderer.
+- The **caller keeps owning the asset**. `UploadImage` / `UploadMesh` take a
+  `const&`, read what they need and return; the caller may destroy the asset
+  immediately afterwards and the handle stays valid.
+- The **renderer is borrowed, never owned**. The uploader never initializes it
+  and never shuts it down, exactly as `Application` treats its renderer.
+- There are **no singletons, globals, threads, locks or async work** anywhere
+  in the boundary. Two uploaders are two independent registries, which is why
+  the determinism case compares two of them directly.
+
+**Shutdown with handles outstanding** is a defined state, not a leak waiting
+to happen, and the policy is stated in the header rather than discovered:
+
+1. The instant the renderer reports `ShutdownState`, **every handle becomes
+   invalid**. `IsValidImage` / `IsValidMesh` and the live counts answer from
+   the renderer state, so they read `false` and `0` without anything being
+   asked of them.
+2. The **retained metadata is released at the first mutating call afterwards**,
+   which reports `NotAllowed` and drops the entries it held; or, failing that,
+   when the uploader is destroyed. Because `RendererState::ShutdownState` is
+   terminal under the `IRenderer` contract, there is no state to return to, so
+   no id can ever come back.
+3. **Destructor is not the contract.** A caller who forgets to release a
+   handle before shutdown still gets the right answers on every subsequent
+   query, which is what makes teardown order forgiving rather than
+   load-bearing.
+
+Double destruction is deterministic rather than harmful: the first release
+returns `Ok`, and every later release of the same handle returns `NotFound`.
+
+### Separation from the rest of the client
+
+| Concern                                    | Owner                                    | Must never do                                     |
+| ------------------------------------------ | ---------------------------------------- | -------------------------------------------------- |
+| raw `ResourceData` caching, providers, ids | `ResourceManager` (CLIENT-005/006)        | know about resource handles, or about assets       |
+| bytes -> validated CPU asset               | `IImageDecoder` / `IMeshDecoder`         | allocate, upload, or know a renderer exists         |
+| CPU asset -> renderer resource             | `IAssetUploader` (CLIENT-009)             | load, cache bytes, or name a `ResourceId`           |
+| renderer lifecycle, frames, clear, resize  | `IRenderer` / `NullRenderer` (CLIENT-004)| know about assets, decoders or handles             |
+| actual GPU objects                         | future backend (not this milestone)       | change the contract above it                        |
+
+Both directions of leakage are prevented structurally, not by discipline:
+
+- **Assets do not depend on rendering.** `ImageAsset.h`, `MeshAsset.h`,
+  `AssetTypes.h`, `ImageDecoder.h` and `MeshDecoder.h` contain no rendering
+  include, and `ModernClientAssets` still links only `Modern` and
+  `ModernClientResources`. The asset target's CMake block was not modified by
+  this milestone at all.
+- **The renderer does not depend on storage.** `IRenderer` and
+  `NullRenderer` are unchanged and know nothing about `ResourceManager`,
+  `IResourceProvider`, `ResourceId` or `ResourceData`; the uploader's API
+  takes assets, never storage types, and the test suite pins the signatures as
+  exact types so a storage parameter would not compile.
+
+### What is excluded
+
+- **No graphics backend.** No DirectX 9 / 11 / 12, D3DX, Vulkan or OpenGL; no
+  device, swapchain, texture, vertex buffer, index buffer, shader, command
+  queue, descriptor heap or pipeline state. The public headers include no
+  `<Windows.h>`, no `d3d*.h`, no `vulkan.h` and no `GL/gl.h`, and the test
+  binary `#error`s if any of those macros appear on the boundary's own include
+  chain (`_WINDOWS_`, `VK_VERSION_1_0`, `__gl_h_`).
+- **No legacy RAN import.** No `.isf`, `.ssf`, `.mnsf`, `.cps`, `.x` or
+  `.rcc`, no `CryptionRCC`, `CCrypt`, `FileCrypt` or `SFileSystem`, and no
+  reference to `legacy/`, `TextureManager` or `DxMeshTexMan`. Nothing from
+  `legacy/` is included or linked.
+- **No MFC, no Win32, no third-party graphics dependency**, no global mutable
+  state, no singleton, no async, no threading, no mutexes.
+
+> CLIENT-009 establishes the renderer asset contract only. It does not
+> implement a real graphics backend.
+
+### Where a real backend will land
+
+A GPU backend implements `IAssetUploader` in the same directory as this
+milestone put the contract (and, for the renderer itself, under the
+`modern/client/rendering/backends/` location section 16 reserved). It keeps
+the same handles and the same error table, and only the body of `UploadImage`
+/ `UploadMesh` changes: the asset's pixels or vertices are handed to a device,
+and the handle is the id of the created texture or buffer. Because the
+contract is already fixed and tested headlessly, that backend arrives without
+editing any asset, decoder or resource file -- which is precisely what the
+failure to compile above is meant to guarantee.
+
+### Tests and verification
+
+`ClientAssetUploadTests.cpp` carries **26 cases** in the new
+`ModernClientAssetUploadTests` binary, registered with CTest beside the
+existing seven suites:
+
+- **Handles:** the default-constructed handle is the explicit invalid state
+  and equals `MakeInvalid()`; equality, inequality and ordering are
+  deterministic; the type is trivially copyable, 8 bytes, standard layout and
+  never a pointer; copy and move preserve identity; two independent uploaders
+  assign the same ids for the same uploads, and ids run `1, 2, 3, ...` per
+  kind; multiple uploads receive distinct handles and the live counts agree.
+- **Image resource:** metadata preserved (width, height, format, byte count)
+  and compared against the source asset; upload before initialization and
+  upload with no renderer attached both return `InvalidState` with nothing
+  half-created; `SetRenderer` round-trip; upload allowed while `InFrame` and
+  still live after `EndFrame`; release works and takes its metadata with it;
+  the sentinel is `InvalidArgument` and an unknown id is `NotFound`; double
+  release is `Ok`, then `NotFound`, then `NotFound`; shutdown invalidates
+  handles immediately, empties the counts, answers `NotAllowed` everywhere and
+  drops the registry on the first mutating call; released ids are never
+  recycled.
+- **Mesh resource:** vertex count, index count, triangle count, topology and
+  byte total preserved and checked against the asset (4 / 6 / 2 /
+  `TriangleList` / 152); upload before initialization returns `InvalidState`;
+  three meshes receive distinct handles and releasing one leaves the others
+  live; release, sentinel, unknown and double-release all deterministic;
+  shutdown deterministic.
+- **Pipelines:** `MemoryResourceProvider` -> `ResourceManager` ->
+  `ResourceData` -> `TestImageDecoder` -> `ImageAsset` -> `IAssetUploader` ->
+  `ImageResourceHandle`, and the same path through `TestMeshDecoder` and
+  `MeshAsset` -> `MeshResourceHandle`. Each also proves the layers are
+  independent: shutting the manager down leaves the uploaded resource live,
+  and releasing the handle never touched the byte cache.
+- **Separation:** the upload signatures are asserted as exact types (asset in,
+  handle out), the boundary is an abstract interface with a headless leaf
+  implementation, an upload works with no resource-layer object constructed at
+  all, and `Get*Info` refusals follow the documented decision order
+  (lifecycle, then `InvalidArgument`, then `NotFound`).
+- **"An invalid asset cannot be uploaded"** is enforced one step earlier than
+  the uploader and stated that way in the suite: `ImageAsset` and `MeshAsset`
+  have no default constructor (`static_assert`), so no unchecked value can
+  exist, and every `Create()` refusal -- zero dimensions, unknown layout,
+  short and long payloads, unknown topology, empty geometry, non-triangle
+  index counts, out-of-range indices, a NaN vertex -- is exercised with its
+  `InvalidArgument`.
+
+`ModernEmulator` gained a "Client renderer asset boundary" section: it decodes
+the same hand-built MIMG and MMESH samples the earlier sections use, refuses an
+upload before the renderer exists, initializes the renderer, uploads both
+assets, prints the deterministic handles and the retained metadata, releases
+both, then shows a handle outstanding across shutdown reading `invalid` and the
+next upload returning `NotAllowed`. No GPU, no asset directory, no real asset
+file, no permanent file of any kind.
+
+```text
+Client renderer asset boundary
+  upload before init     InvalidState
+  renderer init          None
+  image uploaded         handle=1
+  image metadata         4x2 R8G8B8A8_UNorm bytes=32
+  mesh uploaded          handle=1
+  mesh metadata          vertices=4 indices=6 triangles=2 topology=TriangleList
+  image released         handle=1 live=0
+  mesh released          handle=1 live=0
+  upload after shutdown  NotAllowed
+  handle after shutdown  invalid
+```
+
+```powershell
+cmake --build build --config Debug
+ctest --test-dir build -C Debug --output-on-failure
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+build\Debug\ModernClientAssetUploadTests.exe
+```

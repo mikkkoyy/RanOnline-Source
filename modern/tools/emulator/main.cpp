@@ -29,6 +29,8 @@
 #include "assets/MeshDecoder.h"
 #include "assets/TestMeshDecoder.h"
 
+#include "rendering/AssetUpload.h"
+#include "rendering/NullAssetUploader.h"
 #include "rendering/NullRenderer.h"
 #include "rendering/Renderer.h"
 #include "rendering/RenderingTypes.h"
@@ -531,6 +533,112 @@ int main()
 		std::printf("  %-22s state=%s\n",
 			"mesh manager shutdown",
 			Modern::Client::ToString(meshManager.GetState()));
+	}
+
+	std::printf("\nClient renderer asset boundary\n");
+	{
+		// CLIENT-009 in miniature: the two decoded CPU assets go in,
+		// deterministic opaque handles come out, and nothing GPU, platform
+		// or filesystem is touched. The renderer's state is the uploader's
+		// whole lifecycle -- there is no second Initialize/Shutdown pair,
+		// and the uploader retains metadata only, never asset bytes.
+		Modern::Client::TestImageDecoder imageDecoder;
+		Modern::Client::TestMeshDecoder  meshDecoder;
+
+		const auto uploadImageAsset = imageDecoder.DecodeImage(Modern::Client::ResourceData(
+			MakeSampleImage(4, 2, Modern::Client::ImageFormat::R8G8B8A8_UNorm)));
+		const auto uploadMeshAsset =
+			meshDecoder.DecodeMesh(Modern::Client::ResourceData(MakeSampleMesh()));
+
+		Modern::Client::NullRenderer uploadRenderer;
+		Modern::Client::NullAssetUploader uploader(&uploadRenderer);
+
+		// Before the renderer exists: the boundary refuses with the same
+		// code IRenderer itself would use.
+		if (uploadImageAsset.IsOk())
+		{
+			std::printf("  %-22s %s\n", "upload before init",
+				Modern::ToString(uploader.UploadImage(uploadImageAsset.GetValue()).GetError()));
+		}
+
+		const Modern::Client::RendererConfig uploadConfig{ 1, 1, Modern::Client::DisplayMode::Windowed, true };
+		std::printf("  %-22s %s\n", "renderer init",
+			uploadRenderer.Initialize(uploadConfig).GetMessage());
+
+		Result<Modern::Client::ImageResourceHandle> imageHandle =
+			Status(ErrorCode::InvalidState);
+		if (uploadImageAsset.IsOk())
+		{
+			imageHandle = uploader.UploadImage(uploadImageAsset.GetValue());
+			if (imageHandle.IsOk())
+			{
+				std::printf("  %-22s handle=%llu\n", "image uploaded",
+					static_cast<unsigned long long>(imageHandle.GetValue().Get()));
+				const auto imageInfo = uploader.GetImageInfo(imageHandle.GetValue());
+				if (imageInfo.IsOk())
+				{
+					std::printf("  %-22s %ux%u %s bytes=%zu\n", "image metadata",
+						imageInfo.GetValue().width,
+						imageInfo.GetValue().height,
+						Modern::Client::ToString(imageInfo.GetValue().format),
+						imageInfo.GetValue().byteCount);
+				}
+			}
+		}
+
+		Result<Modern::Client::MeshResourceHandle> meshHandle =
+			Status(ErrorCode::InvalidState);
+		if (uploadMeshAsset.IsOk())
+		{
+			meshHandle = uploader.UploadMesh(uploadMeshAsset.GetValue());
+			if (meshHandle.IsOk())
+			{
+				std::printf("  %-22s handle=%llu\n", "mesh uploaded",
+					static_cast<unsigned long long>(meshHandle.GetValue().Get()));
+				const auto meshInfo = uploader.GetMeshInfo(meshHandle.GetValue());
+				if (meshInfo.IsOk())
+				{
+					std::printf("  %-22s vertices=%zu indices=%zu triangles=%zu topology=%s\n",
+						"mesh metadata",
+						meshInfo.GetValue().vertexCount,
+						meshInfo.GetValue().indexCount,
+						meshInfo.GetValue().triangleCount,
+						Modern::Client::ToString(meshInfo.GetValue().topology));
+				}
+			}
+		}
+
+		// Releases reach only the uploader's registry; the storage layer
+		// above never learns a handle existed.
+		if (imageHandle.IsOk())
+		{
+			uploader.ReleaseImage(imageHandle.GetValue());
+			std::printf("  %-22s handle=%llu live=%zu\n", "image released",
+				static_cast<unsigned long long>(imageHandle.GetValue().Get()),
+				uploader.GetLiveImageCount());
+		}
+		if (meshHandle.IsOk())
+		{
+			uploader.ReleaseMesh(meshHandle.GetValue());
+			std::printf("  %-22s handle=%llu live=%zu\n", "mesh released",
+				static_cast<unsigned long long>(meshHandle.GetValue().Get()),
+				uploader.GetLiveMeshCount());
+		}
+
+		// Shutdown while a handle exists: the handle dies with the renderer
+		// and the next upload says so with the terminal-state code.
+		if (uploadImageAsset.IsOk())
+		{
+			const auto late = uploader.UploadImage(uploadImageAsset.GetValue());
+			uploadRenderer.Shutdown();
+			std::printf("  %-22s %s\n", "upload after shutdown",
+				Modern::ToString(uploader.UploadImage(uploadImageAsset.GetValue()).GetError()));
+			if (late.IsOk())
+			{
+				std::printf("  %-22s %s\n", "handle after shutdown",
+					uploader.IsValidImage(late.GetValue()) ? "valid" : "invalid");
+			}
+		}
 	}
 
 	return 0;

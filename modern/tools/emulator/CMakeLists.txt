@@ -1,7 +1,8 @@
 add_executable(ModernEmulator main.cpp)
-
 # Links every modern slice the demonstration exercises: the asset layer
-# (CLIENT-007) sits above the resource layer, which sits above core.
+# (CLIENT-007) sits above the resource layer, which sits above core, and the
+# asset upload boundary (CLIENT-009) consumes decoded assets from the
+# rendering side.
 target_link_libraries(ModernEmulator PRIVATE
     Modern
     ModernClientApplication
@@ -9,6 +10,7 @@ target_link_libraries(ModernEmulator PRIVATE
     ModernClientRendering
     ModernClientResources
     ModernClientAssets
+    ModernClientAssetUpload
 )
 
 target_include_directories(ModernEmulator PRIVATE
