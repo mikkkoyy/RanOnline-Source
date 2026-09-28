@@ -2309,3 +2309,192 @@ Equipment, item database, passive skills, the codex, combat resolution, damage
 calculation, PvP, monsters, quests, network packets, server processes, the
 database, rendering, UI and the client status window. The three contribution
 types are the *shapes* those systems will fill, not the systems.
+---
+
+# VERTICAL-001: Character + Stats Vertical Slice
+
+The first slice that crosses the client/server boundary. It connects CORE-001's
+`Character` and CORE-002's `Stats` into one gameplay architecture rather than
+two implementations that later have to be reconciled.
+
+    modern/core            shared gameplay contracts (no transport, no I/O)
+        |
+        +-- modern/server      authority: decides, publishes
+        |
+        +-- modern/client      presentation: receives, displays
+
+Everything below distinguishes three things explicitly: **verified legacy
+behaviour**, **modern design decision**, and **not yet implemented**. Where
+modern parts company with RAN, that is said rather than glossed.
+
+## Verified legacy client findings
+
+Read from `legacy/`, not assumed.
+
+**One character class, compiled into both sides.** RAN does not have a client
+character and a server character; it has one shared logic class,
+`GLCHARLOGIC` (`Lib_Client/G-Logic/GLogicEx.h`, `GLogixExPC.cpp`), with
+different derived classes per side: `GLCharacter : GLCHARLOGIC : GLCOPY :
+GLGaeaClient` and `GLCharClient : GLCOPY` for the client, `GLChar :
+GLCHARLOGIC : GLACTOR` for the server actor, and `GLCharAG : GLCHARAG_DATA` for
+the agent.
+
+**Both sides run the stat calculation.** `SUM_ADDITION` and `SUM_PASSIVE` are
+members of the shared class, so the client computes maxima locally exactly as
+the server does.
+
+**Recalculation is event-driven, not per-frame.** The entry point is
+`GLCHARLOGIC::INIT_DATA(bNEW, bReGen, fCONFT_POINT_RATE, bInitNowExp)`
+(GLogixExPC.cpp:1233): it resolves the class row from the character's index,
+resolves equipped items, then calls `SUM_ADDITION(fCONFT_POINT_RATE)` at line
+1254. For a new character it sets `m_bServerStorage = TRUE` and fills
+HP/MP/SP (lines 1256-1262). The server reaches it through
+`GLChar::SetData` after `SCHARDATA2::Assign` (GLChar.cpp:618-622). The client
+reaches it from `GLCharacterMsg.cpp` on equipment changes - slot release
+(:714), `NET_MSG_GCTRL_PUTON_UPDATE` (:766), `NET_MSG_GCTRL_PUTON_CHANGE` (:796)
+- and on stat resets.
+
+**The point rate travels with the message.** On a put-on change the client
+recalculates with `pNetMsg->fCONFT_HP_RATE` (GLCharacterMsg.cpp:796). That
+value, plus the fact that both sides run the same formula, is the entire reason
+RAN's two calculations agree.
+
+**The client is sent current values, never maxima.** HP, MP and SP arrive as
+`m_sHP.dwNow`, `m_sMP.dwNow`, `m_sSP.dwNow` from a skill-consume feedback
+(GLCharacterMsg.cpp:1022-1024), and SP separately at :402. No message carries
+a maximum. Stats points, skill points, bright and experience arrive as deltas
+(:457, :427, :442, :370), and a level-up feedback carries the new level plus
+the stat and skill point counts (:839-841).
+
+## Verified legacy server findings
+
+**The persisted record is `SCHARDATA` / `SCHARDATA2`** (GLCharData.h:566 and
+:888). The character facts are `m_dwCharID`, `m_szName`, `m_emClass`,
+`m_wSchool`, `m_wSex`, `m_wLevel` (:593-606), the allocated `SCHARSTATS
+m_sStats` (:621), `m_wStatsPoint` (:622), `GLLLDATA m_sExperience` (:631) and
+`m_dwSkillPoint` (:634). `SCHARDATA2` adds equipment, skills, inventory, quests
+and storage.
+
+**The server is where the character is created, loaded and saved**, and it is
+what sends the client the level, the points and the current pools.
+
+**The derived maxima are not persisted.** They are recomputed by
+`INIT_DATA` on load from the persisted facts plus the loaded contributions.
+That is the same rule CORE-002 implements, so a stored maximum is never a
+source of truth.
+
+## The ownership decision
+
+**Modern design decision, and a deliberate divergence from RAN.**
+
+RAN duplicates the stat calculation: the client runs `SUM_ADDITION` on every
+equipment change and displays the result, with the point rate shipped in the
+message purely to keep the two runs in step. That works, but it means two
+implementations must agree for the client to show anything at all, and the
+client's numbers are only as correct as the last message that triggered them.
+
+Modern does not reproduce that. The rules for this milestone are that there is
+exactly one authoritative stat-calculation implementation and no independent
+client and server versions of RAN's gameplay rules. So:
+
+- the **server** calls `Modern::Stats::Calculate` and owns the result;
+- the **client** receives the result in a `CharacterSnapshot` and presents it.
+
+`ClientCharacterState` cannot compute a derived value. It has no stat input, no
+class table and no calculator, and the only way to change what it holds is
+`Apply(snapshot)`. A test asserts the client's translation unit contains no
+reference to `Stats::Calculate`, so authority cannot creep back in without a
+test failing.
+
+The one thing lost is the ability to predict a new maximum on the client
+between messages. Nothing in this milestone needs that, and a HUD must not
+predict one anyway.
+
+## Shared gameplay contract
+
+`modern/core/gameplay/CharacterSnapshot.h` is a value, not a protocol: identity,
+class, gender, level, experience, the allocated and summed base stats, the
+`DerivedStats` result, the three current resource pools, and the position.
+
+It carries no socket, no buffer, no serialisation format, no database handle,
+no renderer object and no Windows type, so core stays free of transport.
+Deliberately absent: the class-table row (server data, resolved before the
+snapshot is taken), the stat inputs the client has no business seeing
+(equipment, passive skills, codex), and anything RAN keeps server-only.
+
+It has a validating factory. A snapshot whose current pool exceeds the
+published maximum is refused rather than clamped, so a publisher bug stays
+visible instead of rendering as a full bar.
+
+## Character and stats integration
+
+One gap had to be closed. CORE-001 modelled eight classes and deliberately
+dropped gender, because nothing in the core needed it. CORE-002 kept RAN's
+sixteen-value class table, which pairs class *and* gender, because
+`default.charclass` has one row per `EMCHARINDEX`. A character therefore
+cannot select its row without a gender, and `m_wSex` is a character fact after
+all.
+
+`modern/core/character/CharacterClassTable.h` introduces `CharacterGender` and
+maps `(class, gender)` to `Stats::CharClassIndex`, transcribed one-for-one
+from the legacy enum. It lives in core because it is a fact about a character,
+and because both sides need it: the server to pick a row, and a future save
+layer to read a stored index back.
+
+The dependency stays one-way. `Character` owns identity, class and level;
+`ServerCharacter` turns those into a `StatCalculationInput` and calls
+`Calculate`. Neither `Character` nor `ClientCharacterState` knows about the
+other, and the stat system knows about neither.
+
+## Server authority
+
+`modern/server/character/ServerCharacter.h` is the only place in the modern
+tree that decides what a character's derived statistics are. It owns the class
+and gender, level, experience, allocated stats, the three contribution sets as
+values, the configuration point rate, and the current pools.
+
+Every mutator that can change a stat input recalculates before it returns, so
+there is no "remember to recalculate" step to forget and a published snapshot
+can never disagree with the state behind it. A rejected mutation leaves the
+character untouched.
+
+This is the **only** production call to `Modern::Stats::Calculate` in the tree.
+The formulas are not restated anywhere.
+
+## Client state
+
+`modern/client/gameplay/ClientCharacterState.h` holds the last authoritative
+snapshot. It has no mutators for individual fields, so it cannot hold a mixture
+of two snapshots, and a rejected update does not destroy what it already knew.
+
+With no snapshot it reports defined emptiness - an invalid id, an empty name,
+`CharacterClass::Unset`, zero maxima, a zero health fraction - rather than a
+plausible wrong number. The `Get*Fraction` helpers exist so a future HUD has
+something honest to bind to; they divide published values and invent nothing.
+
+## Legacy compatibility boundary
+
+Nothing in `legacy/` was modified, and no modern file includes a legacy header.
+`modern/core` gained no dependency: it still links nothing, and the core
+targets contain no Windows, DirectX, MFC, socket, database or legacy include.
+
+## Tests
+
+| Suite | Cases | What it covers |
+| ------------------------------ | ----- | ------------------------------------------------------------------ |
+| `ModernCoreTests`              | 69    | CORE-001 and CORE-002, unchanged                                 |
+| `ModernServerTests`            | 16    | authority: creation, every recalculating mutator, snapshot validity, determinism |
+| `ModernClientGameplayTests`    | 9     | client presentation, rejection, and the server/client relationship |
+
+The load-bearing case is `Gameplay_ClientNumbersEqualTheOneStatImplementation`:
+given identical inputs, the server's numbers, the client-held numbers and a
+direct call to `Modern::Stats::Calculate` are all equal. That is the assertion
+that fails if a second implementation ever appears.
+
+## Not yet implemented
+
+Transport and serialisation, a session, a login or agent process, persistence,
+equipment, items, inventory, skills, passives, the codex, combat, PvP, monsters,
+NPCs, quests, maps, movement networking, a HUD, rendering, animation. Each
+would feed the boundary that now exists rather than requiring it to be
+rebuilt.

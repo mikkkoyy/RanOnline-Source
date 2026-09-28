@@ -8,6 +8,7 @@
 # The only permitted modern -> legacy edge lives in compatibility/legacy.
 
 add_subdirectory(core)
+add_subdirectory(server)
 add_subdirectory(client)
 add_subdirectory(tools)
 add_subdirectory(tests)

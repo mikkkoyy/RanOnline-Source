@@ -16,5 +16,6 @@ add_subdirectory(input)
 add_subdirectory(resources)
 add_subdirectory(assets)
 add_subdirectory(rendering)
+add_subdirectory(gameplay)
 add_subdirectory(application)
 

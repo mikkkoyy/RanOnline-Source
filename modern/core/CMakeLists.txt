@@ -12,7 +12,9 @@
 
 set(MODERN_SOURCES
     character/Character.cpp
+    character/CharacterClassTable.cpp
     entity/Entity.cpp
+    gameplay/CharacterSnapshot.cpp
     item/ItemDefinition.cpp
     stats/StatCalculator.cpp
     types/Result.cpp
