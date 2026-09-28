@@ -567,3 +567,204 @@ This investigation contains no code changes. No `XMeshDecoder` was implemented. 
 ## 20. Validation
 
 The existing build is unaffected by this investigation. All existing tests continue to pass.
+
+---
+
+# CLIENT-015 verification addendum
+
+*Appended 2026-09-28. Everything above is the CLIENT-014 investigation, left
+as written. This section records what CLIENT-015 established by decoding the
+shipped tree, and corrects two findings above that turned out to be wrong.*
+
+## 21. Correction: the binary `.X` body is a token stream, not record-framed
+
+Section 5 and the original reading of the 86 `bzip` files both needed
+correcting. The binary body is **not** a sequence of size-prefixed records. It is
+the **DirectX .X tokenized encoding** (the published "Binary Encoding" grammar):
+every element begins with a little-endian `WORD` token, and record-bearing
+tokens carry their own count.
+
+| Token | Value | Record |
+|---|---|---|
+| `Name` | 1 | `DWORD` count, then the characters |
+| `String` | 2 | `DWORD` count, then the characters |
+| `Integer` | 3 | `DWORD` value |
+| `Guid` | 5 | 16 bytes |
+| `IntegerList` | 6 | `DWORD` count, then `count` x `DWORD` |
+| `FloatList` | 7 | `DWORD` count, then `count` x `float` |
+| `OBrace` / `CBrace` | 10 / 11 | punctuation |
+| `OBracket` / `CBracket` | 14 / 15 | punctuation |
+| `Dot` | 18 | `.` |
+| `Comma` / `Semicolon` | 19 / 20 | list separators |
+| `Template` | 31 | begins a template definition |
+| `Word` .. `CString` | 40 .. 51 | primitive type codes |
+| `Array` | 52 | begins an array member |
+
+A **template definition** is `Template Name '{' [Guid] members '}'`, and each
+member is a type token, an optional `Name`, and either a `Semicolon` (primitive,
+or a template reference) or an `Array` type with an `OBracket` dimension and
+`CBracket`. A template may also use the optional-parts form `'[' ... ']'` or a
+bare `...`, which is the shape RAN's `bzip` files use for `Frame`.
+
+A **data object** is `Name [instance-name]* [String] '{' [Guid] parts '}'`, and
+`parts` are lists, nested objects, data references (`'{' Name ';' '}'`) and
+separators. Objects nest: **every real RAN mesh sits inside a `Frame`**, so a
+reader that only looks at top level finds no geometry at all.
+
+With this grammar, a complete 6 KB file parses to exactly its end offset, and
+**all 510 binary files in the tree walk cleanly**. No file needed a tolerant
+reader, a heuristic, or a special case.
+
+## 22. Correction: `bzip` is MSZip, not bzip2
+
+Section 5 treated `bzip` as an opaque compressed blob. It is **MSZip**: MS's
+dictionary-chained raw DEFLATE, and the layout RAN writes is:
+
+```
+bytes  0..15   the same 16-byte `xof 0303bzip0032` header
+bytes 16..19   uint32 total uncompressed size, header included
+bytes 20..23   reserved; not a CRC-32 of the payload, not validated
+bytes 24..     one or more chunks, each:
+                  "CK"                                  2 bytes
+                  a raw RFC 1951 DEFLATE stream, no zlib wrapper
+                  a 4-byte trailer, present only between chunks
+```
+
+Each chunk after the first is inflated **with the previous chunk's decompressed
+output as a preset dictionary**, which is the defining behaviour of MSZip. The
+DEFLATE stream yields the token stream *without* the 16-byte header, so the
+header has to be put back in front of it.
+
+Verified: 85 of the 86 `bzip` files have one chunk; `b_aegis_wings.x` has three
+(total 79,602 bytes, 15 of them the 16-byte header). All 86 inflate to a token
+stream that parses cleanly.
+
+The `reserved` field is not a CRC-32: it matches neither `crc32` of the inflated
+payload nor `crc32` of the compressed bytes, and the per-chunk trailer does not
+match either. The decoder does not validate either, and says so.
+
+## 23. Corrected inventory
+
+Section 4 counted 604 files. The tree holds **608**: 604 with a lowercase `.x`
+and 4 with an uppercase `.X`. A sweep that compares the extension exactly will
+quietly cover 604 of 608.
+
+| | count |
+|---|---|
+| total `.x` / `.X` under `data/skeleton` | **608** |
+| `xof 0303bin 0032` | **510** |
+| `xof 0303bzip0032` | **86** |
+| `xof 0303txt 0032` | **12** |
+
+All 608 are version `0303` and float size `0032`; there is no other version and
+no 64-bit float file in the tree.
+
+## 24. Static geometry findings, verified by decoding
+
+- **43 of the 608 files carry a `Mesh`.** 42 are `bin`; one is `bzip`.
+- **13,292 faces, and every one is a triangle** (`nFaceVertexIndices == 3` in
+  all 13,292). There are no polygons anywhere in the tree, so a decoder has no
+  polygon case to accommodate and must not invent a fan order.
+- `MeshNormals.faceNormals` is a **verbatim copy of the face list** in every
+  inspected mesh, which is why `normal[v]` is the correct per-vertex mapping and
+  no indirection is needed.
+- A file may carry **many `Mesh` objects**: 43 assets are multi-part, with up
+  to **116 sub-meshes in one file**. `Mesh`, `MeshNormals` and
+  `MeshTextureCoords` are siblings inside a `Frame` and correspond positionally.
+- Largest single mesh: 2,050 vertices / 8,092 indices, far inside the
+  `MeshAsset` ceilings.
+- **10 files have no `MeshTextureCoords` at all.**
+- **`VertexDuplicationIndices` (211 instances) is not required for static
+  geometry.** The `Mesh` vertex list is already self-consistent, every index is
+  in range, and `faceNormals` mirrors `faces`; VDI only relates the duplicated
+  skinned list to the original one, which is a question about bones. It is read
+  past and left unsupported.
+
+## 25. Known real exceptions
+
+None of these is converted into a pass.
+
+| Exception | Files | Why the decoder refuses |
+|---|---|---|
+| `Mesh` with no `MeshNormals` | `b_pet_human_ninefox.x` (1) | Normals are never invented. A zero or absent normal is a wrong normal, and `MeshAsset` has no "no normals" state. |
+| `MeshTextureCoords` out of step with `Mesh` blocks | `b_effet_char.x`, `b_m.x`, `b_m1.x`, `b_w.x` (4) | The UV blocks are not positionally aligned with the meshes (e.g. `b_m.x` has 16 meshes and 15 UV sets, and the UV counts do not line up with the mesh counts from index 3 on). Pairing by index would attach UVs to the wrong vertices, so the correspondence is refused instead. |
+| `Mesh` with `nVertices == 0` | `b_mob_es_01.x`, `b_mob_mm_01.x`, `b_mob_mt_01.x`, `b_mob_mujuk.x`, `b_mob_se_01.x`, `b_mob_tp_01.x`, `b_npc_teacher_mm.x`, `b_vehicle_lightcycle.x` (8) | An empty `Mesh` is not a mesh. `MeshAsset` refuses zero vertices, and returning an empty asset would be a different answer from refusing. |
+| no `Mesh` at all | the other 561 | A skeleton-only or animation `.x` is not a static mesh. Reported as *no static geometry*, which is a different statement from *failed to decode*. |
+
+13 geometry-bearing files are therefore refused, and **30 decode**. That is
+`13 + 30 = 43`, i.e. every file that carries a `Mesh` is accounted for.
+
+## 26. Decoder coverage as built
+
+| | |
+|---|---|
+| `xof 0303bin 0032` | supported, and 30 of 42 geometry-bearing files decode |
+| `xof 0303bzip0032` (MSZip) | supported; all 86 inflate and parse. None carries static geometry, so none produces a `MeshAsset` |
+| `xof 0303txt 0032` | **not** decoded; text encoding is out of scope |
+| other versions / `0064` floats / `tzip` | refused |
+| `Mesh`, `MeshNormals`, `MeshTextureCoords` | decoded |
+| `MeshMaterialList`, `Material`, `TextureFilename` | parsed and discarded |
+| `XSkinMeshHeader`, `SkinWeights`, `VertexDuplicationIndices` | parsed and discarded; skinning deferred |
+| `Frame`, `FrameTransformMatrix`, `Matrix4x4`, `Animation*` | parsed and discarded; hierarchy and animation deferred |
+
+Multi-`Mesh` files are **merged in document order** into one `MeshAsset`, each
+sub-mesh's indices biased by the running vertex base. That is the only way a
+single-`MeshAsset` shape can hold a 116-sub-mesh model without being extended
+into submeshes, and it drops no geometry.
+
+### Real-asset results
+
+`data/skeleton`, all 608 files attempted, nothing capped:
+
+```
+bin  : 510 candidates,  30 decoded, 12 unsupported,  0 malformed, 468 no static geometry
+bzip :  86 candidates,   0 decoded,  0 unsupported,  0 malformed,  86 no static geometry
+txt  :  12 candidates (text-encoded, not in scope)
+geometry decoded: 10,393 vertices, 8,456 triangles
+```
+
+`data/*.mxf`, all 901 files attempted:
+
+```
+414 decoded, 24 refused, 463 no static geometry, 2 bad container
+```
+
+so `MxfMeshTransform -> XMeshDecoder -> MeshAsset` is exercised end to end on
+414 real files. The two bad containers (`desktop.mxf`, `z800v3.mxf`) are refused
+by CLIENT-013's transform before the decoder sees them.
+
+## 27. Defects found and fixed while building this
+
+Recorded because each is a real bug, not a test artefact.
+
+1. **`const char*` into `std::vector<uint8_t>::insert` does not terminate** on
+   the MSVC 14.44 STL. `bytes.insert(bytes.end(), "array", "array" + 5)` on a
+   three-byte vector never returns. It surfaced as a *non-deterministic* debug
+   heap assertion many tests away from the call, which is why it needed a
+   standalone driver to pin down. Every append in the tests is a per-byte loop
+   now; there is no overload left to misresolve.
+2. **DEFLATE block header read backwards.** The first implementation read one
+   bit as BTYPE and then one bit as BFINAL. The order is BFINAL (1 bit) then
+   BTYPE (2 bits), so the first block's BFINAL was dispatched on as a block type
+   and the following BTYPE bit was read as a second BFINAL. Only a fixture
+   produced by an independent encoder (zlib) exposed it.
+3. **A code-length pre-check tested the wrong thing.** The Huffman decoder
+   refused to decode a code unless that many bits were *already buffered*, but
+   the bit reader refills from the input, so a code ending in the last byte of a
+   well-formed stream was rejected. It now tests whether another bit is
+   readable at all.
+4. **The inflater's history ring could be written one past its end.** A full
+   32 KiB preset dictionary left the write position at `kWindowSize`, and the
+   next `Emit` wrote outside `m_history`. The position now wraps.
+5. **Nested objects were never recorded.** Geometry was only recorded for
+   top-level objects, so every real mesh -- all of which sit inside a `Frame` --
+   was dropped. Recording moved into `ReadObject`.
+6. **`ReadParts` consumed the `Name` token and then let `ReadObject` consume it
+   again**, stepping one token too far and failing every nested object.
+7. **List separators were refused.** `,` and `;` are legal between values of a
+   list and may close a string member; the parser treated them as unknown.
+8. **The bzip path handed the reader the file header.** After inflating, `tokens`
+   pointed at the start of the buffer, i.e. at the ASCII `xof 0303bzip0032`,
+   instead of past it.
+9. **Unbounded recursion.** A desynchronised stream can present an object token
+   at nearly every position, so object nesting is bounded at depth 64.

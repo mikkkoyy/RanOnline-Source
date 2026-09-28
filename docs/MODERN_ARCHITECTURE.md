@@ -1265,6 +1265,41 @@ a modern container — is added by implementing `IMeshDecoder` beside
 `TestMeshDecoder`, and nothing above the interface changes when it arrives. The
 MMESH decoder stays what it was declared to be: the deterministic fixture the
 boundary is tested with.
+#### CLIENT-015: a real RAN decoder at that boundary
+
+The rule above is no longer hypothetical. `modern/client/assets/XMeshDecoder.h`
+and `.cpp` implement `IMeshDecoder` for the RAN `xof 0303` `.X` mesh format, and
+that is the whole of the new production surface:
+
+| Unit | Responsibility |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `modern/client/assets/XMeshDecoder.h, .cpp`     | `XMeshDecoder`: RAN `xof 0303` `.X` -> `MeshAsset`                             |
+| `modern/client/assets/ClientXMeshTests.cpp`     | 64 headless cases, registered as `ModernClientXMeshTests`                        |
+
+What it adds and what it deliberately does not:
+
+- **Still one boundary.** `ResourceData` in, one validated `MeshAsset` out, via
+  `IMeshDecoder`. The interface, `MeshAsset` and `MeshAsset::Create` are
+  unchanged, and nothing above the interface moved.
+- **No new dependency.** The asset layer still links `Modern` and
+  `ModernClientResources` only. The MSZip/raw-DEFLATE reader the `bzip` encoding
+  needs is implemented privately in the decoder's translation unit, against
+  RFC 1951; the asset layer gains no zlib, no boost and no DirectX.
+- **Still not a renderer.** No GPU object, no `IAssetUploader` change, no edge to
+  `modern/client/rendering`. CLIENT-015 ends at `MeshAsset`.
+- **Still not a general `.X` library.** It reads the three geometry templates it
+  needs and walks past the rest. Materials, textures, skinning, bones, morph
+  targets, submeshes and animation remain deferred, and `MeshAsset` is still one
+  vertex array, one index array, `TriangleList`.
+- **The RAN transforms stay separate and in front of it.** `.mxf` becomes plain
+  `.X` bytes in `MxfMeshTransform` (CLIENT-013) before the decoder sees them, so
+  the decoder never reads a legacy container. The composition is exercised end
+  to end on 414 real shipped `.mxf` files.
+- **The RAN-specific format knowledge lives in the decoder, not in core.** The
+  token grammar, the MSZip chunk layout and the decision to merge multi-`Mesh`
+  files are all documented in `XMeshDecoder.h` and in the verification addendum
+  in `docs/reference/client/RAN_X_FORMAT_INVESTIGATION.md`, so `MeshAsset` stays
+  a format-agnostic value.
 
 ### Tests and verification
 

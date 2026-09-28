@@ -19,6 +19,8 @@ add_library(ModernClientAssets STATIC
     TestMeshDecoder.cpp
     MtfTextureTransform.cpp
     MxfMeshTransform.cpp
+
+    XMeshDecoder.cpp
 )
 
 target_include_directories(ModernClientAssets PUBLIC
@@ -148,3 +150,29 @@ if(MSVC)
 endif()
 
 add_test(NAME ModernClientMxfTests COMMAND ModernClientMxfTests)
+
+# RAN .X static mesh decoder tests (CLIENT-015). A sixth executable: each suite
+# owns its own main() so they stay independent translation units registered with
+# CTest. Same linkage rules as above -- no renderer, no graphics API, no legacy
+# library. The .X fixtures are assembled in the test binary by hand from the
+# published DirectX .X token encoding, so nothing proprietary is committed; the
+# optional real-asset case reads a client tree only when RAN_ASSET_ROOT names
+# one.
+add_executable(ModernClientXMeshTests
+    ClientXMeshTests.cpp
+)
+
+target_include_directories(ModernClientXMeshTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_SOURCE_DIR}/modern/tests
+)
+
+target_link_libraries(ModernClientXMeshTests PRIVATE ModernClientAssets ModernClientResources)
+
+target_compile_features(ModernClientXMeshTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernClientXMeshTests PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+add_test(NAME ModernClientXMeshTests COMMAND ModernClientXMeshTests)
