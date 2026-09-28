@@ -291,6 +291,15 @@ They come back when the systems that own them exist, and not before. A field
 that exists only because the old calculation architecture required it is a
 field nobody has justified yet.
 
+**CORE-002 gave the first of those systems an owner.** The stat system in
+`modern/core/stats` now computes HP / MP / SP, recovery rates, attack and
+defence points, the three attack powers, hit, avoid, defence, the physical
+damage range and resistances, from a character's own facts plus three
+contribution inputs. They are still not *on* the character: the calculation
+takes them as an input value and returns them, so `Character` remains a set of
+facts and the aggregates stay a per-system input rather than character state.
+See CORE-002 at the end of this document.
+
 **Validation happens at the boundary.** NaN and infinity are rejected on the
 way in, so one bad value cannot propagate into every downstream rule.
 Directions are stored normalised, so no consumer has to ask whether it was
@@ -310,6 +319,17 @@ faithful record of the legacy formulas and the right starting point if those
 systems are rebuilt; it is not a reference implementation and is not
 maintained. See the README there for the specific defects that stopped it
 compiling.
+
+**CORE-002 also partly supersedes it.** The stat system was written from the
+legacy source, not from that port, because auditing the port against
+`GLogixExPC.cpp` found it had invented behaviour the legacy chain does not
+have: a `max(baseHP, stat * factor)` rule that exists nowhere in
+`SUM_ADDITION`, `baseHP`/`baseMP`/`baseSP` as class data that
+`GLCONST_CHARCLASS` does not carry, and a single final `uint16` cast where RAN
+truncates the per-level term per field before adding it. What survived the
+audit and was reused is its *vocabulary*: the sixteen `EMCHARINDEX` values and
+the six-stat shape, both verified against the legacy headers. The port remains
+a research note and is still not in any build.
 
 ### Verifying
 
@@ -2064,3 +2084,228 @@ case: a file is accepted when it contains the top level and refused only when
 it ends before it. The chain is not preserved, and nothing pretends otherwise.
 
 ```
+
+---
+
+# CORE-002: RAN Stat System
+
+The first system that computes anything rather than describing it. It
+reconstructs RAN's character-stat pipeline and reproduces its arithmetic,
+including the truncations, because the truncations are the behaviour.
+
+## Verified source files
+
+| Legacy file | What was taken from it |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:286`                     | `SUM_ADDITION`, the whole derived-stat pass                               |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:863`                     | `SUM_PASSIVE`, the passive contribution shape                             |
+| `legacy/Lib_Client/G-Logic/GLCharDefine.h:373` / `:328`           | `SCHARSTATS` (six `WORD`) and `FCHARSTATS` (the same six as `float`)       |
+| `legacy/Lib_Client/G-Logic/GLCharDefine.h:497` / `:452`           | the `SCHARSTATS` arithmetic, and therefore the truncation and wrapping     |
+| `legacy/Lib_Client/G-Logic/GLCharDefine.h:235`                     | `EMCHARINDEX`, the sixteen class values                                    |
+| `legacy/Lib_Client/G-Logic/GLCharDefine.h:788`                     | `SRESIST::LIMIT`, the resistance floor                                     |
+| `legacy/Lib_Client/G-Logic/GLogicData.h:58`                        | `GLCONST_CHARCLASS`, the per-class coefficient table                        |
+| `legacy/Lib_Client/G-Logic/GLogicDataLoad.cpp:1169`               | the exact field list parsed out of `default.charclass`                      |
+| `legacy/Lib_Client/G-Logic/GLogicData.cpp:252-254`                | the three recovery-rate constants                                           |
+| `legacy/Lib_Client/G-Logic/GLogicEx.h:104`                        | `SSUM_ITEM`, the equipment contribution                                     |
+| `legacy/Lib_Client/G-Logic/GLCharData.h:1123`                     | `SPASSIVE_SKILL_DATA`, the passive contribution                             |
+| `legacy/Lib_Client/G-Logic/GLCharData.h:721-731`                  | the eleven `m_dw*Increase` codex bonuses                                    |
+| `legacy/Lib_Engine/G-Logic/GLDefine.h:400`                        | `GLDWDATA`, the pool and the `VAR_PARAM` damage floor                        |
+| `legacy/Lib_Engine/Common/GameCharacterCalculations.h` / `.cpp`   | the `VARIATION` clamp, which RAN uses to bound the attack powers            |
+
+`reference/legacy-calculation-port/` was audited against these first. It is
+preserved as a research note and is still in no build; see the note above
+CORE-002 for what was reused and what was found defective.
+
+## Dependency graph
+
+```
+Character facts          ClassConstants (per-class row, loaded from default.charclass)
+  class, level     \
+  allocated stats    >-- StatCalculationInput
+                      |
+  ItemContribution -+   (equipment, not implemented: the shape only)
+  PassiveContribution -+ (passive skills, not implemented: the shape only)
+  CodexContribution  -+ (codex, not implemented: the shape only)
+                      |
+                      v
+              Calculate(input)  -- stateless, no globals
+                      |
+                      v
+                DerivedStats
+```
+
+The order is RAN's, not a design choice. `SUM_ADDITION` consumes, in this
+sequence: `SUM_PASSIVE` has already been folded into `m_sSUM_PASSIVE`,
+`SUM_ITEM` into `m_sSUMITEM`, and the class row is read on demand. The three
+contributions are added *at the point of use*, not accumulated into one total
+first, which is why there is no stacking rule to reproduce: nothing is summed
+twice and nothing needs a priority.
+
+## Base stats
+
+RAN's six, in RAN's own vocabulary. They are not the conventional six, and no
+other MMORPG's stat list was consulted:
+
+| Field | RAN | Type | Feeds |
+| ---------- | ------ | ------ | ---------------------------------------------------------- |
+| `pow`  | íž˜   | `uint16` | melee power, shoot power, attack point |
+| `str`  | ì²´ë ¥ | `uint16` | HP |
+| `spi`  | ì •ì‹  | `uint16` | MP, magic attack |
+| `dex`  | ë¯¼ì²© | `uint16` | hit, avoid, defence, all three attack powers, magic attack |
+| `int`  | ì§€ë ¥ | `uint16` | magic attack |
+| `sta`  | ê·¼ë ¥ | `uint16` | SP |
+
+All six are 16-bit unsigned, and the stat *sum* is 16-bit unsigned arithmetic
+that wraps. That is reproduced rather than widened. A character whose sum
+passes 65535 wraps in RAN, so a saturating modern build would silently
+disagree with a shipped client on exactly the characters most likely to roll
+over.
+
+The per-level growth is `FCHARSTATS`, the same six as `float`, and it is
+floating point in the legacy source. The float is part of the arithmetic, not
+incidental: RAN multiplies it by `ZBLEVEL` and truncates the product per field,
+so a growth rate of `0.5` at level 4 contributes `1`, not `1.5`, and at level
+2 contributes `0`.
+
+## Derived stats, and where each comes from
+
+Every field is an output of a verified line in `SUM_ADDITION`. Nothing is
+present because it is common in an MMORPG.
+
+| `DerivedStats` field | Legacy source |
+| ------------------------------------- | ------------------------------------------------------- |
+| `totalStats`                    | `m_sSUMSTATS` (line 306)                     |
+| `attackPoint`, `defensePoint`   | `m_wSUM_AP`, `m_wSUM_DP` (309-310)            |
+| `meleePower`, `shootPower`, `magicAttack` | `m_wPA`, `m_wSA`, `m_wMA` (313-332), after `VARIATION` |
+| `maxHp`, `maxMp`, `maxSp`       | `m_sHP.dwMax` and siblings (342-355)          |
+| `hpRecoveryRate` and siblings  | `m_fINCR_HP` and siblings (397-399)          |
+| `hit`, `avoid`                  | `m_nHIT`, `m_nAVOID` (365-371)                |
+| `defenseBody`, `defense`        | `m_nDEFENSE_BODY`, `m_nDEFENSE` (372, 376)    |
+| `physicalDamage`                | `m_gdDAMAGE_PHYSIC` (380-389), after `VAR_PARAM` |
+| `resistances`                   | `m_sSUMRESIST` (394), after `SRESIST::LIMIT`  |
+
+Deliberately absent, and why: combat point is a fixed constant with no
+contribution source, so there is nothing to calculate; movement speed, attack
+speed, critical, pierce, skill ranges, `m_wACCEPTP` and `m_wSUM_DisSP` are
+equipment, weapon or animation state, or belong to a future movement or
+progression system.
+
+## Modifier sources
+
+Three, because the verified chain has exactly three independent summations
+plus the class table. No stacking, priority or ordering rule was found between
+them, so none is implemented.
+
+| Source | Legacy | Consumed by |
+| ------------------------------------- | ---------------------- | ---------------------------- |
+| `ItemContribution`      | `SSUM_ITEM`      | stat sum, all three resources, attack powers, hit, avoid, defence, damage range, resistances, recovery rates |
+| `PassiveContribution`   | `m_sSUM_PASSIVE` | all three resources and their rates, attack powers, hit, avoid, defence, damage, resistances, recovery rates |
+| `CodexContribution`     | `m_dw*Increase`  | the three resources, attack, the three attack powers, defence, hit, avoid, resistances |
+| `ClassConstants`        | `GLCONST_CHARCLASS` | every base value and every coefficient |
+
+The class row is a *value*, not a lookup. RAN's coefficients live in
+`default.charclass`, which is a data file and is not in this repository, so
+nothing here is hard-coded to RAN's shipped numbers. The arithmetic is what is
+reproduced.
+
+## Calculation ordering and rounding
+
+The rules that change answers, each verified against the legacy source and each
+pinned by a test:
+
+1. **The level term is `level - 1`**, RAN's `ZBLEVEL`. Zero-based, so level 1
+   contributes no growth.
+2. **The per-level growth truncates per field.** `WORD(lvlup * ZBLEVEL)` is
+   added to a `WORD`, per stat, before the class and character terms are
+   combined. Rounding it, or carrying the float, changes results for every
+   fractional growth rate.
+3. **The stat sum is 16-bit and wraps.** Two `WORD + WORD` additions follow the
+   truncated level term. `60000 + 6000` is `464`, not `66000`.
+4. **A resource maximum truncates to 32 bits twice.** Once on
+   `stat * coefficient + item + passive`, then again after
+   `* (1 + rate) * confPointRate`. Folding them into one is wrong: for
+   `stat 205, coefficient 0.35, rate 0.5` the answer is `106`, not `107`.
+5. **The codex bonus is added last**, after both truncations, as a flat
+   `uint32`. It is never diluted by a rate and never truncated away.
+6. **Hit and avoid scale by `int(value * (100 + percent) * 0.01f)`.** The
+   multiply by `(100 + percent)` happens before the scale, and the grouping is
+   preserved.
+7. **Attack powers are clamped, not wrapped.** `VARIATION` adds in `int` then
+   clamps to `[0, 65535]`, so a large equipment bonus saturates instead of
+   rolling the stat over.
+8. **The damage range has a floor of 1.** `VAR_PARAM` adds the attack power but
+   never lets the result fall below one.
+9. **Resistances floor at zero.** `SRESIST::LIMIT` clamps each element.
+
+Where RAN performs a C cast whose value is out of the destination range it is
+undefined behaviour, and it does so in several places. Every such cast here
+saturates, so a hostile or corrupt input yields a bounded result rather than an
+arbitrary one. For every in-range input the result is identical to RAN's.
+
+## The modern API boundary
+
+```cpp
+namespace Modern::Stats
+{
+    Result<DerivedStats> Calculate(const StatCalculationInput& input) noexcept;
+}
+```
+
+One function. It is stateless, allocates nothing beyond its return value, has
+no globals, no I/O, no clock, no randomness, and no legacy header, and it never
+throws. The same input always produces the same output. It reports failure by
+value, like the rest of the core: `InvalidArgument` for a class index outside
+the sixteen, a level outside 1..255, or a non-finite coefficient or
+contribution.
+
+`Character` still does not own any of this. It holds the class and the level;
+the stat system takes them as an input value and returns the derived set. That
+is the line between a character being facts and a character being a `GLChar`.
+
+`modern/core` gained no dependency. It still links nothing, and the four new
+files include no Windows header, no DirectX, no MFC, no socket, no database
+and no legacy type. The legacy names that appear in them appear only in
+comments, as provenance for each rule.
+
+## Tests
+
+`modern/tests/StatCalculationTests.cpp`, registered in the existing headless
+`ModernCoreTests` target. It links `Modern` and nothing else, and does not
+launch a client, an emulator or a server.
+
+Expected values come from two separate sources:
+
+- **An oracle inside the test file** that re-derives each result from the
+  documented RAN expression, sharing no code with the calculator, compared
+  across a 255-level sweep, all sixteen classes, every contribution
+  combination, a configuration-point-rate sweep and extreme magnitudes. This is
+  what catches structural drift.
+- **Literal numbers**, for cases whose arithmetic is exact and readable by
+  hand. These are the regression fixtures, and two of them exist specifically
+  to discriminate the truncations: a fractional level-up rate that truncates to
+  zero over several levels, and a resource maximum where the two truncations
+  disagree (`106` against `107`).
+
+## Known compatibility limitations
+
+- **No RAN class data ships here.** `default.charclass` is not in the
+  repository, so a caller that has loaded the row supplies it. No RAN-shipped
+  coefficient is asserted anywhere in the tests, because asserting one would
+  require inventing it.
+- **The damage branch is the melee one.** RAN picks melee or shoot power from
+  the equipped weapon's range; with no equipment the melee branch is used, and
+  the ranged branch differs only in that substitution.
+- **A rollback-free build is not claimed.** `SCHARSTATS::operator+` in RAN
+  returns a reference to a function-local `static`, so its result is shared and
+  order-dependent. This implementation returns values, which is well defined
+  and produces the same numbers for the chain as RAN writes it, but the legacy
+  static is not reproduced and must not be depended on.
+- **Saturation replaces undefined behaviour.** Where RAN is undefined, this
+  differs by construction. Every in-range input agrees.
+
+## What is deferred, by design
+
+Equipment, item database, passive skills, the codex, combat resolution, damage
+calculation, PvP, monsters, quests, network packets, server processes, the
+database, rendering, UI and the client status window. The three contribution
+types are the *shapes* those systems will fill, not the systems.

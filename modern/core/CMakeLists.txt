@@ -14,6 +14,7 @@ set(MODERN_SOURCES
     character/Character.cpp
     entity/Entity.cpp
     item/ItemDefinition.cpp
+    stats/StatCalculator.cpp
     types/Result.cpp
 )
 
