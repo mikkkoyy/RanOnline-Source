@@ -16,7 +16,18 @@ namespace Modern::Client::Gameplay
 		return empty;
 	}
 
-	const std::string& ClientCharacterState::EmptyName() noexcept
+
+const Modern::Gameplay::EquippedList& ClientCharacterState::EmptyEquipped() noexcept
+{
+	static const Modern::Gameplay::EquippedList empty;
+	return empty;
+}
+const Modern::Gameplay::SkillList& ClientCharacterState::EmptySkills() noexcept
+{
+	static const Modern::Gameplay::SkillList empty;
+	return empty;
+}
+const std::string& ClientCharacterState::EmptyName() noexcept
 	{
 		static const std::string empty;
 		return empty;

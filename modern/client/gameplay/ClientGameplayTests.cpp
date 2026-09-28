@@ -14,9 +14,17 @@
 
 #include "character/Character.h"
 #include "character/CharacterClassTable.h"
+#include "equipment/EquipmentState.h"
+#include "equipment/ItemDefinitionProvider.h"
 #include "gameplay/ClientCharacterState.h"
 #include "gameplay/CharacterSnapshot.h"
+#include "item/ItemDefinition.h"
+#include "item/ItemInstance.h"
 #include "character/ServerCharacter.h"
+#include "skills/PassiveContributionAggregator.h"
+#include "skills/SkillDefinition.h"
+#include "skills/SkillDefinitionProvider.h"
+#include "skills/SkillState.h"
 #include "stats/DerivedStats.h"
 #include "stats/StatCalculator.h"
 #include "types/Result.h"
@@ -58,6 +66,77 @@ namespace
 		definition.gender        = CharacterGender::Male;
 		definition.level         = 1;
 		definition.classConstants = StandardClass();
+		return definition;
+	}
+
+	// VERTICAL-003: skill test helpers
+	SkillId MakeClientTestSkillId(uint16_t skillIndex)
+	{
+		return SkillId{ 1, skillIndex };
+	}
+
+	SkillDefinition MakeClientTestSkill(uint32_t id, const ItemStatBlock& stats)
+	{
+		SkillDefinition def;
+		def.id = SkillId{ 1, static_cast<uint16_t>(id) };
+		def.name = "TestSkill";
+		def.maxLevel = 1;
+		def.applyType = PassiveApplyType::Hp;
+		def.levelData[1].basicVar = static_cast<float>(stats.hp);
+		// hpRate is mapped to hpRecoveryRate in ItemStatBlock for the skill's basic var
+		if (stats.hpRecoveryRate != 0.0f)
+		{
+			def.impacts[0].type = PassiveImpactType::HpRate;
+			def.impacts[0].values[1] = stats.hpRecoveryRate;
+		}
+		return def;
+	}
+
+	ItemDefinition MakeClientTestWeapon(uint32_t id)
+	{
+		ItemDefinition def;
+		def.id = ItemId(id);
+		def.kind = ItemKind::Weapon;
+		def.name = "Blade";
+		def.maxStack = 1;
+		ItemStatBlock stats;
+		stats.hp = 55;
+		stats.meleePower = 12;
+		def.stats = stats;
+		return def;
+	}
+
+	ItemDefinition MakeClientTestArmor(uint32_t id)
+	{
+		ItemDefinition def;
+		def.id = ItemId(id);
+		def.kind = ItemKind::Armor;
+		def.name = "Cuirass";
+		def.maxStack = 1;
+		ItemStatBlock stats;
+		stats.hp = 45;
+		stats.str = 10;
+		stats.defense = 8;
+		def.stats = stats;
+		return def;
+	}
+
+	ItemInstance MakeClientTestInstance(uint32_t defId, uint64_t serial)
+	{
+		ItemInstance item;
+		item.definition = ItemId(defId);
+		item.serial = serial;
+		item.count = 1;
+		return item;
+	}
+
+	Server::ServerCharacterDefinition StandardDefinitionWithItems(
+		InMemoryItemDefinitions& provider)
+	{
+		Server::ServerCharacterDefinition definition = StandardDefinition();
+		definition.itemDefinitions = &provider;
+		provider.Add(MakeClientTestWeapon(20001));
+		provider.Add(MakeClientTestArmor(20002));
 		return definition;
 	}
 }
@@ -254,25 +333,24 @@ MODERN_TEST(Gameplay_ClientClearForgetsEverything)
 
 MODERN_TEST(Gameplay_ClientNumbersEqualTheOneStatImplementation)
 {
+	// VERTICAL-003: passive contributions now come from learned skills.
 	// Given identical inputs, the server's answer, the client-held answer and a
 	// direct call to Modern::Stats::Calculate all agree. This is the assertion
 	// that would fail if the client had grown a second implementation.
-	Server::ServerCharacterDefinition definition = StandardDefinition();
+	InMemoryItemDefinitions itemProvider;
+	InMemorySkillDefinitions skillProvider;
+
+	ItemStatBlock skillStats;
+	skillStats.hp = 17;
+	skillStats.hpRecoveryRate = 0.25f;
+	skillProvider.Add(MakeClientTestSkill(20003, skillStats));
+
+	Server::ServerCharacterDefinition definition = StandardDefinitionWithItems(itemProvider);
 	definition.level = 42;
 	definition.experience = 9999;
 	definition.allocatedStats.pow = 7;
 	definition.allocatedStats.dex = 19;
-	Stats::ItemContribution items;
-	items.hp = 31;
-	items.hitRatePercent = 12.0f;
-	definition.items = items;
-	Stats::PassiveContribution passives;
-	passives.hp = 17;
-	passives.hpRate = 0.25f;
-	definition.passives = passives;
-	Stats::CodexContribution codex;
-	codex.hp = 500;
-	definition.codex = codex;
+	definition.skillDefinitions = &skillProvider;
 
 	const Result<Server::ServerCharacter> created = Server::ServerCharacter::Create(definition);
 	CHECK(created.IsOk());
@@ -281,6 +359,9 @@ MODERN_TEST(Gameplay_ClientNumbersEqualTheOneStatImplementation)
 		return;
 	}
 	Server::ServerCharacter character = created.GetValue();
+
+	// Learn the skill that provides the passive contribution
+	CHECK(character.LearnSkill(MakeClientTestSkillId(20003)).IsOk());
 	character.RestoreResources();
 
 	Stats::CharClassIndex classIndex{};
@@ -290,8 +371,9 @@ MODERN_TEST(Gameplay_ClientNumbersEqualTheOneStatImplementation)
 	input.level          = definition.level;
 	input.classConstants = definition.classConstants;
 	input.allocatedStats = definition.allocatedStats;
-	input.items          = definition.items;
-	input.passives       = definition.passives;
+	input.items          = Stats::ItemContribution();
+	// The passive contribution now comes from the learned skill
+	input.passives       = character.GetPassiveContribution();
 	input.codex          = definition.codex;
 	input.confPointRate  = definition.confPointRate;
 	const Stats::DerivedStats direct = Stats::Calculate(input).GetValue();
@@ -325,6 +407,152 @@ MODERN_TEST(Gameplay_ClientSourceContainsNoStatCalculation)
 
 	CHECK(source.find("Stats::Calculate") == std::string::npos);
 	CHECK(source.find("StatCalculator.h") == std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// VERTICAL-002: Equipment presentation
+// ---------------------------------------------------------------------------
+
+MODERN_TEST(Gameplay_ClientReportsEmptyEquipmentWithNoSnapshot)
+{
+	ClientCharacterState client;
+	CHECK_EQ(client.GetEquipment().GetOccupiedCount(), static_cast<size_t>(0));
+	CHECK(!client.HasEquipped(EquipmentSlot::Headgear));
+	CHECK(!client.HasEquipped(EquipmentSlot::RightHand));
+
+	const Gameplay::EquippedItem& empty = client.GetEquippedItem(EquipmentSlot::Headgear);
+	CHECK(!empty.definition.IsValid());
+}
+
+MODERN_TEST(Gameplay_ClientPresentsEquippedItemsFromSnapshot)
+{
+	InMemoryItemDefinitions provider;
+	Server::ServerCharacterDefinition definition = StandardDefinitionWithItems(provider);
+
+	const Result<Server::ServerCharacter> created = Server::ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	Server::ServerCharacter character = created.GetValue();
+
+	CHECK(character.Equip(EquipmentSlot::RightHand, MakeClientTestInstance(20001, 1)).IsOk());
+	CHECK(character.Equip(EquipmentSlot::Headgear,  MakeClientTestInstance(20002, 2)).IsOk());
+
+	const Gameplay::CharacterSnapshot snapshot = character.BuildSnapshot().GetValue();
+
+	ClientCharacterState client;
+	CHECK(client.Apply(snapshot).IsOk());
+
+	CHECK_EQ(client.GetEquipment().GetOccupiedCount(), static_cast<size_t>(2));
+	CHECK(client.HasEquipped(EquipmentSlot::RightHand));
+	CHECK(client.HasEquipped(EquipmentSlot::Headgear));
+
+	const Gameplay::EquippedItem& weapon =
+		client.GetEquippedItem(EquipmentSlot::RightHand);
+	CHECK_EQ(weapon.definition, ItemId(20001));
+	CHECK_EQ(weapon.serial, static_cast<uint64_t>(1));
+	CHECK_EQ(weapon.kind, ItemKind::Weapon);
+	CHECK_EQ(weapon.name, "Blade");
+
+	const Gameplay::EquippedItem& armor =
+		client.GetEquippedItem(EquipmentSlot::Headgear);
+	CHECK_EQ(armor.definition, ItemId(20002));
+	CHECK_EQ(armor.serial, static_cast<uint64_t>(2));
+	CHECK_EQ(armor.kind, ItemKind::Armor);
+	CHECK_EQ(armor.name, "Cuirass");
+}
+
+MODERN_TEST(Gameplay_ClientEquippedCountMatchesServer)
+{
+	InMemoryItemDefinitions provider;
+	Server::ServerCharacterDefinition definition = StandardDefinitionWithItems(provider);
+
+	const Result<Server::ServerCharacter> created = Server::ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	Server::ServerCharacter character = created.GetValue();
+
+	character.Equip(EquipmentSlot::RightHand, MakeClientTestInstance(20001, 1));
+	character.Equip(EquipmentSlot::LeftHand,  MakeClientTestInstance(20001, 3));
+	character.Equip(EquipmentSlot::Neck,      MakeClientTestInstance(20002, 4));
+
+	const Gameplay::CharacterSnapshot snapshot = character.BuildSnapshot().GetValue();
+	ClientCharacterState client;
+	CHECK(client.Apply(snapshot).IsOk());
+
+	CHECK_EQ(client.GetEquipment().GetOccupiedCount(),
+	        snapshot.equipped.GetOccupiedCount());
+	CHECK_EQ(client.GetEquipment().GetOccupiedCount(),
+	        character.GetEquipment().GetOccupiedCount());
+}
+
+MODERN_TEST(Gameplay_ClientClearForgetsEquipment)
+{
+	InMemoryItemDefinitions provider;
+	Server::ServerCharacterDefinition definition = StandardDefinitionWithItems(provider);
+
+	const Result<Server::ServerCharacter> created = Server::ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	Server::ServerCharacter character = created.GetValue();
+	character.Equip(EquipmentSlot::RightHand, MakeClientTestInstance(20001, 1));
+
+	const Gameplay::CharacterSnapshot snapshot = character.BuildSnapshot().GetValue();
+	ClientCharacterState client;
+	CHECK(client.Apply(snapshot).IsOk());
+	CHECK(client.HasEquipped(EquipmentSlot::RightHand));
+
+	client.Clear();
+	CHECK_EQ(client.GetEquipment().GetOccupiedCount(), static_cast<size_t>(0));
+	CHECK(!client.HasEquipped(EquipmentSlot::RightHand));
+}
+
+MODERN_TEST(Gameplay_ClientReportsEmptySkillsWithNoSnapshot)
+{
+	ClientCharacterState client;
+	CHECK_EQ(client.GetLearnedSkillCount(), static_cast<size_t>(0));
+	CHECK(!client.HasSkill(MakeClientTestSkillId(20001)));
+	CHECK_EQ(client.GetSkillLevel(MakeClientTestSkillId(20001)), static_cast<uint8_t>(0));
+}
+
+MODERN_TEST(Gameplay_ClientPresentsLearnedSkillsFromSnapshot)
+{
+	InMemoryItemDefinitions itemProvider;
+	InMemorySkillDefinitions skillProvider;
+
+	ItemStatBlock skillStats;
+	skillStats.hp = 30;
+	skillStats.meleePower = 8;
+	skillProvider.Add(MakeClientTestSkill(20004, skillStats));
+
+	Server::ServerCharacterDefinition definition = StandardDefinitionWithItems(itemProvider);
+	definition.skillDefinitions = &skillProvider;
+
+	const Result<Server::ServerCharacter> created = Server::ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	Server::ServerCharacter character = created.GetValue();
+
+	CHECK(character.LearnSkill(MakeClientTestSkillId(20004)).IsOk());
+
+	const Gameplay::CharacterSnapshot snapshot = character.BuildSnapshot().GetValue();
+	ClientCharacterState client;
+	CHECK(client.Apply(snapshot).IsOk());
+
+	CHECK(client.HasSkill(MakeClientTestSkillId(20004)));
+	CHECK_EQ(client.GetSkillLevel(MakeClientTestSkillId(20004)), static_cast<uint8_t>(1));
+	CHECK_EQ(client.GetLearnedSkillCount(), static_cast<size_t>(1));
 }
 
 int main()

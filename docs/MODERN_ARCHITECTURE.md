@@ -343,6 +343,125 @@ cmake --build build --config Debug
 the authority.
 
 
+## 13.5. VERTICAL-002: character equipment layer
+
+VERTICAL-002 completes the character + stats vertical slice begun in VERTICAL-001
+by adding equipment as the authoritative source of item contributions. The
+server now owns the worn set, aggregates item definitions into a stat
+contribution, and publishes the result through the shared `CharacterSnapshot`;
+the client presents what it receives with no local recomputation.
+
+### What it contains
+
+| Unit                                                  | Responsibility                                                         |
+| ----------------------------------------------------- | ---------------------------------------------------------------------- |
+| `modern/core/equipment/EquipmentState.h, .cpp`        | 21-slot wearable container (`EMSLOT` legacy values), `Equip`/`Unequip` |
+| `modern/core/equipment/ItemDefinitionProvider.h, .cpp`| Read-only interface + `InMemoryItemDefinitions` sorted-vector impl     |
+| `modern/core/equipment/ItemContributionAggregator.h, .cpp`| Equipment + definitions -> `Stats::ItemContribution`                |
+| `modern/core/item/ItemDefinition.h, .cpp` (extended)  | `ItemStatBlock`, `IsEquipment()`, `IsFinite()`, `IsZero()`            |
+| `modern/core/gameplay/CharacterSnapshot.h, .cpp` (ext.)| `EquippedItem`, `EquippedList`, equipment validation in `IsValid()`  |
+| `modern/server/character/ServerCharacter.h, .cpp` (ext.)| `Equip`/`Unequip`, aggregation in `Recalculate()`, snapshot publishing |
+| `modern/client/gameplay/ClientCharacterState.h, .cpp` (ext.)| Read-only equipment views: `GetEquipment()`, `GetEquippedItem()`    |
+
+### Key conventions
+
+- **Equipment is the sole source of item contributions.** `ServerCharacterDefinition.items` is zeroed in `Create()` and never read again; `SetContributions()` refuses non-zero items. All `ItemContribution` comes from the worn set.
+- **The server owns the worn set.** `Equip`/`Unequip` are the only mutators; each stages the change, validates against the item provider, commits atomically, then recalculates before returning. A failed call leaves the character untouched.
+- **The client receives, never computes.** `ClientCharacterState` exposes `GetEquipment()`, `GetEquippedItem()`, `HasEquipped()`, `GetOccupiedSlotCount()` — all read-only views of the published snapshot. The client translation unit contains no call to `Modern::Stats::Calculate`.
+- **Definitions are the shared truth.** `ItemDefinition.stats` carries the base values every copy of the item contributes. Per-copy random options, refine state, and custom bonuses are deferred; the investigation report (§7) records why they are absent.
+- **Aggregation is deterministic.** Slots are visited in order (0..20), so the same equipment always produces the same contribution regardless of build order. The six base stats accumulate as 16-bit unsigned values (wrapping like RAN's `SSUM_ITEM`); the wrap happens in `Calculate`, not in the aggregator.
+- **Defense in depth.** `InMemoryItemDefinitions::Add` rejects non-finite stat blocks and invalid definitions. The aggregator additionally checks `IsFinite()` on every definition it reads and returns `ContributionError::NonFinite` if one slips through. Missing definitions yield `ContributionError::MissingDefinition`. An instance bound to a different definition is refused so one copy cannot be counted twice.
+
+### Legacy provenance
+
+| Modern element                    | Legacy origin                                                                 |
+| --------------------------------- | ----------------------------------------------------------------------------- |
+| `EquipmentSlot` enum (21 values)  | `EMSLOT` in `GLItemDef.h:207-245`, `SLOT_NSIZE_S_2 = 21`                     |
+| `ItemContribution` fields         | `SSUM_ITEM` / `SUM_ITEM` in `GLogixExPC.cpp:441`                              |
+| `ItemStatBlock` fields            | `SSUIT` in `GLItemSuit.h:87`, `SITEM` / `SITEMCUSTOM` in `GLItem.h`          |
+| `EMADD_*` typed add-ons           | `GLItemDef.h:508-535`                                                         |
+| Slot iteration order              | `SUM_ITEM` walks `i in [0, SLOT_NSIZE_S_2)` in `GLogixExPC.cpp:446`          |
+
+The full investigation is in `docs/reference/client/VERTICAL-002_EQUIPMENT_INVESTIGATION.md`.
+
+### Verifying
+
+```powershell
+cmake --build build --config Debug
+ctest --test-dir build -C Debug --output-on-failure
+```
+
+The headless test suite covers:
+- `ModernCoreTests` (96 cases): `EquipmentState`, `InMemoryItemDefinitions`, `ItemContributionAggregator`
+- `ModernServerTests` (24 cases): server equipment integration, snapshot publishing, rollback on failure
+- `ModernClientGameplayTests` (13 cases): client presentation of equipped items, empty state, clear
+
+All tests pass without legacy libraries, DirectX, sockets, or a database.
+
+
+## 13.6. VERTICAL-003: Skills + Passive Contribution
+
+VERTICAL-003 completes the character + stats vertical slice by adding passive
+skills as an authoritative source of stat contributions. The server owns the
+learned skill set, aggregates passive skill definitions into a
+`Stats::PassiveContribution`, and publishes the result through the shared
+`CharacterSnapshot`; the client presents what it receives with no local
+recomputation.
+
+### What it contains
+
+| Unit                                                  | Responsibility                                                         |
+| ----------------------------------------------------- | ---------------------------------------------------------------------- |
+| `modern/core/skills/SkillDefinition.h, .cpp`          | Passive skill identity, weapon requirements, per-level values, impacts |
+| `modern/core/skills/SkillState.h, .cpp`               | Character's learned skill set (ordered map, deterministic iteration)   |
+| `modern/core/skills/SkillDefinitionProvider.h, .cpp`  | Read-only interface + `InMemorySkillDefinitions` sorted-vector impl    |
+| `modern/core/skills/PassiveContributionAggregator.h, .cpp` | Learned skills + definitions -> `Stats::PassiveContribution`       |
+| `modern/server/character/ServerCharacter.h, .cpp` (ext.) | `LearnSkill`/`UnlearnSkill`/`SetSkillLevel`, passive aggregation in `Recalculate()`, snapshot publication |
+| `modern/client/gameplay/ClientCharacterState.h, .cpp` (ext.) | Read-only skill views: `GetSkills()`, `HasSkill()`, `GetSkillLevel()`, `GetLearnedSkillCount()` |
+| `modern/core/gameplay/CharacterSnapshot.h, .cpp` (ext.) | `SkillList`, `LearnedSkillEntry`, skill validation in `IsValid()`      |
+
+### Key conventions
+
+- **Passive skills are the sole source of passive contributions.** `ServerCharacterDefinition.passives` is zeroed in `Create()` and never read again; `SetContributions()` refuses non-zero passives. All `PassiveContribution` comes from the learned skill set.
+- **The server owns the learned skill set.** `LearnSkill`/`UnlearnSkill`/`SetSkillLevel` are the only mutators; each stages the change, validates against the skill definition provider, commits atomically, then recalculates before returning. A failed call leaves the character untouched.
+- **The client receives, never computes.** `ClientCharacterState` exposes `GetSkills()`, `HasSkill()`, `GetSkillLevel()`, `GetLearnedSkillCount()` — all read-only views of the published snapshot. The client translation unit contains no call to `Modern::Stats::Calculate`.
+- **Definitions are the shared truth.** `SkillDefinition` carries the per-level basic values and impacts every copy of the skill contributes. Prerequisites, class restrictions, and SP costs are deferred; the investigation report records why they are absent from the stat pipeline.
+- **Aggregation is deterministic.** Skills are visited in `SkillId` order (map order), so the same skill set always produces the same contribution regardless of learning order. The six base stats accumulate as 16-bit unsigned values (wrapping like RAN's `SSUM_ITEM`); the wrap happens in `Calculate`, not in the aggregator.
+- **Defense in depth.** `InMemorySkillDefinitions::Add` rejects invalid definitions. The aggregator additionally checks `IsFinite()` on every definition it reads and returns `PassiveAggregationError::NonFinite` if one slips through. Missing definitions yield `PassiveAggregationError::MissingDefinition`.
+- **Equipment-dependent passives.** If a passive skill requires a specific weapon type in a hand slot, that slot is checked against the currently equipped item. If the requirement is not met, the skill contributes nothing (not an error). The current implementation has a limitation: `ItemDefinition` does not yet expose weapon type, so the check verifies slot occupancy but not weapon-type matching.
+
+### Legacy provenance
+
+| Modern element                          | Legacy origin                                                                 |
+| --------------------------------------- | ----------------------------------------------------------------------------- |
+| `SkillId` (classIndex + skillIndex)     | `SNATIVEID` (wMainID, wSubID) in `GLCharData.h` / `GLSkill.h`                |
+| `SkillState` (learned skill map)        | `SCHARSKILL` + `SKILL_MAP` in `GLCharData.h:233, 889`                        |
+| `PassiveApplyType`                      | `SKILL::EMTYPES` in `GLSkillApply.h`                                          |
+| `PassiveImpactType`                     | `SKILL::EMIMPACT_ADDON` in `GLSkillApply.h`                                   |
+| `PassiveSpecType`                       | `SKILL::EMSPEC_ADDON` in `GLSkillApply.h` (not in stat pipeline)             |
+| `SkillWeaponType` / `SkillWeaponSlot`   | `SKILL::GLSKILL_ATT` in `GLSkillBasic.h`                                      |
+| Passive aggregation loop                | `GLCHARLOGIC::SUM_PASSIVE` in `GLogixExPC.cpp:863`                           |
+| Passive skill data structure            | `SPASSIVE_SKILL_DATA` in `GLCharData.h:1120`                                 |
+| Per-level basic values                  | `SKILL::CDATA_LVL.fBASIC_VAR` in `GLSkillApply.h`                            |
+| Prerequisite skill system               | `SLEARN` in `GLSkillLearn.h` (deferred)                                       |
+
+The full investigation is in `docs/reference/client/VERTICAL-003_SKILL_INVESTIGATION.md` (to be created).
+
+### Verifying
+
+```powershell
+cmake --build build --config Debug
+ctest --test-dir build -C Debug --output-on-failure
+```
+
+The headless test suite covers:
+- `ModernCoreTests` (96 cases): `SkillDefinition`, `SkillState`, `SkillDefinitionProvider`, `PassiveContributionAggregator`
+- `ModernServerTests` (24 cases): server skill mutations, passive recalculation, rollback on failure, snapshot publication
+- `ModernClientGameplayTests` (15 cases): client presentation of learned skills, empty state, clear, authority boundary
+
+All tests pass without legacy libraries, DirectX, sockets, or a database.
+
+
 ## 14. CLIENT-002: modern client application foundation
 
 Establishes modern/client/application, providing an isolated, deterministic

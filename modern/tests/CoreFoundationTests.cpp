@@ -518,7 +518,7 @@ MODERN_TEST(Item_InstanceWithoutDefinitionIsInvalid)
 
 int main()
 {
-	std::printf("Modern CORE-001 base foundation tests\n\n");
+	std::printf("Modern core tests (CORE-001 + VERTICAL-002)\n\n");
 
 	const int failedCases = ModernTests::RunAll();
 

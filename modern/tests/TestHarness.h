@@ -2,6 +2,7 @@
 
 #include "character/Character.h"
 #include "entity/Entity.h"
+#include "equipment/EquipmentState.h"
 #include "item/ItemDefinition.h"
 #include "math/Vector3.h"
 #include "types/Ids.h"
@@ -107,27 +108,27 @@ namespace ModernTests
 		static std::string Get(const Modern::CharacterClass& value) { return Modern::ToString(value); }
 	};
 
-	template <>
-	struct Describer<Modern::ItemKind>
-	{
-		static constexpr bool Known = true;
-		static std::string Get(const Modern::ItemKind& value) { return Modern::ToString(value); }
-	};
+template <>
+struct Describer<Modern::ItemKind>
+{
+	static constexpr bool Known = true;
+	static std::string Get(const Modern::ItemKind& value) { return Modern::ToString(value); }
+};
 
-	template <>
-	struct Describer<Modern::Vector3>
+template <>
+struct Describer<Modern::Vector3>
+{
+	static constexpr bool Known = true;
+	static std::string Get(const Modern::Vector3& value)
 	{
-		static constexpr bool Known = true;
-		static std::string Get(const Modern::Vector3& value)
-		{
-			return "(" + std::to_string(static_cast<double>(value.x)) + ", " +
-				std::to_string(static_cast<double>(value.y)) + ", " +
-				std::to_string(static_cast<double>(value.z)) + ")";
-		}
-	};
+		return "(" + std::to_string(static_cast<double>(value.x)) + ", " +
+			std::to_string(static_cast<double>(value.y)) + ", " +
+			std::to_string(static_cast<double>(value.z)) + ")";
+	}
+};
 
-	template <typename Tag, typename Underlying>
-	struct Describer<Modern::detail::StrongId<Tag, Underlying>>
+template <typename Tag, typename Underlying>
+struct Describer<Modern::detail::StrongId<Tag, Underlying>>
 	{
 		static constexpr bool Known = true;
 		static std::string Get(const Modern::detail::StrongId<Tag, Underlying>& value)

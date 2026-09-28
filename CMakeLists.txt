@@ -8,6 +8,11 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
+# Allow concurrent PDB writes (parallel builds of the same static lib).
+if(MSVC)
+    add_compile_options(/FS)
+endif()
+
 foreach(cfg DEBUG RELEASE)
     string(TOLOWER "${cfg}" cfg_low)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${cfg} ${CMAKE_BINARY_DIR}/${cfg})

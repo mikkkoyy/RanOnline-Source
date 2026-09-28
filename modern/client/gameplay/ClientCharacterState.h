@@ -19,6 +19,7 @@
 
 #include "character/Character.h"
 #include "character/CharacterClassTable.h"
+#include "equipment/EquipmentState.h"
 #include "gameplay/CharacterSnapshot.h"
 #include "math/Vector3.h"
 #include "stats/DerivedStats.h"
@@ -78,6 +79,67 @@ namespace Modern::Client::Gameplay
 		float GetHealthFraction() const noexcept;
 		float GetManaFraction() const noexcept;
 		float GetStaminaFraction() const noexcept;
+
+		// ---- Equipment ----
+		//
+		// What the server said is worn. A read-only view: the client cannot
+		// equip, unequip, or change a slot, because the server owns the worn set
+		// and a client that could change it would be a second authority.
+		const Modern::Gameplay::EquippedList& GetEquipment() const noexcept
+		{
+			return m_hasSnapshot ? m_snapshot.equipped : EmptyEquipped();
+		}
+
+		// The item in one slot, or an empty entry when the slot is empty, the
+		// slot is not wearable, or no snapshot has been received.
+		const Modern::Gameplay::EquippedItem& GetEquippedItem(EquipmentSlot slot) const noexcept
+		{
+			return m_hasSnapshot ? m_snapshot.equipped.Get(slot) : EmptyEquipped().Get(slot);
+		}
+
+		bool HasEquipped(EquipmentSlot slot) const noexcept
+		{
+			return m_hasSnapshot && m_snapshot.equipped.Has(slot);
+		}
+
+		// The occupied slot count, for an equipment panel.
+		size_t GetOccupiedSlotCount() const noexcept
+		{
+			return m_hasSnapshot ? m_snapshot.equipped.GetOccupiedCount() : 0u;
+		}
+
+		// ---- Skills (VERTICAL-003) ----
+		//
+		// What the server said the character has learned. A read-only view: the
+		// client cannot learn, unlearn, or level up skills, because the server
+		// owns the skill state and a client that could change it would be a
+		// second authority.
+		const Modern::Gameplay::SkillList& GetSkills() const noexcept
+		{
+			return m_hasSnapshot ? m_snapshot.skills : EmptySkills();
+		}
+
+		// Check if a specific skill is learned.
+		bool HasSkill(const SkillId& id) const noexcept
+		{
+			return m_hasSnapshot && m_snapshot.skills.Has(id);
+		}
+
+		// Get the level of a learned skill, or 0 if not learned.
+		uint8_t GetSkillLevel(const SkillId& id) const noexcept
+		{
+			return m_hasSnapshot ? m_snapshot.skills.GetLevel(id) : 0u;
+		}
+
+		// The learned skill count, for a skill panel.
+		size_t GetLearnedSkillCount() const noexcept
+		{
+			return m_hasSnapshot ? m_snapshot.skills.GetLearnedCount() : 0u;
+		}
+
+		static const Modern::Gameplay::SkillList& EmptySkills() noexcept;
+
+		static const Modern::Gameplay::EquippedList& EmptyEquipped() noexcept;
 
 	private:
 		static const Stats::DerivedStats& EmptyDerived() noexcept;

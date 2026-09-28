@@ -57,10 +57,53 @@ namespace Modern::Gameplay
 		{
 			return false;
 		}
-		return true;
-	}
+		// A published slot must be wearable, and the count must not claim more
+		// entries than the array can hold. The list is sparse: items are stored
+		// at their slot index (not packed contiguously), so count is the number
+		// of occupied slots, not a high-water mark. A slot naming an item that
+		// is not there, and a count that disagrees with the array, are both
+		// publisher bugs and are refused rather than displayed.
+		if (snapshot.equipped.count > kEquipmentSlotCount)
+		{
+			return false;
+		}
+		{
+			size_t occupied = 0;
+			for (size_t i = 0; i < kEquipmentSlotCount; ++i)
+			{
+				const Gameplay::EquippedItem& item = snapshot.equipped.items[i];
+				const bool present = item.definition.IsValid();
+				if (present)
+				{
+					++occupied;
+				}
+				if (!present && !item.name.empty())
+				{
+					return false;  // named but absent
+				}
+			}
+if (occupied != snapshot.equipped.count)
+			{
+				return false;  // published count disagrees with the array
+			}
+		}
 
-	Result<CharacterSnapshot> CharacterSnapshot::Create(CharacterSnapshot snapshot) noexcept
+	// Validate skills list: each entry must have a valid id and level > 0.
+	for (const auto& skill : snapshot.skills.skills)
+	{
+		if (!skill.id.IsValid())
+		{
+			return false;
+		}
+		if (skill.level == 0 || skill.level > kMaxSkillLevel)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+Result<CharacterSnapshot> CharacterSnapshot::Create(CharacterSnapshot snapshot) noexcept
 	{
 		if (!IsValid(snapshot))
 		{

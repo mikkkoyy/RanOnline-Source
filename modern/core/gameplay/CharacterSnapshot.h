@@ -53,15 +53,19 @@
 //   disagree, the client is wrong and the snapshot is right.
 
 #include "character/Character.h"
+#include "equipment/EquipmentState.h"
 #include "character/CharacterClassTable.h"
 #include "math/Vector3.h"
+#include "skills/SkillState.h"
 #include "stats/BaseStats.h"
 #include "stats/DerivedStats.h"
 #include "types/Ids.h"
 #include "types/Result.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace Modern::Gameplay
 {
@@ -77,6 +81,147 @@ namespace Modern::Gameplay
 		constexpr bool operator==(const ResourcePool& other) const noexcept
 		{
 			return current == other.current;
+		}
+	};
+
+	// One worn item, as the client is entitled to know about it.
+	//
+	// The server publishes what a slot holds so a HUD can name the item without
+	// a second item database on the client. It deliberately carries no stat
+	// values: those are in `derived`, computed once by the server. A client that
+	// received per-item bonuses and added them up itself would be a second
+	// implementation, which is what this milestone exists to prevent.
+	//
+	// `name` is included so a UI needs no lookup to label the slot.
+	struct EquippedItem
+	{
+		EquipmentSlot slot = EquipmentSlot::Headgear;
+		ItemId        definition = ItemId::MakeInvalid();
+		uint64_t      serial   = 0;
+		ItemKind      kind     = ItemKind::None;
+		std::string   name;
+
+		constexpr bool operator==(const EquippedItem& other) const noexcept
+		{
+			return slot == other.slot && definition == other.definition &&
+			       serial == other.serial && kind == other.kind &&
+			       name == other.name;
+		}
+	};
+
+	// A fixed-capacity list of learned skills, so a snapshot is a value.
+	//
+	// The client is entitled to know what passive skills the character has
+	// learned and at what level, so a skill UI can display them. It deliberately
+	// carries no stat values: those are in `derived`, computed once by the
+	// server. A client that received per-skill bonuses and added them up itself
+	// would be a second implementation, which is what this milestone exists to
+	// prevent.
+	//
+	// The list is sparse: skills are stored at their definition's skill index
+	// within class, so iteration order matches the server's aggregation order.
+	// Since we don't know the max number of skills per class, we use a vector
+	// of learned skill entries instead of a fixed array.
+	struct LearnedSkillEntry
+	{
+		SkillId  id = SkillId{};
+		uint8_t  level = 0;
+		std::string name;   // For UI display without a second lookup.
+
+		constexpr bool IsLearned() const noexcept { return level > 0; }
+
+		constexpr bool operator==(const LearnedSkillEntry& other) const noexcept
+		{
+			return id == other.id && level == other.level && name == other.name;
+		}
+	};
+
+	// A variable-capacity list of learned skills.
+	// Using vector instead of fixed array because the max skill count per class
+	// is not a fixed constant like equipment slots.
+	struct SkillList
+	{
+		std::vector<LearnedSkillEntry> skills;
+
+		// Find a learned skill by ID.
+		const LearnedSkillEntry* Find(const SkillId& id) const noexcept
+		{
+			for (const auto& entry : skills)
+			{
+				if (entry.id == id)
+				{
+					return &entry;
+				}
+			}
+			return nullptr;
+		}
+
+		// Check if a skill is learned.
+		bool Has(const SkillId& id) const noexcept
+		{
+			return Find(id) != nullptr;
+		}
+
+		// Get the level of a learned skill, or 0 if not learned.
+		uint8_t GetLevel(const SkillId& id) const noexcept
+		{
+			if (const auto* entry = Find(id))
+			{
+				return entry->level;
+			}
+			return 0;
+		}
+
+		size_t GetLearnedCount() const noexcept { return skills.size(); }
+
+bool operator==(const SkillList& other) const noexcept
+	{
+		return skills == other.skills;
+	}
+};
+
+// A fixed-capacity list of worn items, so a snapshot is a value: it must be
+// copyable, comparable and free of allocation-time surprises. kEquipmentSlotCount
+// is RAN's wearable range, so it is the most entries a character can ever have.
+//
+// Defined after EquippedItem rather than nested in it: it holds
+// `std::array<EquippedItem, kEquipmentSlotCount>`, which requires EquippedItem
+// to be complete. A separate type is the honest shape; the EquippedItem name
+// is just an organizational qualifier, not ownership.
+struct EquippedList
+	{
+		std::array<EquippedItem, kEquipmentSlotCount> items{};
+		size_t count = 0;
+
+		// Slots in slot order, which is the order the server aggregated them
+		// in. A caller can iterate the whole array; `count` says how much of it
+		// is meaningful.
+		const std::array<EquippedItem, kEquipmentSlotCount>& GetItems() const noexcept
+		{
+			return items;
+		}
+
+		// The item in one slot, or an empty entry when nothing is worn there
+		// or the slot is not wearable.
+		const EquippedItem& Get(EquipmentSlot slot) const noexcept
+		{
+			if (!IsValidSlot(slot))
+			{
+				return items[0];
+			}
+			return items[static_cast<size_t>(slot)];
+		}
+
+		bool Has(EquipmentSlot slot) const noexcept
+		{
+			return Get(slot).definition.IsValid();
+		}
+
+		size_t GetOccupiedCount() const noexcept { return count; }
+
+		constexpr bool operator==(const EquippedList& other) const noexcept
+		{
+			return count == other.count && items == other.items;
 		}
 	};
 
@@ -103,6 +248,14 @@ namespace Modern::Gameplay
 		// recomputed.
 		Stats::DerivedStats derived;
 
+		// What the server says is worn. Present so the client can present it;
+		// it never contributes to a value in this struct.
+		EquippedList equipped;
+
+		// What the server says the character has learned. Present so the client
+		// can present it; it never contributes to a value in this struct.
+		SkillList skills;
+
 		ResourcePool hp;
 		ResourcePool mp;
 		ResourcePool sp;
@@ -116,7 +269,8 @@ namespace Modern::Gameplay
 			       level == other.level && experience == other.experience &&
 			       allocatedStats == other.allocatedStats && totalStats == other.totalStats &&
 			       derived == other.derived && hp == other.hp && mp == other.mp &&
-			       sp == other.sp && position == other.position;
+			       sp == other.sp && equipped == other.equipped && skills == other.skills &&
+			       position == other.position;
 		}
 
 		// A snapshot is valid when it identifies a character that could exist:

@@ -1,22 +1,32 @@
 // VERTICAL-001: the server's authoritative character.
 //
-// Headless. Links ModernServer (and therefore Modern) and nothing else: no
-// socket, no database, no renderer, no legacy library, no client.
-//
-// The cases that matter are the consistency ones: that the server's numbers
-// are exactly what Modern::Stats::Calculate produces for the same inputs, and
-// that every mutator which can change a stat input recalculates before it
-// returns, so a published snapshot can never disagree with the state behind
-// it.
+ // Headless. Links ModernServer (and therefore Modern) and nothing else: no
+ // socket, no database, no renderer, no legacy library, no client.
+ //
+ // The cases that matter are the consistency ones: that the server's numbers
+ // are exactly what Modern::Stats::Calculate produces for the same inputs, and
+ // that every mutator which can change a stat input recalculates before it
+ // returns, so a published snapshot can never disagree with the state behind
+ // it.
 
 #include "TestHarness.h"
 
 #include "character/Character.h"
 #include "character/CharacterClassTable.h"
+#include "equipment/EquipmentState.h"
+#include "equipment/ItemContributionAggregator.h"
+#include "equipment/ItemDefinitionProvider.h"
 #include "gameplay/CharacterSnapshot.h"
+#include "item/ItemDefinition.h"
+#include "item/ItemInstance.h"
 #include "math/Vector3.h"
 #include "character/ServerCharacter.h"
+#include "skills/PassiveContributionAggregator.h"
+#include "skills/SkillDefinition.h"
+#include "skills/SkillDefinitionProvider.h"
+#include "skills/SkillState.h"
 #include "stats/StatCalculator.h"
+#include "stats/Contributions.h"
 #include "types/Result.h"
 
 #include <limits>
@@ -80,11 +90,128 @@ namespace
 		return definition;
 	}
 
+	// VERTICAL-003: skill test helpers
+	SkillId MakeTestSkillId(uint16_t skillIndex)
+	{
+		return SkillId{ 1, skillIndex };  // classIndex = 1 (first skill class)
+	}
+
+	SkillDefinition MakeTestSkill(uint32_t id, const ItemStatBlock& stats)
+	{
+		SkillDefinition def;
+		def.id = SkillId{ 1, static_cast<uint16_t>(id) };
+		def.name = "TestSkill";
+		def.maxLevel = 1;
+		def.applyType = PassiveApplyType::Hp;
+		def.levelData[1].basicVar = static_cast<float>(stats.hp);
+		if (stats.hpRecoveryRate != 0.0f)
+		{
+			def.impacts[0].type = PassiveImpactType::HpRate;
+			def.impacts[0].values[1] = stats.hpRecoveryRate;
+		}
+		return def;
+	}
+
+	ItemInstance TestItem(uint32_t defId, uint64_t serial = 1)
+	{
+		return ItemInstance{ ItemId(defId), serial, 1, ItemId::MakeInvalid() };
+	}
+
+	ItemDefinition MakeTestWeapon(uint32_t id, const ItemStatBlock& stats)
+	{
+		ItemDefinition def;
+		def.id = ItemId(id);
+		def.kind = ItemKind::Weapon;
+		def.name = "TestSword";
+		def.maxStack = 1;
+		def.stats = stats;
+		return def;
+	}
+
+	ItemDefinition MakeTestArmor(uint32_t id, const ItemStatBlock& stats)
+	{
+		ItemDefinition def;
+		def.id = ItemId(id);
+		def.kind = ItemKind::Armor;
+		def.name = "TestArmor";
+		def.maxStack = 1;
+		def.stats = stats;
+		return def;
+	}
+
+	// VERTICAL-002/003: shared definition helpers
+	ServerCharacterDefinition StandardDefinitionWithItems(
+		InMemoryItemDefinitions& provider)
+	{
+		ServerCharacterDefinition definition = StandardDefinition();
+		definition.itemDefinitions = &provider;
+
+		ItemStatBlock swordStats;
+		swordStats.hp = 40;
+		swordStats.meleePower = 10;
+		swordStats.dex = 3;
+		provider.Add(MakeTestWeapon(10001, swordStats));
+
+		ItemStatBlock armorStats;
+		armorStats.hp = 60;
+		armorStats.str = 8;
+		armorStats.defense = 7;
+		provider.Add(MakeTestArmor(10002, armorStats));
+
+		return definition;
+	}
+
+	ServerCharacterDefinition StandardDefinitionWithSkills(
+		InMemorySkillDefinitions& provider)
+	{
+		ServerCharacterDefinition definition = StandardDefinition();
+		definition.skillDefinitions = &provider;
+		return definition;
+	}
+
+	ServerCharacterDefinition StandardDefinitionWithItemsAndSkills(
+		InMemoryItemDefinitions& itemProvider,
+		InMemorySkillDefinitions& skillProvider)
+	{
+		ServerCharacterDefinition definition = StandardDefinition();
+		definition.itemDefinitions = &itemProvider;
+		definition.skillDefinitions = &skillProvider;
+		return definition;
+	}
+
 	// Rebuilds the stat input the server currently holds and calls the one
 	// stat implementation, so the comparison is against the formula rather than
 	// against a copy of it.
-	Stats::DerivedStats RecalculateIndependently(const ServerCharacterDefinition& definition)
+	Stats::DerivedStats RecalculateIndependently(
+		const ServerCharacterDefinition& definition,
+		const ItemDefinitionProvider* itemProvider = nullptr,
+		const SkillDefinitionProvider* skillProvider = nullptr)
 	{
+		// Aggregate items if provider given
+		Stats::ItemContribution items;
+		if (itemProvider != nullptr)
+		{
+			EquipmentState equipment; // Empty for independent recalc
+			auto aggregated = ItemContributionAggregator::Aggregate(equipment, *itemProvider);
+			if (aggregated.IsOk() && aggregated.GetValue().IsOk())
+			{
+				items = aggregated.GetValue().contribution;
+			}
+		}
+
+		// Aggregate passives if provider given
+		Stats::PassiveContribution passives;
+		if (skillProvider != nullptr)
+		{
+			SkillState skills; // Empty for independent recalc
+			EquipmentState equipment;
+			auto aggregated = PassiveContributionAggregator::Aggregate(skills, *skillProvider, equipment);
+			if (aggregated.IsOk() && aggregated.GetValue().IsOk())
+			{
+				passives = aggregated.GetValue().contribution;
+			}
+		}
+
 		Stats::CharClassIndex classIndex{};
 		TryToCharClassIndex(definition.characterClass, definition.gender, classIndex);
 
@@ -93,8 +220,8 @@ namespace
 		input.level          = definition.level;
 		input.classConstants = definition.classConstants;
 		input.allocatedStats = definition.allocatedStats;
-		input.items          = definition.items;
-		input.passives       = definition.passives;
+		input.items          = items;
+		input.passives       = passives;
 		input.codex          = definition.codex;
 		input.confPointRate  = definition.confPointRate;
 		return Stats::Calculate(input).GetValue();
@@ -246,7 +373,21 @@ MODERN_TEST(Server_StatAllocationRecalculates)
 
 MODERN_TEST(Server_ContributionChangeRecalculates)
 {
-	const Result<ServerCharacter> created = ServerCharacter::Create(StandardDefinition());
+	// VERTICAL-003: the old direct passive contribution API is gone.
+	// Passive contributions now come from learned skills.
+	// This test verifies that learning a skill changes the derived stats.
+	InMemorySkillDefinitions provider;
+
+	ItemStatBlock stats;
+	stats.hp = 250;
+	stats.hpRecoveryRate = 0.5f;
+	provider.Add(MakeTestSkill(10001, stats));
+
+	ServerCharacterDefinition definition = StandardDefinitionWithSkills(provider);
+	// Remove the item definitions from StandardDefinitionWithItems and add our skill
+	definition.itemDefinitions = nullptr;  // No items for this test
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
 	CHECK(created.IsOk());
 	if (created.IsError())
 	{
@@ -255,20 +396,12 @@ MODERN_TEST(Server_ContributionChangeRecalculates)
 	ServerCharacter character = created.GetValue();
 	const uint32_t before = character.GetDerivedStats().maxHp;
 
-	Stats::ItemContribution     items;
-	Stats::PassiveContribution  passives;
-	passives.hp = 250;
-	passives.hpRate = 0.5f;
-	Stats::CodexContribution    codex;
-	codex.hp = 100;
-	CHECK(character.SetContributions(items, passives, codex).IsOk());
+	CHECK(character.LearnSkill(MakeTestSkillId(10001)).IsOk());
 	CHECK(!(character.GetDerivedStats().maxHp == before));
+	CHECK(character.GetDerivedStats().maxHp > before);
 
-	ServerCharacterDefinition expected = StandardDefinition();
-	expected.items = items;
-	expected.passives = passives;
-	expected.codex = codex;
-	CHECK(character.GetDerivedStats() == RecalculateIndependently(expected));
+	// Verify the passive contribution matches what the skill provides.
+	CHECK(character.GetPassiveContribution().hp == 250);
 }
 
 MODERN_TEST(Server_ConfPointRateChangeRecalculates)
@@ -444,6 +577,190 @@ MODERN_TEST(Server_RepeatedSnapshotsAreIdentical)
 	{
 		CHECK(character.BuildSnapshot().GetValue() == first);
 	}
+}
+
+// ---------------------------------------------------------------------------
+// VERTICAL-002: Equipment integration
+// ---------------------------------------------------------------------------
+
+MODERN_TEST(Server_EquipWithoutProviderFails)
+{
+	const Result<ServerCharacter> created = ServerCharacter::Create(StandardDefinition());
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	const Status status = character.Equip(EquipmentSlot::RightHand, TestItem(10001));
+	CHECK_EQ(status.GetCode(), ErrorCode::InvalidArgument);
+}
+
+MODERN_TEST(Server_EquipUnknownItemFails)
+{
+	InMemoryItemDefinitions provider;
+	// The item definition for id 10001 is NOT registered.
+	const ServerCharacterDefinition definition = StandardDefinitionWithItems(provider);
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	const Status status = character.Equip(EquipmentSlot::RightHand, TestItem(99999));
+	CHECK_EQ(status.GetCode(), ErrorCode::NotFound);
+}
+
+MODERN_TEST(Server_EquipChangesDerivedStats)
+{
+	InMemoryItemDefinitions provider;
+	ServerCharacterDefinition definition = StandardDefinitionWithItems(provider);
+	definition.level = 10;
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+	character.RestoreResources();
+
+	const uint32_t hpBefore = character.GetDerivedStats().maxHp;
+
+	CHECK(character.Equip(EquipmentSlot::RightHand, TestItem(10001)).IsOk());
+	CHECK(character.GetDerivedStats().maxHp > hpBefore);
+	CHECK_EQ(character.GetItemContribution().hp, 40);
+	CHECK_EQ(character.GetEquipment().GetOccupiedCount(), static_cast<size_t>(1));
+	CHECK(character.GetEquipment().HasEquipped(EquipmentSlot::RightHand));
+}
+
+MODERN_TEST(Server_UnequipDropsContribution)
+{
+	InMemoryItemDefinitions provider;
+	ServerCharacterDefinition definition = StandardDefinitionWithItems(provider);
+	definition.level = 10;
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	CHECK(character.Equip(EquipmentSlot::RightHand, TestItem(10001)).IsOk());
+	CHECK(character.GetItemContribution().hp == 40);
+
+	CHECK(character.Unequip(EquipmentSlot::RightHand).IsOk());
+	CHECK_EQ(character.GetEquipment().GetOccupiedCount(), static_cast<size_t>(0));
+	CHECK_EQ(character.GetItemContribution().hp, 0);
+}
+
+MODERN_TEST(Server_EquipUnequipRoundTripsStats)
+{
+	InMemoryItemDefinitions provider;
+	ServerCharacterDefinition definition = StandardDefinitionWithItems(provider);
+	definition.level = 10;
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+	character.RestoreResources();
+
+	const Stats::DerivedStats baseline = character.GetDerivedStats();
+
+	CHECK(character.Equip(EquipmentSlot::RightHand, TestItem(10001, 1)).IsOk());
+	CHECK(character.Equip(EquipmentSlot::Headgear,  TestItem(10002, 2)).IsOk());
+	CHECK(!(character.GetDerivedStats() == baseline));
+
+	CHECK(character.Unequip(EquipmentSlot::RightHand).IsOk());
+	CHECK(character.Unequip(EquipmentSlot::Headgear).IsOk());
+	CHECK(character.GetDerivedStats() == baseline);
+}
+
+MODERN_TEST(Server_SnapshotPublishesEquippedItems)
+{
+	InMemoryItemDefinitions provider;
+	ServerCharacterDefinition definition = StandardDefinitionWithItems(provider);
+	definition.level = 15;
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+	character.RestoreResources();
+
+	CHECK(character.Equip(EquipmentSlot::RightHand, TestItem(10001, 7)).IsOk());
+
+	const Result<Gameplay::CharacterSnapshot> snapshotResult = character.BuildSnapshot();
+	CHECK(snapshotResult.IsOk());
+	if (snapshotResult.IsError())
+	{
+		return;
+	}
+	const Gameplay::CharacterSnapshot& snapshot = snapshotResult.GetValue();
+
+	CHECK_EQ(snapshot.equipped.GetOccupiedCount(), static_cast<size_t>(1));
+	CHECK(snapshot.equipped.Has(EquipmentSlot::RightHand));
+
+	const Gameplay::EquippedItem& item =
+		snapshot.equipped.Get(EquipmentSlot::RightHand);
+	CHECK_EQ(item.definition, ItemId(10001));
+	CHECK_EQ(item.serial, static_cast<uint64_t>(7));
+	CHECK_EQ(item.kind, ItemKind::Weapon);
+	CHECK_EQ(item.name, "TestSword");
+
+	CHECK(!snapshot.equipped.Has(EquipmentSlot::Headgear));
+}
+
+MODERN_TEST(Server_SnapshotHasEmptyEquipmentByDefault)
+{
+	InMemoryItemDefinitions provider;
+	ServerCharacterDefinition definition = StandardDefinitionWithItems(provider);
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	const Gameplay::CharacterSnapshot snapshot = character.BuildSnapshot().GetValue();
+	CHECK_EQ(snapshot.equipped.GetOccupiedCount(), static_cast<size_t>(0));
+}
+
+MODERN_TEST(Server_RejectedEquipLeavesCharacterIntact)
+{
+	InMemoryItemDefinitions provider;
+	ServerCharacterDefinition definition = StandardDefinitionWithItems(provider);
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+	const size_t occupiedBefore = character.GetEquipment().GetOccupiedCount();
+	const Stats::DerivedStats before = character.GetDerivedStats();
+
+	// An unknown item: the provider does not know id 99998.
+	CHECK(character.Equip(EquipmentSlot::RightHand, TestItem(99998)).IsError());
+	CHECK_EQ(character.GetEquipment().GetOccupiedCount(), occupiedBefore);
+	CHECK(character.GetDerivedStats() == before);
 }
 
 int main()

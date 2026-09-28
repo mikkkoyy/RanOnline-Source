@@ -14,8 +14,15 @@ set(MODERN_SOURCES
     character/Character.cpp
     character/CharacterClassTable.cpp
     entity/Entity.cpp
+    equipment/EquipmentState.cpp
+    equipment/ItemContributionAggregator.cpp
+    equipment/ItemDefinitionProvider.cpp
     gameplay/CharacterSnapshot.cpp
     item/ItemDefinition.cpp
+    skills/SkillDefinition.cpp
+    skills/SkillState.cpp
+    skills/SkillDefinitionProvider.cpp
+    skills/PassiveContributionAggregator.cpp
     stats/StatCalculator.cpp
     types/Result.cpp
 )
