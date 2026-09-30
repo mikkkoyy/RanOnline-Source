@@ -74,6 +74,32 @@ namespace Modern
 		float mpRecoveryRate = 0.0f;
 		float spRecoveryRate = 0.0f;
 
+		// VERTICAL-005: the *second* recovery term, fInc_HP / fInc_MP / fInc_SP.
+		//
+		// These are a different field from the rates above and are not an
+		// alternative spelling of them. RAN's recovery formula adds a
+		// percentage-of-maximum term and an absolute term:
+		//
+		//   GLogixExPC.cpp:3020
+		//   fINC_HP = fElap * ( m_sHP.dwMax * fINCR_HP
+		//                      + GLCONST_CHAR::fHP_INC
+		//                      + m_sSUMITEM.fInc_HP );
+		//
+		// `fINCR_HP` (the class constant plus fIncR_HP plus the passive) scales
+		// with the maximum; `fInc_HP` does not. An item that recovers a flat
+		// amount per unit stays equally useful on a character with a small
+		// maximum, which is the whole reason RAN carries both.
+		//
+		// These were absent through CORE-002 and VERTICAL-002, and the comment
+		// on `Stats::ItemContribution` claimed the legacy field "is not part of
+		// the stat pipeline". That was wrong: it is the absolute term of the
+		// same expression. VERTICAL-005 corrects the claim and models the field,
+		// because a resource system that only knew the rate would silently drop
+		// half of every character's item-granted regeneration.
+		float hpRecoveryFlat = 0.0f;
+		float mpRecoveryFlat = 0.0f;
+		float spRecoveryFlat = 0.0f;
+
 		// Attack power: GETADDPA (melee), GETADDSA (ranged), GETADDENERGY
 		// (magic). RAN has no GETADDMA; magic attack arrives as "energy".
 		int32_t meleePower  = 0;
@@ -117,6 +143,9 @@ namespace Modern
 			       hpRecoveryRate == other.hpRecoveryRate &&
 			       mpRecoveryRate == other.mpRecoveryRate &&
 			       spRecoveryRate == other.spRecoveryRate &&
+			       hpRecoveryFlat == other.hpRecoveryFlat &&
+			       mpRecoveryFlat == other.mpRecoveryFlat &&
+			       spRecoveryFlat == other.spRecoveryFlat &&
 			       meleePower == other.meleePower && shootPower == other.shootPower &&
 			       magicAttack == other.magicAttack && hit == other.hit &&
 			       avoid == other.avoid && hitPercent == other.hitPercent &&

@@ -71,6 +71,13 @@ namespace Modern
 			result.contribution.mpRecoveryRate += block.mpRecoveryRate;
 			result.contribution.spRecoveryRate += block.spRecoveryRate;
 
+			// VERTICAL-005: the absolute per-unit recovery, fInc_HP and
+			// friends. Distinct from the rate above and summed separately, which
+			// is why it is not folded into the three lines immediately above.
+			result.contribution.hpRecoveryFlat += block.hpRecoveryFlat;
+			result.contribution.mpRecoveryFlat += block.mpRecoveryFlat;
+			result.contribution.spRecoveryFlat += block.spRecoveryFlat;
+
 			// Attack power: GETADDPA, GETADDSA, GETADDENERGY.
 			result.contribution.meleePower  += block.meleePower;
 			result.contribution.shootPower  += block.shootPower;

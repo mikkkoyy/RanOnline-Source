@@ -264,8 +264,9 @@ namespace Modern::Stats
 	bool IsFinite(const ItemContribution& value) noexcept
 	{
 		return std::isfinite(value.hpRecoveryRate) && std::isfinite(value.mpRecoveryRate) &&
-		       std::isfinite(value.spRecoveryRate) && std::isfinite(value.hitRatePercent) &&
-		       std::isfinite(value.avoidRatePercent);
+		       std::isfinite(value.spRecoveryRate) && std::isfinite(value.hpRecoveryFlat) &&
+		       std::isfinite(value.mpRecoveryFlat) && std::isfinite(value.spRecoveryFlat) &&
+		       std::isfinite(value.hitRatePercent) && std::isfinite(value.avoidRatePercent);
 	}
 
 	bool IsFinite(const PassiveContribution& value) noexcept
@@ -401,6 +402,14 @@ namespace Modern::Stats
 		                       input.passives.mpRecoveryRate;
 		stats.spRecoveryRate = RecoveryRateConstant::kSp + input.items.spRecoveryRate +
 		                       input.passives.spRecoveryRate;
+
+		// GLogixExPC.cpp:3020-3022. The absolute term of the recovery amount:
+		// `fElap * ( dwMax * fINCR_HP + fHP_INC + m_sSUMITEM.fInc_HP )`. Only the
+		// constant and the item field; a passive contributes to the rate, never
+		// here, because SPASSIVE_SKILL_DATA has no flat recovery member.
+		stats.hpRecoveryFlat = RecoveryFlatConstant::kHp + input.items.hpRecoveryFlat;
+		stats.mpRecoveryFlat = RecoveryFlatConstant::kMp + input.items.mpRecoveryFlat;
+		stats.spRecoveryFlat = RecoveryFlatConstant::kSp + input.items.spRecoveryFlat;
 
 		return DerivedStats(std::move(stats));
 	}

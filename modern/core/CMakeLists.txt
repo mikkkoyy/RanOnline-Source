@@ -29,6 +29,7 @@ set(MODERN_SOURCES
     skills/PassiveContributionAggregator.cpp
     stats/StatCalculator.cpp
     types/Result.cpp
+    resources/ResourceState.cpp
 )
 
 add_library(Modern STATIC ${MODERN_SOURCES})

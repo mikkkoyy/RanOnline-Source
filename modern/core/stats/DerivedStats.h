@@ -65,10 +65,28 @@ namespace Modern::Stats
 		// m_fINCR_HP / m_fINCR_MP / m_fINCR_SP: a rate, not a per-second
 		// amount. RAN adds the class constant, the item contribution and the
 		// passive contribution; the consumer that turns a rate into an amount
-		// per second is out of scope here.
+		// is the resource system, VERTICAL-005.
 		float hpRecoveryRate = 0.0f;
 		float mpRecoveryRate = 0.0f;
 		float spRecoveryRate = 0.0f;
+
+		// VERTICAL-005: the absolute per-unit half of the same recovery term,
+		// `GLCONST_CHAR::fHP_INC + m_sSUMITEM.fInc_HP` and its MP and SP
+		// counterparts (GLogixExPC.cpp:3020-3022).
+		//
+		// The legacy recovery amount is a *sum of two different units*:
+		//
+		//   fINC_HP = fElap * ( maxHP * hpRecoveryRate + hpRecoveryFlat )
+		//
+		// so it cannot be folded into `hpRecoveryRate` without changing what the
+		// number means. They are reported separately for the same reason
+		// `maxHp` and `physicalDamage` are reported rather than summarised.
+		//
+		// The three `GLCONST_CHAR::*_INC` constants are zero in the shipped
+		// data (GLogicData.cpp:256-258), so in practice this is the item sum.
+		float hpRecoveryFlat = 0.0f;
+		float mpRecoveryFlat = 0.0f;
+		float spRecoveryFlat = 0.0f;
 
 		// m_wSUM_AP / m_wSUM_DP: stat points and defence points after the class
 		// table's conversion. The derived damage and defence are built on these,
@@ -112,6 +130,9 @@ namespace Modern::Stats
 			       hpRecoveryRate == other.hpRecoveryRate &&
 			       mpRecoveryRate == other.mpRecoveryRate &&
 			       spRecoveryRate == other.spRecoveryRate &&
+			       hpRecoveryFlat == other.hpRecoveryFlat &&
+			       mpRecoveryFlat == other.mpRecoveryFlat &&
+			       spRecoveryFlat == other.spRecoveryFlat &&
 			       attackPoint == other.attackPoint && defensePoint == other.defensePoint &&
 			       meleePower == other.meleePower && shootPower == other.shootPower &&
 			       magicAttack == other.magicAttack && hit == other.hit && avoid == other.avoid &&

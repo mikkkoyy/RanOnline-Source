@@ -88,6 +88,38 @@ namespace Modern::Stats
 		inline constexpr float kSp = 0.5f * 0.01f;
 	}
 
+	// The absolute half of RAN's recovery term: `GLCONST_CHAR::fHP_INC`,
+	// `fMP_INC` and `fSP_INC`.
+	//
+	// legacy/Lib_Client/G-Logic/GLogicData.cpp:256-258, which is the definition
+	// site, not a transcription of a shipped data file:
+	//
+	//   fHP_INC = 0
+	//   fMP_INC = 0
+	//   fSP_INC = 0
+	//
+	// They are runtime-configurable (GLogicDataLoad.cpp reads them from a
+	// script), and zero is the shipped default, so zero is the correct value to
+	// reproduce. They are named here rather than folded into the rate because
+	// they are added in a different term of the same expression - see
+	// `DerivedStats::hpRecoveryFlat`.
+	namespace RecoveryFlatConstant
+	{
+		inline constexpr float kHp = 0.0f;
+		inline constexpr float kMp = 0.0f;
+		inline constexpr float kSp = 0.0f;
+	}
+
+	// `GLCONST_CHAR::fUNIT_TIME` (GLogicData.cpp:251), the divisor that turns
+	// elapsed time into recovery units. It is a recovery-system input rather
+	// than a stat, so the resource system owns it; the constant is published
+	// here because that is where the verified value lives and because a caller
+	// assembling a `ResourceState` has no other reason to know about it.
+	namespace RecoveryTiming
+	{
+		inline constexpr float kUnitTime = 1.0f;
+	}
+
 	// Calculates one character's derived statistics.
 	//
 	// Fails with InvalidArgument if the class index is out of range, the level

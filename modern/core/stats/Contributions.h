@@ -71,10 +71,17 @@ namespace Modern::Stats
 
 	// What equipped items add, as RAN's SUM_ITEM accumulates it.
 	//
-	// Note the two distinct HP-ish rates: `hpRecoveryRate` (fIncR_HP) is the
-	// flat rate the recovery formula adds to the class constant, while the
-	// legacy `fInc_HP` is a different field used elsewhere in the client and is
-	// not part of the stat pipeline, so it is deliberately absent.
+	// The recovery block has two independent halves, and VERTICAL-005 found
+	// that the second one had been documented away rather than modelled.
+	//
+	// `hpRecoveryRate` (fIncR_HP) is the *rate*: a fraction of the resource
+	// maximum, added to the class constant to form `DerivedStats::hpRecoveryRate`.
+	//
+	// `hpRecoveryFlat` (fInc_HP) is the *absolute* per-unit amount, added
+	// separately in the same expression (GLogixExPC.cpp:3020-3022). An earlier
+	// comment here said fInc_HP "is not part of the stat pipeline"; it is the
+	// flat half of the pipeline's recovery term, and it is now summed into
+	// `DerivedStats::hpRecoveryFlat` alongside `GLCONST_CHAR::fHP_INC`.
 	struct ItemContribution
 	{
 		// sStats: flat bonuses to the six base stats. These are added into the
@@ -91,6 +98,13 @@ namespace Modern::Stats
 		float hpRecoveryRate = 0.0f;
 		float mpRecoveryRate = 0.0f;
 		float spRecoveryRate = 0.0f;
+
+		// VERTICAL-005: the absolute per-unit recovery, fInc_HP / fInc_MP /
+		// fInc_SP. See the note above. Added to `GLCONST_CHAR::fHP_INC` and
+		// friends, not to the rate.
+		float hpRecoveryFlat = 0.0f;
+		float mpRecoveryFlat = 0.0f;
+		float spRecoveryFlat = 0.0f;
 
 		// Attack-power style flat bonuses: nPA, nSA, nMA. Applied through
 		// RAN's VARIATION clamp against the stat-derived value.
@@ -123,7 +137,11 @@ namespace Modern::Stats
 		{
 			return stats == other.stats && hp == other.hp && mp == other.mp && sp == other.sp &&
 			       hpRecoveryRate == other.hpRecoveryRate && mpRecoveryRate == other.mpRecoveryRate &&
-			       spRecoveryRate == other.spRecoveryRate && meleePower == other.meleePower &&
+			       spRecoveryRate == other.spRecoveryRate &&
+			       hpRecoveryFlat == other.hpRecoveryFlat &&
+			       mpRecoveryFlat == other.mpRecoveryFlat &&
+			       spRecoveryFlat == other.spRecoveryFlat &&
+			       meleePower == other.meleePower &&
 			       shootPower == other.shootPower && magicAttack == other.magicAttack &&
 			       hit == other.hit && avoid == other.avoid &&
 			       hitRatePercent == other.hitRatePercent &&

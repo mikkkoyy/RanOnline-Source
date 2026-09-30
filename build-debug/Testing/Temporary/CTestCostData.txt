@@ -1,0 +1,15 @@
+ModernServerTests 4 0.00896345
+ModernClientInputTests 4 0.00666185
+ModernClientResourceTests 4 0.0446053
+ModernClientAssetTests 4 0.0099919
+ModernClientMeshAssetTests 4 0.0214291
+ModernClientDdsImageTests 4 0.0100776
+ModernClientMtfTests 4 0.00549643
+ModernClientMxfTests 4 0.0046507
+ModernClientXMeshTests 4 0.015131
+ModernClientRenderingTests 4 0.00577442
+ModernClientAssetUploadTests 4 0.00571773
+ModernClientGameplayTests 4 0.00759045
+ModernClientAppTests 4 0.00482182
+ModernCoreTests 4 0.0061607
+---

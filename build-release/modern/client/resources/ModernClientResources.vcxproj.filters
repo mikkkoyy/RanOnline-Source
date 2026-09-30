@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\client\resources\ResourceId.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\client\resources\MemoryResourceProvider.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\client\resources\FileSystemResourceProvider.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\client\resources\ResourceManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="D:\FILES\project\modernization RanOnline\modern\client\resources\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{3A50CFCF-CE6E-3C11-82E4-2E92984F0D3B}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

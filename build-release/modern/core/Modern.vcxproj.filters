@@ -1,0 +1,70 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\character\Character.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\character\CharacterClassTable.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\entity\Entity.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\equipment\EquipmentState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\equipment\ItemContributionAggregator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\equipment\ItemDefinitionProvider.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\gameplay\CharacterSnapshot.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\item\ItemDefinition.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\progression\CodexDefinition.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\progression\CodexDefinitionProvider.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\progression\CodexState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\progression\CodexContributionAggregator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\skills\SkillDefinition.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\skills\SkillState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\skills\SkillDefinitionProvider.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\skills\PassiveContributionAggregator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\stats\StatCalculator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\types\Result.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FILES\project\modernization RanOnline\modern\core\resources\ResourceState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="D:\FILES\project\modernization RanOnline\modern\core\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{3A50CFCF-CE6E-3C11-82E4-2E92984F0D3B}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
