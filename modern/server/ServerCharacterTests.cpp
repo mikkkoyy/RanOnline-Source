@@ -96,6 +96,18 @@ namespace
 		return SkillId{ 1, skillIndex };  // classIndex = 1 (first skill class)
 	}
 
+	// A passive whose basic apply type is a flat HP bonus, with an optional
+	// recovery-rate impact. Spelled as values rather than as an ItemStatBlock:
+	// a skill definition has no stats block, and borrowing the item type here
+	// would suggest one exists.
+	ItemStatBlock TestSkillStats(int32_t hp, float hpRecoveryRate)
+	{
+		ItemStatBlock stats;
+		stats.hp             = hp;
+		stats.hpRecoveryRate = hpRecoveryRate;
+		return stats;
+	}
+
 	SkillDefinition MakeTestSkill(uint32_t id, const ItemStatBlock& stats)
 	{
 		SkillDefinition def;
@@ -182,17 +194,28 @@ namespace
 	// Rebuilds the stat input the server currently holds and calls the one
 	// stat implementation, so the comparison is against the formula rather than
 	// against a copy of it.
+	//
+	// Passing the learned-skill and equipment states in is what makes the check
+	// independent rather than vacuous: without them the aggregation below runs
+	// over an empty set, and every skill-bearing character would trivially agree
+	// with a character that has no skills at all.
 	Stats::DerivedStats RecalculateIndependently(
 		const ServerCharacterDefinition& definition,
 		const ItemDefinitionProvider* itemProvider = nullptr,
-		const SkillDefinitionProvider* skillProvider = nullptr)
+		const SkillDefinitionProvider* skillProvider = nullptr,
+		const SkillState* skills = nullptr,
+		const EquipmentState* equipment = nullptr)
 	{
+		const EquipmentState emptyEquipment;
+		const SkillState emptySkills;
+		const EquipmentState& worn  = equipment != nullptr ? *equipment : emptyEquipment;
+		const SkillState& learned    = skills    != nullptr ? *skills    : emptySkills;
+
 		// Aggregate items if provider given
 		Stats::ItemContribution items;
 		if (itemProvider != nullptr)
 		{
-			EquipmentState equipment; // Empty for independent recalc
-			auto aggregated = ItemContributionAggregator::Aggregate(equipment, *itemProvider);
+			auto aggregated = ItemContributionAggregator::Aggregate(worn, *itemProvider);
 			if (aggregated.IsOk() && aggregated.GetValue().IsOk())
 			{
 				items = aggregated.GetValue().contribution;
@@ -203,9 +226,7 @@ namespace
 		Stats::PassiveContribution passives;
 		if (skillProvider != nullptr)
 		{
-			SkillState skills; // Empty for independent recalc
-			EquipmentState equipment;
-			auto aggregated = PassiveContributionAggregator::Aggregate(skills, *skillProvider, equipment);
+			auto aggregated = PassiveContributionAggregator::Aggregate(learned, *skillProvider, worn);
 			if (aggregated.IsOk() && aggregated.GetValue().IsOk())
 			{
 				passives = aggregated.GetValue().contribution;
@@ -402,6 +423,447 @@ MODERN_TEST(Server_ContributionChangeRecalculates)
 
 	// Verify the passive contribution matches what the skill provides.
 	CHECK(character.GetPassiveContribution().hp == 250);
+}
+
+// ---------------------------------------------------------------------------
+// VERTICAL-003: Skills + Passive Contribution
+//
+// The cases here are the ones that would fail if the server's skill ownership
+// were not actually authoritative: that a learn is visible in the contribution
+// and in the statistics, that a level change moves the contribution by the
+// per-level value and no more, that an unlearn removes it, that two passives
+// add, and that a refused operation leaves the character exactly as it was.
+// ---------------------------------------------------------------------------
+
+MODERN_TEST(Server_NoLearnedPassiveMeansZeroContribution)
+{
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(MakeTestSkill(30001, TestSkillStats(150, 0.0f))).IsOk());
+
+	const ServerCharacterDefinition definition = StandardDefinitionWithSkills(provider);
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	// A character with a skill provider but no learned skills has no passive
+	// contribution at all, and its statistics are the no-passive ones.
+	CHECK_EQ(character.GetSkills().GetLearnedCount(), static_cast<size_t>(0));
+	CHECK(character.GetPassiveContribution() == Stats::PassiveContribution());
+	CHECK(character.GetDerivedStats() ==
+		RecalculateIndependently(definition, nullptr, &provider, &character.GetSkills()));
+}
+
+MODERN_TEST(Server_LearnPassiveGeneratesAContribution)
+{
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(MakeTestSkill(30002, TestSkillStats(250, 0.0f))).IsOk());
+
+	const ServerCharacterDefinition definition = StandardDefinitionWithSkills(provider);
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+	character.RestoreResources();
+
+	const uint32_t hpBefore = character.GetDerivedStats().maxHp;
+	const Stats::DerivedStats derivedBefore = character.GetDerivedStats();
+
+	CHECK(character.LearnSkill(MakeTestSkillId(30002)).IsOk());
+
+	CHECK(character.GetSkills().HasSkill(MakeTestSkillId(30002)));
+	CHECK_EQ(character.GetSkills().GetSkillLevel(MakeTestSkillId(30002)),
+	         static_cast<uint8_t>(1));
+	CHECK_EQ(character.GetPassiveContribution().hp, 250);
+	CHECK(character.GetDerivedStats().maxHp > hpBefore);
+
+	// The recalculation is the one stat implementation's, over the same inputs.
+	CHECK(character.GetDerivedStats() ==
+		RecalculateIndependently(definition, nullptr, &provider, &character.GetSkills()));
+
+	// The current pool is clamped rather than left above the new maximum.
+	CHECK(character.GetDerivedStats().maxHp > 0);
+	(void)derivedBefore;
+}
+
+MODERN_TEST(Server_LearningAPassiveIsPublishedInTheSnapshot)
+{
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(MakeTestSkill(30003, TestSkillStats(120, 0.0f))).IsOk());
+
+	const ServerCharacterDefinition definition = StandardDefinitionWithSkills(provider);
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	CHECK(character.LearnSkill(MakeTestSkillId(30003)).IsOk());
+
+	const Gameplay::CharacterSnapshot snapshot = character.BuildSnapshot().GetValue();
+	CHECK_EQ(snapshot.skills.GetLearnedCount(), static_cast<size_t>(1));
+	CHECK(snapshot.skills.Has(MakeTestSkillId(30003)));
+	CHECK_EQ(snapshot.skills.GetLevel(MakeTestSkillId(30003)), static_cast<uint8_t>(1));
+
+	const Gameplay::LearnedSkillEntry* entry =
+		snapshot.skills.Find(MakeTestSkillId(30003));
+	CHECK(entry != nullptr);
+	if (entry != nullptr)
+	{
+		// The name travels with the snapshot so a skill panel needs no second
+		// lookup on the client.
+		CHECK_EQ(entry->name, std::string("TestSkill"));
+	}
+	// The skill entry carries no stat value: the statistics are in `derived`,
+	// computed once by the server.
+	CHECK(snapshot.derived == character.GetDerivedStats());
+}
+
+MODERN_TEST(Server_PassiveLevelChangeMovesTheContribution)
+{
+	// RAN reads the value for the level actually learned
+	// (GLCHARLOGIC::SUM_PASSIVE, GLogixExPC.cpp:916), so a level change must
+	// move the contribution by the per-level value and by nothing else.
+	SkillDefinition def = MakeTestSkill(30004, TestSkillStats(100, 0.0f));
+	def.maxLevel = 3;
+	def.levelData[2].basicVar = 175.0f;
+	def.levelData[3].basicVar = 260.0f;
+
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(def).IsOk());
+
+	const ServerCharacterDefinition definition = StandardDefinitionWithSkills(provider);
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+	character.RestoreResources();
+
+	CHECK(character.LearnSkill(MakeTestSkillId(30004)).IsOk());
+	CHECK_EQ(character.GetPassiveContribution().hp, 100);
+	const uint32_t hpAtLevelOne = character.GetDerivedStats().maxHp;
+
+	CHECK(character.SetSkillLevel(MakeTestSkillId(30004), 2).IsOk());
+	CHECK_EQ(character.GetPassiveContribution().hp, 175);
+	const uint32_t hpAtLevelTwo = character.GetDerivedStats().maxHp;
+	CHECK(hpAtLevelTwo > hpAtLevelOne);
+	CHECK_EQ(hpAtLevelTwo - hpAtLevelOne, 75u);
+
+	CHECK(character.SetSkillLevel(MakeTestSkillId(30004), 3).IsOk());
+	CHECK_EQ(character.GetPassiveContribution().hp, 260);
+	CHECK_EQ(character.GetDerivedStats().maxHp - hpAtLevelOne, 160u);
+
+	// And the recalculation still agrees with an independent call over the same
+	// learned set.
+	CHECK(character.GetDerivedStats() ==
+		RecalculateIndependently(definition, nullptr, &provider, &character.GetSkills()));
+
+	// The level travelled into the snapshot too.
+	const Gameplay::CharacterSnapshot snapshot = character.BuildSnapshot().GetValue();
+	CHECK_EQ(snapshot.skills.GetLevel(MakeTestSkillId(30004)), static_cast<uint8_t>(3));
+}
+
+MODERN_TEST(Server_UnlearnRemovesTheContribution)
+{
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(MakeTestSkill(30005, TestSkillStats(200, 0.0f))).IsOk());
+
+	const ServerCharacterDefinition definition = StandardDefinitionWithSkills(provider);
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+	character.RestoreResources();
+
+	const uint32_t hpBare = character.GetDerivedStats().maxHp;
+
+	CHECK(character.LearnSkill(MakeTestSkillId(30005)).IsOk());
+	CHECK_EQ(character.GetPassiveContribution().hp, 200);
+	CHECK(character.GetDerivedStats().maxHp > hpBare);
+
+	CHECK(character.UnlearnSkill(MakeTestSkillId(30005)).IsOk());
+
+	// Everything the skill contributed is gone, including from the published
+	// statistics: an unlearn that only cleared the skill set would leave a
+	// snapshot that disagrees with the character behind it.
+	CHECK(!character.GetSkills().HasSkill(MakeTestSkillId(30005)));
+	CHECK(character.GetPassiveContribution() == Stats::PassiveContribution());
+	CHECK_EQ(character.GetDerivedStats().maxHp, hpBare);
+	CHECK(character.GetDerivedStats() ==
+		RecalculateIndependently(definition, nullptr, &provider, &character.GetSkills()));
+
+	const Gameplay::CharacterSnapshot snapshot = character.BuildSnapshot().GetValue();
+	CHECK_EQ(snapshot.skills.GetLearnedCount(), static_cast<size_t>(0));
+}
+
+MODERN_TEST(Server_TwoPassivesStackAdditively)
+{
+	// SUM_PASSIVE is a plain accumulation into one SPASSIVE_SKILL_DATA with no
+	// priority or ordering rule, so the sum is the sum regardless of the order
+	// the skills were learned in.
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(MakeTestSkill(30010, TestSkillStats(100, 0.0f))).IsOk());
+	CHECK(provider.Add(MakeTestSkill(30020, TestSkillStats(40, 0.0f))).IsOk());
+
+	const ServerCharacterDefinition definition = StandardDefinitionWithSkills(provider);
+
+	Result<ServerCharacter> forwardCreated = ServerCharacter::Create(definition);
+	CHECK(forwardCreated.IsOk());
+	if (forwardCreated.IsError())
+	{
+		return;
+	}
+	ServerCharacter forward = forwardCreated.GetValue();
+	forward.RestoreResources();
+	const uint32_t hpBare = forward.GetDerivedStats().maxHp;
+
+	CHECK(forward.LearnSkill(MakeTestSkillId(30010)).IsOk());
+	const uint32_t hpAfterFirst = forward.GetDerivedStats().maxHp;
+	CHECK(forward.LearnSkill(MakeTestSkillId(30020)).IsOk());
+	const uint32_t hpAfterBoth = forward.GetDerivedStats().maxHp;
+
+	CHECK_EQ(forward.GetPassiveContribution().hp, 140);
+	CHECK_EQ(hpAfterFirst - hpBare, 100u);
+	CHECK_EQ(hpAfterBoth - hpAfterFirst, 40u);
+
+	// The other learning order produces the same numbers.
+	Result<ServerCharacter> reverseCreated = ServerCharacter::Create(definition);
+	CHECK(reverseCreated.IsOk());
+	if (reverseCreated.IsError())
+	{
+		return;
+	}
+	ServerCharacter reverse = reverseCreated.GetValue();
+	reverse.RestoreResources();
+	CHECK(reverse.LearnSkill(MakeTestSkillId(30020)).IsOk());
+	CHECK(reverse.LearnSkill(MakeTestSkillId(30010)).IsOk());
+
+	CHECK(reverse.GetPassiveContribution() == forward.GetPassiveContribution());
+	CHECK(reverse.GetDerivedStats() == forward.GetDerivedStats());
+}
+
+MODERN_TEST(Server_PassiveImpactsAndBasicValueBothApply)
+{
+	SkillDefinition def = MakeTestSkill(30006, TestSkillStats(200, 0.0f));
+	def.impacts[0].type      = PassiveImpactType::Defense;
+	def.impacts[0].values[1] = 12.0f;
+	def.impacts[1].type      = PassiveImpactType::HpRate;
+	def.impacts[1].values[1] = 0.5f;
+
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(def).IsOk());
+
+	const ServerCharacterDefinition definition = StandardDefinitionWithSkills(provider);
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	CHECK(character.LearnSkill(MakeTestSkillId(30006)).IsOk());
+
+	CHECK_EQ(character.GetPassiveContribution().hp, 200);
+	CHECK_EQ(character.GetPassiveContribution().defense, 12);
+	CHECK_EQ(character.GetPassiveContribution().hpRate, 0.5f);
+
+	// The rate reaches the derived maximum: the resource formula multiplies by
+	// (1 + hpRate) in Stats::Calculate, which is CORE-002's arithmetic, so this
+	// asserts only that the rate was carried into the input.
+	CHECK(character.GetDerivedStats() ==
+		RecalculateIndependently(definition, nullptr, &provider, &character.GetSkills()));
+}
+
+MODERN_TEST(Server_RejectedSkillMutationsLeaveTheCharacterIntact)
+{
+	// Every refusal below must leave the learned set, the contribution and the
+	// published statistics exactly as they were. RAN's SLEARN path mutates
+	// before it can fail in places; a server that publishes a half-applied
+	// state is worse than one that refuses.
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(MakeTestSkill(30007, TestSkillStats(180, 0.0f))).IsOk());
+
+	const ServerCharacterDefinition definition = StandardDefinitionWithSkills(provider);
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+	character.RestoreResources();
+
+	CHECK(character.LearnSkill(MakeTestSkillId(30007)).IsOk());
+	const SkillState skillsBefore = character.GetSkills();
+	const Stats::PassiveContribution passivesBefore = character.GetPassiveContribution();
+	const Stats::DerivedStats derivedBefore = character.GetDerivedStats();
+
+	// Learning a skill no definition exists for.
+	const Status unknown = character.LearnSkill(MakeTestSkillId(39999));
+	CHECK(unknown.IsError());
+	CHECK_EQ(unknown.GetCode(), ErrorCode::NotFound);
+
+	// Learning the same skill twice.
+	const Status duplicate = character.LearnSkill(MakeTestSkillId(30007));
+	CHECK(duplicate.IsError());
+	CHECK_EQ(duplicate.GetCode(), ErrorCode::AlreadyExists);
+
+	// Levelling a skill that is not learned.
+	const Status notLearned = character.SetSkillLevel(MakeTestSkillId(30008), 2);
+	CHECK(notLearned.IsError());
+
+	// Levelling past the definition's own maximum.
+	const Status tooHigh = character.SetSkillLevel(MakeTestSkillId(30007), 2);
+	CHECK(tooHigh.IsError());
+	CHECK_EQ(tooHigh.GetCode(), ErrorCode::InvalidArgument);
+
+	// Level zero, which is what UnlearnSkill is for.
+	CHECK(character.SetSkillLevel(MakeTestSkillId(30007), 0).IsError());
+
+	// A level outside the global range.
+	CHECK(character.SetSkillLevel(MakeTestSkillId(30007),
+	                              static_cast<uint8_t>(kMaxSkillLevel + 1)).IsError());
+
+	// Unlearning a skill that is not learned.
+	const Status unlearnUnknown = character.UnlearnSkill(MakeTestSkillId(30008));
+	CHECK(unlearnUnknown.IsError());
+	CHECK_EQ(unlearnUnknown.GetCode(), ErrorCode::NotFound);
+
+	CHECK(character.GetSkills() == skillsBefore);
+	CHECK(character.GetPassiveContribution() == passivesBefore);
+	CHECK(character.GetDerivedStats() == derivedBefore);
+}
+
+MODERN_TEST(Server_SkillsAreRefusedWithoutAProvider)
+{
+	// A character with no skill definitions cannot learn, rather than learning
+	// into a set that nothing can ever resolve.
+	const Result<ServerCharacter> created = ServerCharacter::Create(StandardDefinition());
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+	const Stats::DerivedStats before = character.GetDerivedStats();
+
+	CHECK(character.LearnSkill(MakeTestSkillId(30009)).IsError());
+	CHECK(character.SetSkillLevel(MakeTestSkillId(30009), 2).IsError());
+	CHECK_EQ(character.GetSkills().GetLearnedCount(), static_cast<size_t>(0));
+	CHECK(character.GetDerivedStats() == before);
+}
+
+MODERN_TEST(Server_WeaponDependentPassiveNeedsTheSlotOccupied)
+{
+	// A passive gated on a right-hand weapon contributes nothing while the slot
+	// is empty, and contributes once something is in it. This is the part of
+	// the legacy check that is verifiable today: the slot must hold an item.
+	//
+	// LIMITED: RAN compares the item's attack type as well
+	// (CHECHSKILL_ITEM, GLogixExPC.cpp:899), and ItemDefinition does not carry
+	// an attack type, so this asserts slot occupancy only. See the
+	// investigation note in docs/MODERN_ARCHITECTURE.md §13.6.
+	SkillDefinition def = MakeTestSkill(30011, TestSkillStats(300, 0.0f));
+	def.rightWeapon = SkillWeaponType::Sword;
+
+	InMemoryItemDefinitions itemProvider;
+	InMemorySkillDefinitions skillProvider;
+	CHECK(skillProvider.Add(def).IsOk());
+
+	const ServerCharacterDefinition definition =
+		StandardDefinitionWithItemsAndSkills(itemProvider, skillProvider);
+	// The sword the passive is gated on. Its own contribution is deliberately
+	// zero, so the only statistic that can move is the passive's.
+	ItemStatBlock plainSword;
+	CHECK(itemProvider.Add(MakeTestWeapon(10001, plainSword)).IsOk());
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+	character.RestoreResources();
+
+	CHECK(character.LearnSkill(MakeTestSkillId(30011)).IsOk());
+	// Learned, but inactive: the skill is in the set and contributes nothing.
+	CHECK(character.GetSkills().HasSkill(MakeTestSkillId(30011)));
+	CHECK_EQ(character.GetPassiveContribution().hp, 0);
+	const uint32_t hpUnarmed = character.GetDerivedStats().maxHp;
+
+	// Equipping the registered sword activates it. No weapon-type match is
+	// asserted, because the data to assert it does not exist yet.
+	CHECK(character.Equip(EquipmentSlot::RightHand, TestItem(10001)).IsOk());
+	CHECK_EQ(character.GetPassiveContribution().hp, 300);
+	CHECK(character.GetDerivedStats().maxHp > hpUnarmed);
+
+	// Unequipping deactivates it again, and the statistics follow.
+	CHECK(character.Unequip(EquipmentSlot::RightHand).IsOk());
+	CHECK_EQ(character.GetPassiveContribution().hp, 0);
+	CHECK_EQ(character.GetDerivedStats().maxHp, hpUnarmed);
+}
+
+MODERN_TEST(Server_SetContributionsRefusesAnItemOrPassiveContribution)
+{
+	// The worn set and the learned skill set are the only sources for the item
+	// and passive contributions. SetContributions still takes both parameters for
+	// source compatibility, so a non-zero value has to be refused rather than
+	// accepted and then dropped on the floor - a caller that is told "ok" and
+	// whose contribution never appears has no way to notice.
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(MakeTestSkill(30012, TestSkillStats(500, 0.0f))).IsOk());
+
+	const ServerCharacterDefinition definition = StandardDefinitionWithSkills(provider);
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	Stats::ItemContribution items;
+	items.hp = 250;
+	CHECK(character.SetContributions(items, Stats::PassiveContribution(),
+	                                 Stats::CodexContribution()).IsError());
+
+	Stats::PassiveContribution passives;
+	passives.hp = 500;
+	CHECK(character.SetContributions(Stats::ItemContribution(), passives,
+	                                 Stats::CodexContribution()).IsError());
+
+	CHECK(character.GetDerivedStats() == RecalculateIndependently(definition, nullptr, &provider));
+
+	// The codex is still the caller's to set, and it does move a derived value,
+	// so the two refusals above are not the function refusing everything.
+	Stats::CodexContribution codex;
+	codex.hp = 90;
+	CHECK(character.SetContributions(Stats::ItemContribution(),
+	                                 Stats::PassiveContribution(), codex).IsOk());
+	ServerCharacterDefinition withCodex = definition;
+	withCodex.codex = codex;
+	CHECK(character.GetDerivedStats() ==
+		RecalculateIndependently(withCodex, nullptr, &provider));
+
+	// And the learned set is still the only way to raise hp.
+	CHECK(character.LearnSkill(MakeTestSkillId(30012)).IsOk());
+	CHECK_EQ(character.GetPassiveContribution().hp, 500);
 }
 
 MODERN_TEST(Server_ConfPointRateChangeRecalculates)

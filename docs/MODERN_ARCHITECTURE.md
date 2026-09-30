@@ -419,16 +419,33 @@ recomputation.
 | `modern/server/character/ServerCharacter.h, .cpp` (ext.) | `LearnSkill`/`UnlearnSkill`/`SetSkillLevel`, passive aggregation in `Recalculate()`, snapshot publication |
 | `modern/client/gameplay/ClientCharacterState.h, .cpp` (ext.) | Read-only skill views: `GetSkills()`, `HasSkill()`, `GetSkillLevel()`, `GetLearnedSkillCount()` |
 | `modern/core/gameplay/CharacterSnapshot.h, .cpp` (ext.) | `SkillList`, `LearnedSkillEntry`, skill validation in `IsValid()`      |
+| `modern/core/stats/Contributions.h`, `StatCalculator.cpp` (ext.) | `IsZero()` for the two contributions, so a second source can be refused without naming every field |
+| `modern/tests/SkillTests.cpp`               | the transcription tests, in core: enum-to-field mapping, per-level selection, refusals, the weapon gate |
 
 ### Key conventions
 
-- **Passive skills are the sole source of passive contributions.** `ServerCharacterDefinition.passives` is zeroed in `Create()` and never read again; `SetContributions()` refuses non-zero passives. All `PassiveContribution` comes from the learned skill set.
-- **The server owns the learned skill set.** `LearnSkill`/`UnlearnSkill`/`SetSkillLevel` are the only mutators; each stages the change, validates against the skill definition provider, commits atomically, then recalculates before returning. A failed call leaves the character untouched.
+- **Passive skills are the sole source of passive contributions.** `ServerCharacterDefinition.passives` is zeroed in `Create()` and never read again; `SetContributions()` refuses a non-zero item *or* passive contribution with `NotAllowed`, so a caller cannot install a second source. All `PassiveContribution` comes from the learned skill set.
+- **The server owns the learned skill set.** `LearnSkill`/`UnlearnSkill`/`SetSkillLevel` are the only mutators; each stages the change on a copy, validates against the skill definition provider, commits, then recalculates before returning, and restores the previous state if the recalculation fails. A failed call leaves the character exactly as it was.
+- **`SkillId` is a `(classIndex, skillIndex)` pair, and validity is a sentinel.** `IsValid()` is false only when a half is `0xFFFF` (`SNATIVEID::ID_NULL`), so a default-constructed `SkillId{0, 0}` names a real skill and is *valid*. There is no `MakeInvalid()`, unlike `ItemId`. What keeps a zeroed id out of a character is `LearnSkill` resolving it against the provider first and refusing `NotFound` — the `SkillState` value test is the weaker of the two defences, not the only one.
 - **The client receives, never computes.** `ClientCharacterState` exposes `GetSkills()`, `HasSkill()`, `GetSkillLevel()`, `GetLearnedSkillCount()` — all read-only views of the published snapshot. The client translation unit contains no call to `Modern::Stats::Calculate`.
 - **Definitions are the shared truth.** `SkillDefinition` carries the per-level basic values and impacts every copy of the skill contributes. Prerequisites, class restrictions, and SP costs are deferred; the investigation report records why they are absent from the stat pipeline.
 - **Aggregation is deterministic.** Skills are visited in `SkillId` order (map order), so the same skill set always produces the same contribution regardless of learning order. The six base stats accumulate as 16-bit unsigned values (wrapping like RAN's `SSUM_ITEM`); the wrap happens in `Calculate`, not in the aggregator.
-- **Defense in depth.** `InMemorySkillDefinitions::Add` rejects invalid definitions. The aggregator additionally checks `IsFinite()` on every definition it reads and returns `PassiveAggregationError::NonFinite` if one slips through. Missing definitions yield `PassiveAggregationError::MissingDefinition`.
-- **Equipment-dependent passives.** If a passive skill requires a specific weapon type in a hand slot, that slot is checked against the currently equipped item. If the requirement is not met, the skill contributes nothing (not an error). The current implementation has a limitation: `ItemDefinition` does not yet expose weapon type, so the check verifies slot occupancy but not weapon-type matching.
+- **Defense in depth.** `InMemorySkillDefinitions::Add` rejects invalid definitions. The aggregator additionally checks `IsFinite()` on every definition it reads and returns `PassiveAggregationError::NonFinite` if one slips through. Missing definitions yield `PassiveAggregationError::MissingDefinition` — a divergence from RAN, which skips a skill it cannot resolve (see the investigation report, §2).
+- **Equipment-dependent passives — LIMITED.** If a passive requires a weapon type in a hand slot, the slot must hold an item; if it does not, the skill contributes nothing and the call still succeeds. **What is not checked is the weapon type.** RAN compares `SITEM::sSuitOp.emAttack` through `CHECHSKILL_ITEM`; `ItemDefinition` carries no attack type, so the check is slot occupancy only. A dagger in the right hand will therefore activate a sword-gated passive. `Server_WeaponDependentPassiveNeedsTheSlotOccupied` asserts as far as the data allows and says so at the assertion.
+
+### Known divergences from RAN
+
+| Divergence | Legacy | Modern | Why |
+| --- | --- | --- | --- |
+| Passive accumulator width | `SPASSIVE_SKILL_DATA` integer fields are `short` | `int32_t` / `float` | a stat total that wraps at 32767 is a bug, not behaviour to preserve |
+| A learned skill with no definition | `continue` — silently no contribution | `MissingDefinition`, recalculation refused | a silent zero is indistinguishable from a data fault |
+| Weapon gate | weapon-type match, plus a hidden-fist case | slot occupancy only | no attack type on `ItemDefinition`; see LIMITED above |
+| `EMSPECA_*` specs | summed, except four arms that take the maximum | not modelled | CORE-002 has no destination; a straight `+=` would be wrong for four arms |
+| Vehicle exclusion | a character in a vehicle gets no passives at all | not modelled | no vehicle system exists |
+
+The full trace, including the four max-not-sum spec arms and the
+`SRESIST` all-five-elements rule, is in
+`docs/reference/client/VERTICAL-003_SKILL_INVESTIGATION.md`.
 
 ### Legacy provenance
 
@@ -441,11 +458,14 @@ recomputation.
 | `PassiveSpecType`                       | `SKILL::EMSPEC_ADDON` in `GLSkillApply.h` (not in stat pipeline)             |
 | `SkillWeaponType` / `SkillWeaponSlot`   | `SKILL::GLSKILL_ATT` in `GLSkillBasic.h`                                      |
 | Passive aggregation loop                | `GLCHARLOGIC::SUM_PASSIVE` in `GLogixExPC.cpp:863`                           |
-| Passive skill data structure            | `SPASSIVE_SKILL_DATA` in `GLCharData.h:1120`                                 |
-| Per-level basic values                  | `SKILL::CDATA_LVL.fBASIC_VAR` in `GLSkillApply.h`                            |
-| Prerequisite skill system               | `SLEARN` in `GLSkillLearn.h` (deferred)                                       |
+| Passive skill data structure            | `SPASSIVE_SKILL_DATA` in `GLCharData.h:1123`                                |
+| Per-level basic values                  | `SKILL::CDATA_LVL::fBASIC_VAR` in `GLSkillApply.h:252`                     |
+| Prerequisite skill system               | `SLEARN` in `GLSkillLearn.h:75` (deferred)                                 |
+| Weapon-type check                        | `CHECHSKILL_ITEM` in `GLogicEx.h:1274` (LIMITED, see above)                |
+| Level / impact / spec limits             | `SKILL::MAX_LEVEL` / `MAX_IMPACT` / `MAX_SPEC` in `GLSkillDefine.h:16-18`  |
+| Role filter                              | `SKILL::EMROLE_PASSIVE` in `GLSkillBasic.h:133`                            |
 
-The full investigation is in `docs/reference/client/VERTICAL-003_SKILL_INVESTIGATION.md` (to be created).
+The full investigation is in `docs/reference/client/VERTICAL-003_SKILL_INVESTIGATION.md`.
 
 ### Verifying
 
@@ -454,12 +474,22 @@ cmake --build build --config Debug
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-The headless test suite covers:
-- `ModernCoreTests` (96 cases): `SkillDefinition`, `SkillState`, `SkillDefinitionProvider`, `PassiveContributionAggregator`
-- `ModernServerTests` (24 cases): server skill mutations, passive recalculation, rollback on failure, snapshot publication
-- `ModernClientGameplayTests` (15 cases): client presentation of learned skills, empty state, clear, authority boundary
+Release is built and run the same way with `--config Release`. Both
+configurations pass all 14 suites.
 
-All tests pass without legacy libraries, DirectX, sockets, or a database.
+The headless test suite covers:
+
+| Suite | Cases | What it covers |
+| ----- | ----: | -------------- |
+| `ModernCoreTests` | 132 | `SkillId`, `SkillDefinition`, `SkillState`, `SkillDefinitionProvider`, `PassiveContributionAggregator` — every `EMTYPES` / `EMIMPACTA_*` arm landing in the contribution field RAN's switch names, per-level value selection, additive stacking, order independence, refusals, the weapon-slot gate, input immutability |
+| `ModernServerTests` | 35 | learn / level / unlearn, contribution and derived-stat movement, snapshot publication, order-independent stacking, refused mutations leaving the character byte-identical, the weapon gate, `SetContributions` refusing a second source |
+| `ModernClientGameplayTests` | 18 | read-only skill views, level and unlearn arriving as new snapshots, agreement with the one stat implementation, refusing a malformed skill level, and the source-level no-calculation check |
+
+All tests pass without legacy libraries, DirectX, sockets, or a database. The
+`RecalculateIndependently` helper in both server and client suites rebuilds the
+stat input from the character's *own* learned set and worn set and calls
+`Stats::Calculate` directly, so "the server's numbers are the formula's numbers"
+is checked against the inputs rather than against a stored expectation.
 
 
 ## 14. CLIENT-002: modern client application foundation

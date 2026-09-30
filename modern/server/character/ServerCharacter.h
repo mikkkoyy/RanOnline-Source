@@ -104,9 +104,16 @@ namespace Modern::Server
 		Status SetLevel(uint16_t level);
 		Status SetExperience(int64_t experience);
 		Status SetAllocatedStats(const Stats::BaseStats& stats);
+
+		// The codex contribution is still taken from here. The item and passive
+		// parameters are not: the worn set and the learned skill set are their
+		// only sources, and a non-zero value for either is refused with
+		// NotAllowed rather than accepted and discarded. The parameters remain
+		// for source compatibility.
 		Status SetContributions(const Stats::ItemContribution& items,
 		                        const Stats::PassiveContribution& passives,
 		                        const Stats::CodexContribution& codex);
+
 		Status SetConfPointRate(float rate);
 
 		// Position is presentation state the server also holds, as RAN stores a

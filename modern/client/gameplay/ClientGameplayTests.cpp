@@ -75,6 +75,17 @@ namespace
 		return SkillId{ 1, skillIndex };
 	}
 
+	// A passive whose basic apply type is a flat HP bonus, with an optional
+	// recovery-rate impact. A skill definition has no stats block of its own;
+	// it carries a per-level basic value and typed impacts.
+	ItemStatBlock TestClientSkillStats(int32_t hp, float hpRecoveryRate)
+	{
+		ItemStatBlock stats;
+		stats.hp             = hp;
+		stats.hpRecoveryRate = hpRecoveryRate;
+		return stats;
+	}
+
 	SkillDefinition MakeClientTestSkill(uint32_t id, const ItemStatBlock& stats)
 	{
 		SkillDefinition def;
@@ -83,7 +94,6 @@ namespace
 		def.maxLevel = 1;
 		def.applyType = PassiveApplyType::Hp;
 		def.levelData[1].basicVar = static_cast<float>(stats.hp);
-		// hpRate is mapped to hpRecoveryRate in ItemStatBlock for the skill's basic var
 		if (stats.hpRecoveryRate != 0.0f)
 		{
 			def.impacts[0].type = PassiveImpactType::HpRate;
@@ -513,6 +523,129 @@ MODERN_TEST(Gameplay_ClientClearForgetsEquipment)
 	client.Clear();
 	CHECK_EQ(client.GetEquipment().GetOccupiedCount(), static_cast<size_t>(0));
 	CHECK(!client.HasEquipped(EquipmentSlot::RightHand));
+}
+
+MODERN_TEST(Gameplay_ClientPresentsSkillLevelChangesFromNewSnapshots)
+{
+	// A level change arrives as a new snapshot, never as a mutation of the one
+	// the client holds. The client is a read-only view: a change comes from the
+	// server, and the client's answer is to hold a different snapshot.
+	InMemorySkillDefinitions skillProvider;
+
+	SkillDefinition def = MakeClientTestSkill(20005, TestClientSkillStats(80, 0.0f));
+	def.maxLevel = 3;
+	def.levelData[2].basicVar = 150.0f;
+	def.levelData[3].basicVar = 240.0f;
+	CHECK(skillProvider.Add(def).IsOk());
+
+	Server::ServerCharacterDefinition definition = StandardDefinition();
+	definition.skillDefinitions = &skillProvider;
+
+	const Result<Server::ServerCharacter> created = Server::ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	Server::ServerCharacter character = created.GetValue();
+	CHECK(character.LearnSkill(MakeClientTestSkillId(20005)).IsOk());
+
+	ClientCharacterState client;
+	CHECK(client.Apply(character.BuildSnapshot().GetValue()).IsOk());
+	CHECK_EQ(client.GetSkillLevel(MakeClientTestSkillId(20005)), static_cast<uint8_t>(1));
+	const Stats::DerivedStats atLevelOne = client.GetDerivedStats();
+
+	CHECK(character.SetSkillLevel(MakeClientTestSkillId(20005), 3).IsOk());
+	CHECK(client.Apply(character.BuildSnapshot().GetValue()).IsOk());
+	CHECK_EQ(client.GetSkillLevel(MakeClientTestSkillId(20005)), static_cast<uint8_t>(3));
+
+	// The client reports the server's new numbers without having produced them.
+	CHECK(client.GetDerivedStats() == character.GetDerivedStats());
+	CHECK(!(client.GetDerivedStats() == atLevelOne));
+
+	// An unlearn arrives the same way: as a new snapshot that no longer lists
+	// the skill, with the statistics the server computed for that set.
+	CHECK(character.UnlearnSkill(MakeClientTestSkillId(20005)).IsOk());
+	CHECK(client.Apply(character.BuildSnapshot().GetValue()).IsOk());
+	CHECK(!client.HasSkill(MakeClientTestSkillId(20005)));
+	CHECK_EQ(client.GetLearnedSkillCount(), static_cast<size_t>(0));
+	CHECK_EQ(client.GetSkillLevel(MakeClientTestSkillId(20005)), static_cast<uint8_t>(0));
+	CHECK(client.GetDerivedStats() == character.GetDerivedStats());
+}
+
+MODERN_TEST(Gameplay_ClientSkillViewsAreReadOnly)
+{
+	// The client cannot learn, unlearn, or level a skill. This is structural:
+	// there is no mutator on the type at all, so a client that tried would not
+	// compile. The runtime assertion is that two clients given the same snapshot
+	// agree and that the snapshot is unchanged by being presented.
+	InMemorySkillDefinitions skillProvider;
+	CHECK(skillProvider.Add(MakeClientTestSkill(20006, TestClientSkillStats(60, 0.0f))).IsOk());
+
+	Server::ServerCharacterDefinition definition = StandardDefinition();
+	definition.skillDefinitions = &skillProvider;
+
+	const Result<Server::ServerCharacter> created = Server::ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	Server::ServerCharacter character = created.GetValue();
+	CHECK(character.LearnSkill(MakeClientTestSkillId(20006)).IsOk());
+
+	const Gameplay::CharacterSnapshot snapshot = character.BuildSnapshot().GetValue();
+	const Gameplay::CharacterSnapshot snapshotBefore = snapshot;
+
+	ClientCharacterState first;
+	ClientCharacterState second;
+	CHECK(first.Apply(snapshot).IsOk());
+	CHECK(second.Apply(snapshot).IsOk());
+
+	CHECK_EQ(first.GetLearnedSkillCount(), second.GetLearnedSkillCount());
+	CHECK_EQ(first.GetSkillLevel(MakeClientTestSkillId(20006)),
+	         second.GetSkillLevel(MakeClientTestSkillId(20006)));
+	CHECK(first.GetDerivedStats() == second.GetDerivedStats());
+
+	// Reading a skill does not change what is held, and Clear() is the only
+	// unconditional transition the client owns.
+	CHECK(snapshot == snapshotBefore);
+	first.Clear();
+	CHECK(!first.HasSkill(MakeClientTestSkillId(20006)));
+	CHECK(second.HasSkill(MakeClientTestSkillId(20006)));
+}
+
+MODERN_TEST(Gameplay_ClientRejectsASnapshotWithAnImpossibleSkillLevel)
+{
+	// A level of zero means "not learned", so a snapshot listing it as learned
+	// is not one a RAN client could have received, and the client refuses it
+	// rather than storing a state it could not render.
+	InMemorySkillDefinitions skillProvider;
+	CHECK(skillProvider.Add(MakeClientTestSkill(20007, TestClientSkillStats(40, 0.0f))).IsOk());
+
+	Server::ServerCharacterDefinition definition = StandardDefinition();
+	definition.skillDefinitions = &skillProvider;
+
+	const Result<Server::ServerCharacter> created = Server::ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	Server::ServerCharacter character = created.GetValue();
+	CHECK(character.LearnSkill(MakeClientTestSkillId(20007)).IsOk());
+
+	Gameplay::CharacterSnapshot snapshot = character.BuildSnapshot().GetValue();
+	snapshot.skills.skills[0].level = 0;
+
+	CHECK(!Gameplay::CharacterSnapshot::IsValid(snapshot));
+
+	ClientCharacterState client;
+	CHECK(client.Apply(character.BuildSnapshot().GetValue()).IsOk());
+	CHECK(client.Apply(snapshot).IsError());
+	// A refused snapshot leaves the state it was holding alone.
+	CHECK(client.HasSnapshot());
+	CHECK(client.GetDerivedStats() == character.GetDerivedStats());
 }
 
 MODERN_TEST(Gameplay_ClientReportsEmptySkillsWithNoSnapshot)

@@ -275,6 +275,16 @@ namespace Modern::Stats
 		       std::isfinite(value.spRecoveryRate);
 	}
 
+	bool IsZero(const ItemContribution& value) noexcept
+	{
+		return value == ItemContribution();
+	}
+
+	bool IsZero(const PassiveContribution& value) noexcept
+	{
+		return value == PassiveContribution();
+	}
+
 	Result<DerivedStats> Calculate(const StatCalculationInput& input) noexcept
 	{
 		if (!IsValidClass(input.characterClass))

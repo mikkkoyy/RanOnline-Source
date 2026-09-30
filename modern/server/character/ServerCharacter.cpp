@@ -176,20 +176,20 @@ Status ServerCharacter::Recalculate()
 		// override what the character is actually wearing. The parameter stays
 		// for source compatibility and is refused if it is non-zero, so a stale
 		// caller fails loudly instead of silently losing its contribution.
-		if (!items.hp && !items.mp && !items.sp && !items.defense && !items.hit &&
-		    !items.avoid && !items.meleePower && !items.shootPower &&
-		    !items.magicAttack && !items.damageLow && !items.damageHigh &&
-		    items.hpRecoveryRate == 0.0f && items.mpRecoveryRate == 0.0f &&
-		    items.spRecoveryRate == 0.0f && items.hitRatePercent == 0.0f &&
-		    items.avoidRatePercent == 0.0f && items.stats.IsZero() &&
-		    items.resistances == Stats::Resistances())
+		//
+		// The passive contribution is refused for the same reason and with the
+		// same reasoning: the learned skill set is its only source. It used to be
+		// assigned to m_definition.passives here, which Recalculate() never reads
+		// - so a non-zero value was accepted, reported as success, and discarded.
+		// A silently discarded contribution is worse than a refusal, because the
+		// caller has no way to tell the two apart.
+		if (!Stats::IsZero(items) || !Stats::IsZero(passives))
 		{
-			m_definition.passives = passives;
-			m_definition.codex    = codex;
-			return Recalculate();
+			return Status(ErrorCode::NotAllowed);
 		}
-return Status(ErrorCode::NotAllowed);
-}
+		m_definition.codex = codex;
+		return Recalculate();
+	}
 
 Status ServerCharacter::LearnSkill(const SkillId& id)
 {

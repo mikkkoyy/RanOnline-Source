@@ -8,6 +8,7 @@ add_executable(ModernCoreTests
     CoreFoundationTests.cpp
     StatCalculationTests.cpp
     EquipmentTests.cpp
+    SkillTests.cpp
 )
 
 target_link_libraries(ModernCoreTests PRIVATE Modern)

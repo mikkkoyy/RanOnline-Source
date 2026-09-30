@@ -221,4 +221,14 @@ namespace Modern::Stats
 	// into a derived value.
 	bool IsFinite(const ItemContribution& value) noexcept;
 	bool IsFinite(const PassiveContribution& value) noexcept;
+
+	// True when a contribution asks for nothing.
+	//
+	// Needed where a parameter exists only for source compatibility and must be
+	// refused when it carries a value: the check has to name every field, and a
+	// check that silently misses a newly added one is worse than none. Written
+	// as a comparison against a default-constructed value so it cannot fall
+	// behind the struct.
+	bool IsZero(const ItemContribution& value) noexcept;
+	bool IsZero(const PassiveContribution& value) noexcept;
 }
