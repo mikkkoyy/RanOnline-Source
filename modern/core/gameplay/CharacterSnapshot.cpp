@@ -19,6 +19,18 @@ namespace Modern::Gameplay
 		}
 	}
 
+	// VERTICAL-004: the codex panel's bar.
+	//
+	// Presentation only, and it derives nothing about the character beyond what
+	// the server published. Clamped for the same reason GetHealthFraction is: a
+	// count that outran the requirement would otherwise draw a bar past its end,
+	// and `IsValid` refuses such a snapshot outright - the clamp is belt and
+	// braces for a value that reached here by some other route.
+	float CodexEntry::GetProgressFraction() const noexcept
+	{
+		return FractionOf(doneCount, requiredCount);
+	}
+
 	bool CharacterSnapshot::IsValid(const CharacterSnapshot& snapshot) noexcept
 	{
 		if (!snapshot.id.IsValid())
@@ -88,20 +100,63 @@ if (occupied != snapshot.equipped.count)
 			}
 		}
 
-	// Validate skills list: each entry must have a valid id and level > 0.
-	for (const auto& skill : snapshot.skills.skills)
-	{
-		if (!skill.id.IsValid())
+		// Validate skills list: each entry must have a valid id and level > 0.
+		for (const auto& skill : snapshot.skills.skills)
 		{
-			return false;
+			if (!skill.id.IsValid())
+			{
+				return false;
+			}
+			if (skill.level == 0 || skill.level > kMaxSkillLevel)
+			{
+				return false;
+			}
 		}
-		if (skill.level == 0 || skill.level > kMaxSkillLevel)
+
+		// Validate codex entries. An entry must name a real one, carry a type in
+		// the verified enum range, and be named - a bare id with no title cannot
+		// be labelled. The counters must agree with each other: a required count
+		// outside the definition's own capacity is a publisher bug, and a done
+		// count past the required count is the same. A completed entry must have
+		// reached its requirement, because the server only completes an entry by
+		// satisfying it (CodexState::RegisterItem), and an entry that claims to
+		// be finished with work outstanding would pay its reward into `derived`
+		// while its panel says it is unfinished.
+		CodexId previousCodex = CodexId::MakeInvalid();
+		for (const auto& entry : snapshot.codex.entries)
 		{
-			return false;
+			if (!entry.id.IsValid() || entry.name.empty())
+			{
+				return false;
+			}
+			// Qualified: an unqualified IsValid inside this member would resolve to
+			// the member itself rather than to the codex type validator.
+			if (!Modern::IsValid(entry.type))
+			{
+				return false;
+			}
+			if (entry.requiredCount > kCodexMaxRequirements)
+			{
+				return false;
+			}
+			if (entry.doneCount > entry.requiredCount)
+			{
+				return false;
+			}
+			if (entry.completed && entry.doneCount < entry.requiredCount)
+			{
+				return false;
+			}
+			// Sorted and unique, so a panel renders the list in the order the
+			// server's ordered maps produced and a duplicate cannot appear twice.
+			if (previousCodex.IsValid() && !(previousCodex < entry.id))
+			{
+				return false;
+			}
+			previousCodex = entry.id;
 		}
+		return true;
 	}
-	return true;
-}
 
 Result<CharacterSnapshot> CharacterSnapshot::Create(CharacterSnapshot snapshot) noexcept
 	{

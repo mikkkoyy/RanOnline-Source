@@ -85,4 +85,12 @@ namespace Modern
 
 	// Identity of a world/shard instance.
 	using WorldId = detail::StrongId<struct WorldIdTag, uint32_t>;
+
+	// Identity of a codex entry.
+	//
+	// VERTICAL-004. RAN keys a codex by `dwCodexID` and uses `UINT_MAX` as the
+	// invalid value (GLCodexData.h:74, and `GLCodex::GetCodex` refusing
+	// `dwID >= UINT_MAX` at GLCodex.cpp:176), which is exactly the sentinel
+	// StrongId already picks, so no separate convention is needed.
+	using CodexId = detail::StrongId<struct CodexIdTag, uint32_t>;
 }

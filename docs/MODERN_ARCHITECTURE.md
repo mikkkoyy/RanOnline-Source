@@ -492,6 +492,126 @@ stat input from the character's *own* learned set and worn set and calls
 is checked against the inputs rather than against a stored expectation.
 
 
+## 13.7. VERTICAL-004: Codex Progress + Contribution
+
+VERTICAL-004 adds the codex as a third authoritative source of stat
+contributions. The server owns the two codex maps, decides what is completable,
+aggregates the completed set into a `Stats::CodexContribution`, and publishes the
+result and the progress through the shared `CharacterSnapshot`; the client
+presents what it receives with no local recomputation.
+
+The shape of this milestone is set by one legacy finding: **of RAN's eleven
+codex progress types, exactly one has a working implementation.** The per-type
+`switch` in `SCODEX_CHAR_DATA::Assign` (`GLCodexData.cpp:415-480`) and in
+`Correction` (`:508-585`) are both inside block comments. Registering an item is
+the only thing that advances a codex entry in RAN, so it is the only thing that
+does in the modern tree.
+
+### What it contains
+
+| Unit                                                  | Responsibility                                                         |
+| ----------------------------------------------------- | ---------------------------------------------------------------------- |
+| `modern/core/types/Ids.h` (ext.)                       | `CodexId`, distinct from `ItemId` and `SkillId`                        |
+| `modern/core/progression/CodexDefinition.h, .cpp`      | `CodexType`, `CodexNotify`, `CodexRequirement`, `CodexDefinition`, the required-count cascade |
+| `modern/core/progression/CodexDefinitionProvider.h, .cpp` | Read-only `Find`/`GetAll` + `InMemoryCodexDefinitions` sorted-vector impl |
+| `modern/core/progression/CodexState.h, .cpp`           | Two ordered maps, `Reconcile`, `RegisterItem`, `CodexRegistration`     |
+| `modern/core/progression/CodexContributionAggregator.h, .cpp` | Completed set + definitions -> `Stats::CodexContribution`        |
+| `modern/server/character/ServerCharacter.h, .cpp` (ext.) | `codexDefinitions` on the definition, `RegisterCodexItem`, `ReconcileCodex`, aggregation in `Recalculate()`, snapshot publication |
+| `modern/client/gameplay/ClientCharacterState.h, .cpp` (ext.) | Read-only codex views: `GetCodex()`, `GetCodexEntry()`, `HasCodex()`, `IsCodexCompleted()`, `IsCodexInProgress()`, three counts |
+| `modern/core/gameplay/CharacterSnapshot.h, .cpp` (ext.) | `CodexList`, `CodexEntry`, codex validation in `IsValid()`             |
+| `modern/tests/CodexTests.cpp`                          | the transcription tests, in core: the cascade, the match rules, reconciliation, aggregation |
+
+### Key conventions
+
+- **The completed codex set is the sole source of the codex contribution.**
+  `ServerCharacterDefinition.codex` is not read as a source, and
+  `SetContributions()` refuses a non-zero codex contribution with `NotAllowed`,
+  on the same terms as the item and passive arguments it already refused. The
+  check is on the *argument*, not on the derived member: testing the member would
+  accept a caller's value and drop it while refusing a zeroed one.
+- **The server owns both maps.** `RegisterCodexItem` is the only mutator. It
+  stages on a copy of `CodexState`, commits, recalculates, and restores the
+  previous state if the recalculation fails, so a failed call leaves the codex
+  set, the contribution and the statistics exactly as they were. A refused
+  registration does not recalculate, because it changed nothing.
+- **Two maps, not one record with a flag.** RAN holds `m_mapCodexProg` and
+  `m_mapCodexDone` keyed by codex id, so an id is in exactly one. Completion is a
+  two-phase move: the counter is clamped, then a second pass inserts into the
+  done map and erases from the progress map. This is why a single registration
+  can complete at most the entries it names.
+- **The required-count cascade is reproduced, quirks included.**
+  `CodexDefinition::RequiredSlotCount` is four sequential assignments with the
+  last match winning, and slot 0 is never tested. See "Known divergences" below.
+- **A done flag is a claim about a requirement, not about a record.** So
+  `Reconcile` carries progress across a refresh that changed nothing and drops it
+  when any requirement or the required count actually changed. Reconciliation
+  runs on every load, so a version that always reset would silently destroy every
+  character's progress.
+- **The client receives, never computes.** `ClientCharacterState` exposes the
+  published `CodexList` through const references and has no codex contribution
+  of its own. RAN's client keeps a private mirror of both maps and calls its own
+  `CODEX_STATS` on completion (`GLCharacterMsg.cpp:5206-5214`), so the formula
+  runs on both sides; that is not reproduced.
+- **The snapshot carries no reward values.** `CodexEntry` publishes id, type,
+  name, description, badge and the counters. The bonus is already folded into
+  `derived` by the server, so a client cannot compute a second one even if it
+  wanted to.
+
+### Known divergences from RAN
+
+| Divergence | Legacy | Modern | Why |
+| --- | --- | --- | --- |
+| Per-type progress rules | both `switch`es commented out | not implemented | no live legacy rule to transcribe; not deferred behind a stub |
+| A completed entry with no definition row | `CodexComplete` returns early, and the caller still erases the progress record — the entry vanishes from both maps | skipped, reason reported as `CodexContributionError::MissingDefinition` | a silent loss is indistinguishable from a data fault |
+| An entry naming no item in its counted window | seated, never completable | seated (matching RAN), registration refused `NotCompletable` | the seating matches; the refusal makes a broken table row visible |
+| Grade match | exact, against the registered instance's grinding grade | field kept, **not enforced** — LIMITED | `ItemInstance` carries no grade, upgrade or option state, by design |
+| Quantity match | `==` | `==` | relaxed to `>=` would let one stack satisfy a five-count requirement |
+| Item spend | deleted unconditionally, even when nothing matched | not spent; `CodexRegistration::recorded` is returned | reproduces RAN's data loss otherwise |
+| Recompute | full over the done map, both parameters unused | full, no parameters | a partial recompute would be a second authority |
+| Reconciliation refresh | the five item ids only; quantities, grades and `dwProgressMax` go stale | the whole requirement and the required count | a retune must not leave a character holding a stale completion condition |
+| Badge grant | never, within the codex system | never, and named `rewardBadge` to say so | the grant lives in the separate Activity system |
+| Client recompute | private mirror plus its own `CODEX_STATS` | snapshot only | one authority, one answer |
+
+The full trace, including the required-count cascade, the eleven-type reward
+mapping and the per-slot match rule, is in
+`docs/reference/client/VERTICAL-004_CODEX_INVESTIGATION.md`.
+
+### Legacy provenance
+
+| Modern element                          | Legacy origin                                                                 |
+| --------------------------------------- | ----------------------------------------------------------------------------- |
+| `CodexId`                               | `DWORD dwCodexID` in `GLCodexData.h:26`                                        |
+| `CodexDefinition`                       | `SCODEX_FILE_DATA` in `GLCodexData.h:26`                                       |
+| `CodexRequirement` (item, quantity, grade) | `sidProgressItem1..5` / `wQuantity1..5` / `wItemGrade1..5` in `GLCodexData.cpp:388-407` |
+| `CodexState`'s two maps                 | `m_mapCodexProg` / `m_mapCodexDone` in `GLCharData.h`                         |
+| Required-count cascade                  | `dwProgressMax` in `SCODEX_CHAR_DATA::Assign`, `GLCodexData.cpp:377-386`       |
+| `CodexState::Reconcile`                 | `GLCharDataCodex.cpp:73-132` (load reconciliation and orphan removal)         |
+| `CodexState::RegisterItem`              | `GLChar::DoCodexRegisterItem`, `GLCharCodex.cpp:60-179`                        |
+| `GLChar::CodexComplete` → the done-map move | `GLCharCodex.cpp:14-19` and the second pass at `:161-173`                  |
+| Request validation and the item spend    | the item-registration handler, `GLCharInvenMsg.cpp:9080-9213`                  |
+| `CodexContributionAggregator`           | `GLCHARLOGIC::CODEX_STATS`, `GLogixExPC.cpp:5103-5173`                         |
+| `CodexEntry` in the snapshot             | the two client inserts in `DxGameStage.cpp:931`, `:950`                       |
+| `Stats::CodexContribution`              | the eleven `m_dw*Increase` accumulators, `GLogixExPC.cpp:5106-5168` (CORE-002) |
+
+### Verifying
+
+```powershell
+cmake --build build --config Debug
+ctest --test-dir build -C Debug --output-on-failure
+```
+
+Release is built and run the same way with `--config Release`. Both
+configurations pass all 14 suites.
+
+| Suite | Cases | What it covers |
+| ----- | ----: | -------------- |
+| `ModernCoreTests` | 167 | the cascade at every prefix length, the untested slot 0, the empty entry, id/quantity equality, one stack satisfying two slots, a satisfied slot not recorded twice, a slot outside the required count, the clamp and the two-phase move, the four distinguishable refusals, reconciliation (seating, the completed skip, the type reset, the refresh, progress preserved / dropped, orphan removal), aggregation (completed only, per-field, idempotent, order-independent, skip reported, unmapped type reported) |
+| `ModernServerTests` | 46 | seating on create, a registration moving the derived statistics and matching an independent `Stats::Calculate`, only-a-completed-entry-pays, the reward paid exactly once, reconciliation not repaying, the aggregate not drifting across four reloads, per-type mapping at the server boundary, the published snapshot carrying the authoritative counters, repeated snapshots identical, no provider being inert, an empty table refused, `SetContributions` refusing a third source, a rejected registration leaving the character intact |
+| `ModernClientGameplayTests` | 22 | presentation from a snapshot, finished and unfinished being distinguishable, the views being const-refs over the published list, the client's derived statistics being the server's, the empty fallbacks with no snapshot, and a later snapshot replacing an earlier codex rather than merging with it |
+
+All tests pass without legacy libraries, DirectX, sockets, or a database.
+
+
 ## 14. CLIENT-002: modern client application foundation
 
 Establishes modern/client/application, providing an isolated, deterministic

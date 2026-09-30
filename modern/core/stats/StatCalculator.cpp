@@ -285,6 +285,11 @@ namespace Modern::Stats
 		return value == PassiveContribution();
 	}
 
+	bool IsZero(const CodexContribution& value) noexcept
+	{
+		return value == CodexContribution();
+	}
+
 	Result<DerivedStats> Calculate(const StatCalculationInput& input) noexcept
 	{
 		if (!IsValidClass(input.characterClass))

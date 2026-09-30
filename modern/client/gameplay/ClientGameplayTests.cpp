@@ -27,6 +27,8 @@
 #include "skills/SkillState.h"
 #include "stats/DerivedStats.h"
 #include "stats/StatCalculator.h"
+#include "progression/CodexDefinition.h"
+#include "progression/CodexDefinitionProvider.h"
 #include "types/Result.h"
 
 #include <fstream>
@@ -686,6 +688,249 @@ MODERN_TEST(Gameplay_ClientPresentsLearnedSkillsFromSnapshot)
 	CHECK(client.HasSkill(MakeClientTestSkillId(20004)));
 	CHECK_EQ(client.GetSkillLevel(MakeClientTestSkillId(20004)), static_cast<uint8_t>(1));
 	CHECK_EQ(client.GetLearnedSkillCount(), static_cast<size_t>(1));
+}
+
+// ---------------------------------------------------------------------------
+// VERTICAL-004: codex
+// ---------------------------------------------------------------------------
+//
+// The client's codex is a read-only view of what the server published. The
+// property worth pinning is not that the values are copied - that is what a
+// struct copy does - but that the client has no way to *produce* a different
+// answer: no path to register, complete, or recompute, so a codex panel cannot
+// disagree with the character it is drawing.
+
+namespace
+{
+	const CodexId kClientHpCodex  = CodexId(31u);
+	const CodexId kClientMapCodex = CodexId(32u);
+	const ItemId   kClientHpItem  = ItemId(21001u);
+	const ItemId   kClientMapItem = ItemId(21002u);
+
+	// An item provider that outlives every definition built from it. The codex
+	// cases need no equipment, but ServerCharacterDefinition holds the provider
+	// by pointer, so a temporary would dangle.
+	InMemoryItemDefinitions& EmptyItemProvider()
+	{
+		static InMemoryItemDefinitions provider;
+		return provider;
+	}
+
+	Server::ServerCharacterDefinition ClientCodexDefinition(
+		const CodexDefinitionProvider& definitions)
+	{
+		Server::ServerCharacterDefinition definition =
+			StandardDefinitionWithItems(EmptyItemProvider());
+		definition.codexDefinitions = &definitions;
+		return definition;
+	}
+
+	CodexRequirement CodexReq(ItemId item, uint16_t quantity)
+	{
+		CodexRequirement requirement;
+		requirement.item     = item;
+		requirement.quantity = quantity;
+		return requirement;
+	}
+
+	// A definition whose requirements are written into the five slots in order.
+	// Slot order is meaningful: `RequiredSlotCount` reads it.
+	CodexDefinition CodexTableEntry(CodexId id, CodexType type, const char* title,
+	                                 uint32_t rewardPoint,
+	                                 std::initializer_list<CodexRequirement> requirements)
+	{
+		CodexDefinition definition;
+		definition.id          = id;
+		definition.type        = type;
+		definition.title       = title;
+		definition.description = "";
+		definition.rewardPoint = rewardPoint;
+		uint8_t slot = 0;
+		for (const CodexRequirement& requirement : requirements)
+		{
+			if (slot >= kCodexMaxRequirements)
+			{
+				break;
+			}
+			definition.requirements[slot] = requirement;
+			++slot;
+		}
+		return definition;
+	}
+
+	// One entry that completes on a single registration and one that takes a
+	// two-count stack, so a snapshot can carry a finished and an unfinished
+	// entry at once.
+	InMemoryCodexDefinitions ClientCodexTable()
+	{
+		InMemoryCodexDefinitions definitions;
+		(void) definitions.Add(CodexTableEntry(kClientHpCodex, CodexType::ReachLevel,
+		                                       "Novice Path", 100u,
+		                                       { CodexReq(kClientHpItem, 1) }));
+		(void) definitions.Add(CodexTableEntry(kClientMapCodex, CodexType::ReachMap,
+		                                       "Wayfarer", 250u,
+		                                       { CodexReq(kClientMapItem, 2) }));
+		return definitions;
+	}
+
+	ItemInstance ClientCodexStack(ItemId item, uint32_t count, uint64_t serial)
+	{
+		ItemInstance instance;
+		instance.definition = item;
+		instance.serial     = serial;
+		instance.count      = count;
+		return instance;
+	}
+}
+
+MODERN_TEST(Gameplay_ClientPresentsTheCodexFromSnapshot)
+{
+	InMemoryCodexDefinitions definitions = ClientCodexTable();
+	const Server::ServerCharacterDefinition definition = ClientCodexDefinition(definitions);
+
+	const Result<Server::ServerCharacter> created = Server::ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	Server::ServerCharacter character = created.GetValue();
+
+	// One entry finished, one left untouched.
+	CHECK(character.RegisterCodexItem(kClientHpCodex,
+	                                  ClientCodexStack(kClientHpItem, 1, 1u)).IsOk());
+
+	const Gameplay::CharacterSnapshot snapshot = character.BuildSnapshot().GetValue();
+	ClientCharacterState client;
+	CHECK(client.Apply(snapshot).IsOk());
+
+	CHECK_EQ(client.GetCodexCount(), static_cast<size_t>(2));
+	CHECK_EQ(client.GetCompletedCodexCount(), static_cast<size_t>(1));
+	CHECK_EQ(client.GetInProgressCodexCount(), static_cast<size_t>(1));
+
+	// A finished entry, with the name and counters a codex panel needs.
+	CHECK(client.HasCodex(kClientHpCodex));
+	CHECK(client.IsCodexCompleted(kClientHpCodex));
+	CHECK(!client.IsCodexInProgress(kClientHpCodex));
+	const Gameplay::CodexEntry& finished = client.GetCodexEntry(kClientHpCodex);
+	CHECK(finished.name == "Novice Path");
+	CHECK(finished.type == CodexType::ReachLevel);
+	CHECK_EQ(finished.doneCount, static_cast<uint8_t>(1));
+	CHECK_EQ(finished.requiredCount, static_cast<uint8_t>(1));
+	CHECK(finished.GetProgressFraction() == 1.0f);
+
+	// And one that is held but not finished, which has to be distinguishable
+	// from the finished case rather than reported as the same thing.
+	CHECK(client.HasCodex(kClientMapCodex));
+	CHECK(!client.IsCodexCompleted(kClientMapCodex));
+	CHECK(client.IsCodexInProgress(kClientMapCodex));
+	const Gameplay::CodexEntry& partial = client.GetCodexEntry(kClientMapCodex);
+	CHECK(partial.name == "Wayfarer");
+	CHECK_EQ(partial.doneCount, static_cast<uint8_t>(0));
+	CHECK_EQ(partial.requiredCount, static_cast<uint8_t>(1));
+	CHECK(partial.GetProgressFraction() == 0.0f);
+}
+
+MODERN_TEST(Gameplay_ClientCodexViewsAreReadOnly)
+{
+	InMemoryCodexDefinitions definitions = ClientCodexTable();
+	const Server::ServerCharacterDefinition definition = ClientCodexDefinition(definitions);
+
+	const Result<Server::ServerCharacter> created = Server::ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	Server::ServerCharacter character = created.GetValue();
+	CHECK(character.RegisterCodexItem(kClientHpCodex, ClientCodexStack(kClientHpItem, 1, 1u)).IsOk());
+
+	const Gameplay::CharacterSnapshot snapshot = character.BuildSnapshot().GetValue();
+	ClientCharacterState client;
+	CHECK(client.Apply(snapshot).IsOk());
+
+	// The accessors hand back const references, so the only way to change what
+	// the client holds is a new snapshot. A full recompute on the client side
+	// would be the alternative, and the type surface rules it out: there is no
+	// mutable codex member, no RegisterCodexItem, and no contribution of the
+	// client's own to feed a recalculation. This pins the published view as the
+	// same values twice over, which is what a panel actually draws.
+	const Gameplay::CodexEntry& first  = client.GetCodexEntry(kClientHpCodex);
+	const Gameplay::CodexEntry& second = client.GetCodexEntry(kClientHpCodex);
+	CHECK(first == second);
+	CHECK(client.GetCodex() == snapshot.codex);
+
+	// And the client's derived statistics are the server's, already carrying the
+	// codex bonus. The client does not add a second copy on top.
+	CHECK(client.GetDerivedStats() == snapshot.derived);
+	CHECK_EQ(client.GetDerivedStats().maxHp, snapshot.derived.maxHp);
+}
+
+MODERN_TEST(Gameplay_ClientReportsEmptyCodexWithNoSnapshot)
+{
+	// No snapshot at all. The accessors have to answer rather than crash, and
+	// they have to answer "nothing held" rather than a default-constructed entry
+	// that looks like a real one.
+	ClientCharacterState client;
+	CHECK(!client.HasCodex(kClientHpCodex));
+	CHECK(!client.IsCodexCompleted(kClientHpCodex));
+	CHECK(!client.IsCodexInProgress(kClientHpCodex));
+	CHECK_EQ(client.GetCodexCount(), static_cast<size_t>(0));
+	CHECK_EQ(client.GetCompletedCodexCount(), static_cast<size_t>(0));
+	CHECK_EQ(client.GetInProgressCodexCount(), static_cast<size_t>(0));
+
+	// The shared empty view is the same one every accessor falls back to, so
+	// two calls cannot return two different "empty" lists.
+	CHECK(client.GetCodex() == ClientCharacterState::EmptyCodex());
+	CHECK(&client.GetCodex() == &client.GetCodex());
+
+	// An entry the character does not have is an empty entry, and an empty entry
+	// is not a completed one.
+	const Gameplay::CodexEntry& missing = client.GetCodexEntry(kClientHpCodex);
+	CHECK(!missing.completed);
+	CHECK_EQ(missing.id, CodexId::MakeInvalid());
+	CHECK(missing.GetProgressFraction() == 0.0f);
+}
+
+MODERN_TEST(Gameplay_ClientCodexSurvivesASnapshotWithoutOne)
+{
+	// A snapshot with an empty codex list is valid - it is what a character with
+	// no codex table produces - and it must not leave the client reading a stale
+	// codex from an earlier snapshot.
+	InMemoryCodexDefinitions definitions = ClientCodexTable();
+	const Server::ServerCharacterDefinition definition = ClientCodexDefinition(definitions);
+
+	const Result<Server::ServerCharacter> created = Server::ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	Server::ServerCharacter character = created.GetValue();
+	CHECK(character.RegisterCodexItem(kClientHpCodex, ClientCodexStack(kClientHpItem, 1, 1u)).IsOk());
+
+	ClientCharacterState client;
+	CHECK(client.Apply(character.BuildSnapshot().GetValue()).IsOk());
+	CHECK(client.HasCodex(kClientHpCodex));
+	CHECK_EQ(client.GetCodexCount(), static_cast<size_t>(2));
+
+	// A second character with no codex table at all.
+	const Server::ServerCharacterDefinition bare = StandardDefinitionWithItems(EmptyItemProvider());
+	const Result<Server::ServerCharacter> bareCreated = Server::ServerCharacter::Create(bare);
+	CHECK(bareCreated.IsOk());
+	if (bareCreated.IsError())
+	{
+		return;
+	}
+	Server::ServerCharacter bareCharacter = bareCreated.GetValue();
+	const Gameplay::CharacterSnapshot bareSnapshot = bareCharacter.BuildSnapshot().GetValue();
+	CHECK(Gameplay::CharacterSnapshot::IsValid(bareSnapshot));
+	CHECK(bareSnapshot.codex.entries.empty());
+
+	CHECK(client.Apply(bareSnapshot).IsOk());
+	CHECK(!client.HasCodex(kClientHpCodex));
+	CHECK_EQ(client.GetCodexCount(), static_cast<size_t>(0));
+	CHECK_EQ(client.GetCompletedCodexCount(), static_cast<size_t>(0));
 }
 
 int main()

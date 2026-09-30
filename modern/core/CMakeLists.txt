@@ -19,6 +19,10 @@ set(MODERN_SOURCES
     equipment/ItemDefinitionProvider.cpp
     gameplay/CharacterSnapshot.cpp
     item/ItemDefinition.cpp
+    progression/CodexDefinition.cpp
+    progression/CodexDefinitionProvider.cpp
+    progression/CodexState.cpp
+    progression/CodexContributionAggregator.cpp
     skills/SkillDefinition.cpp
     skills/SkillState.cpp
     skills/SkillDefinitionProvider.cpp

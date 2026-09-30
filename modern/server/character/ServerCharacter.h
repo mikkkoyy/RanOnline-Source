@@ -34,6 +34,9 @@
 #include "equipment/ItemDefinitionProvider.h"
 #include "gameplay/CharacterSnapshot.h"
 #include "math/Vector3.h"
+#include "progression/CodexContributionAggregator.h"
+#include "progression/CodexDefinitionProvider.h"
+#include "progression/CodexState.h"
 #include "skills/PassiveContributionAggregator.h"
 #include "skills/SkillDefinitionProvider.h"
 #include "skills/SkillState.h"
@@ -76,6 +79,18 @@ namespace Modern::Server
 		// Required when the character has learned passive skills.
 		const SkillDefinitionProvider*   skillDefinitions = nullptr;
 
+		// Resolves codex definitions for progress and contribution aggregation.
+		// Required when the character holds any codex entry.
+		//
+		// RAN loads the codex table at server start through `GLCodex`
+		// (GLCodex.cpp:97) and reconciles every character against it on load
+		// (GLCharDataCodex.cpp:72-93), so in a real server this is a global
+		// always-present table rather than a per-character input. It is a
+		// parameter here for the same reason the class-table row is: the data
+		// file is not in this repository, and `Calculate` takes what it needs as
+		// values.
+		const CodexDefinitionProvider*    codexDefinitions = nullptr;
+
 		float                              confPointRate = 1.0f;
 	};
 
@@ -105,11 +120,12 @@ namespace Modern::Server
 		Status SetExperience(int64_t experience);
 		Status SetAllocatedStats(const Stats::BaseStats& stats);
 
-		// The codex contribution is still taken from here. The item and passive
-		// parameters are not: the worn set and the learned skill set are their
-		// only sources, and a non-zero value for either is refused with
-		// NotAllowed rather than accepted and discarded. The parameters remain
-		// for source compatibility.
+		// The codex contribution is not taken from here either. VERTICAL-004 made
+		// the completed codex set its only source, exactly as the worn set is the
+		// only source for items and the learned set the only source for passives,
+		// so a non-zero codex value is refused with NotAllowed rather than
+		// accepted and discarded. All three parameters remain for source
+		// compatibility.
 		Status SetContributions(const Stats::ItemContribution& items,
 		                        const Stats::PassiveContribution& passives,
 		                        const Stats::CodexContribution& codex);
@@ -214,6 +230,60 @@ namespace Modern::Server
 		// character was never created, which the factory prevents.
 		Result<Gameplay::CharacterSnapshot> BuildSnapshot() const;
 
+		// ---- Codex (VERTICAL-004) ----
+		//
+		// Registering an item is the only operation that advances a codex entry,
+		// and it is the only way in the modern tree that a character's codex
+		// changes. RAN has exactly one such operation,
+		// `GLChar::DoCodexRegisterItem` (GLCharCodex.cpp:60), reached from one
+		// place - the item registration request handler
+		// (GLCharInvenMsg.cpp:9187). The per-type progress rules RAN's definition
+		// format implies - reach a level, kill a mob, reach a map, finish a quest -
+		// have no live implementation; see
+		// docs/reference/client/VERTICAL-004_CODEX_INVESTIGATION.md §3.
+		//
+		// This does not spend the item. There is no inventory in this milestone,
+		// and a caller that owns one must consult `CodexRegistration::recorded`
+		// before removing anything: RAN deletes the stack unconditionally
+		// (GLCharInvenMsg.cpp:9195-9199) and loses the item when the registration
+		// matched nothing, which is not reproduced. See §6.
+		//
+		// Transactional. A call that fails leaves the codex set, the contribution
+		// and the statistics exactly as they were.
+		Result<CodexRegistration> RegisterCodexItem(CodexId id, const ItemInstance& item);
+
+		// Reconciles the codex set against the definitions: seats what is missing,
+		// refreshes what is in progress, and drops records whose definition has
+		// gone. RAN does this at character load (GLCharDataCodex.cpp:40-134), and
+		// it is public here because a server that reloads its codex table has to
+		// be able to do the same without a reload.
+		//
+		// Fails with InvalidArgument when no definitions were supplied, since
+		// reconciling against nothing would wipe every record.
+		Status ReconcileCodex();
+
+		// The codex state, for inspection and tests.
+		const CodexState& GetCodex() const noexcept { return m_codex; }
+
+		// The aggregated codex contribution currently in force. This is the value
+		// `Calculate` was last given, and it is what a registration rebuilds.
+		const Stats::CodexContribution& GetCodexContribution() const noexcept
+		{
+			return m_codexContribution;
+		}
+
+		// Why the last aggregation skipped a completed entry, if it skipped one.
+		// See CodexContributionResult.
+		CodexContributionError GetCodexSkipReason() const noexcept
+		{
+			return m_codexSkipReason;
+		}
+
+		// How many completed entries paid a non-zero reward point. A character
+		// holding a contribution with a zero here has completed entries that
+		// reward nothing, which is a different bug from having no contribution.
+		size_t GetContributingCodexCount() const noexcept { return m_contributingCodex; }
+
 	private:
 		ServerCharacter() = default;
 
@@ -231,6 +301,13 @@ namespace Modern::Server
 		SkillState                      m_skills;
 		const SkillDefinitionProvider*  m_skillDefinitions = nullptr;
 		Stats::PassiveContribution      m_passives;
+
+		// VERTICAL-004: codex state and its contribution.
+		CodexState                     m_codex;
+		const CodexDefinitionProvider* m_codexDefinitions = nullptr;
+		Stats::CodexContribution       m_codexContribution;
+		CodexContributionError         m_codexSkipReason = CodexContributionError::None;
+		size_t                         m_contributingCodex = 0;
 
 		Stats::DerivedStats        m_derived;
 		Vector3                    m_position;

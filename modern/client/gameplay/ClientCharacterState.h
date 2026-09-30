@@ -141,11 +141,79 @@ namespace Modern::Client::Gameplay
 
 		static const Modern::Gameplay::EquippedList& EmptyEquipped() noexcept;
 
+		// ---- Codex (VERTICAL-004) ----
+		//
+		// What the server said about the character's codex. A read-only view: the
+		// client cannot register an item, complete an entry, or change a
+		// counter, because the server owns the codex set and a client that could
+		// change it would be a second authority.
+		//
+		// There is no codex contribution here to recompute and no requirement
+		// list to match against, which is the structural half of the same
+		// guarantee the equipment and skill views have: the client holds a
+		// description of the codex and the *result* in `derived`, and no path to
+		// producing a third.
+		//
+		// RAN's client breaks that guarantee for the codex specifically: it keeps
+		// its own `m_mapCodexProg` / `m_mapCodexDone` mirror
+		// (GLCharacterMsg.cpp:5193, :5206-5212) and calls its own `CODEX_STATS`
+		// on completion (GLCharacterMsg.cpp:5214), so the formula runs on both
+		// sides. See the note in core/gameplay/CharacterSnapshot.h.
+		const Modern::Gameplay::CodexList& GetCodex() const noexcept
+		{
+			return m_hasSnapshot ? m_snapshot.codex : EmptyCodex();
+		}
+
+		// One codex entry, or an empty entry when the character does not have it
+		// or no snapshot has been received.
+		const Modern::Gameplay::CodexEntry& GetCodexEntry(CodexId id) const noexcept
+		{
+			const Modern::Gameplay::CodexEntry* entry = GetCodex().Find(id);
+			return entry != nullptr ? *entry : EmptyCodexEntry();
+		}
+
+		// Whether the character holds an entry at all, finished or not.
+		bool HasCodex(CodexId id) const noexcept
+		{
+			return m_hasSnapshot && m_snapshot.codex.Has(id);
+		}
+
+		// Whether an entry is completed. False for an entry the character does not
+		// have, which is a different answer from "in progress" and is why
+		// HasCodex exists alongside.
+		bool IsCodexCompleted(CodexId id) const noexcept
+		{
+			return m_hasSnapshot && m_snapshot.codex.IsCompleted(id);
+		}
+
+		// Whether an entry is held and not yet completed.
+		bool IsCodexInProgress(CodexId id) const noexcept
+		{
+			return m_hasSnapshot && m_snapshot.codex.IsInProgress(id);
+		}
+
+		// The held, completed and in-progress counts, for a codex panel header.
+		size_t GetCodexCount() const noexcept
+		{
+			return m_hasSnapshot ? m_snapshot.codex.GetCount() : 0u;
+		}
+		size_t GetCompletedCodexCount() const noexcept
+		{
+			return m_hasSnapshot ? m_snapshot.codex.GetCompletedCount() : 0u;
+		}
+		size_t GetInProgressCodexCount() const noexcept
+		{
+			return m_hasSnapshot ? m_snapshot.codex.GetInProgressCount() : 0u;
+		}
+
+		static const Modern::Gameplay::CodexList& EmptyCodex() noexcept;
+
 	private:
 		static const Stats::DerivedStats& EmptyDerived() noexcept;
 		static const Stats::BaseStats& EmptyStats() noexcept;
 		static const std::string& EmptyName() noexcept;
 		static const Vector3& EmptyPosition() noexcept;
+		static const Modern::Gameplay::CodexEntry& EmptyCodexEntry() noexcept;
 
 		bool                            m_hasSnapshot = false;
 		Modern::Gameplay::CharacterSnapshot m_snapshot;

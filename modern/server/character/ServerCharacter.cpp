@@ -3,9 +3,11 @@
 #include "character/ServerCharacter.h"
 
 #include "equipment/ItemContributionAggregator.h"
+#include "progression/CodexContributionAggregator.h"
 #include "skills/PassiveContributionAggregator.h"
 #include "stats/StatCalculator.h"
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -48,6 +50,7 @@ Result<ServerCharacter> ServerCharacter::Create(ServerCharacterDefinition defini
 	character.m_classIndex        = classIndex;
 	character.m_itemDefinitions  = character.m_definition.itemDefinitions;
 	character.m_skillDefinitions = character.m_definition.skillDefinitions;
+	character.m_codexDefinitions  = character.m_definition.codexDefinitions;
 	// The caller no longer supplies an item contribution: it is aggregated
 	// from the worn set, which starts empty. A contribution passed here
 	// alongside equipment would be a second, competing source.
@@ -55,6 +58,20 @@ Result<ServerCharacter> ServerCharacter::Create(ServerCharacterDefinition defini
 	// The caller no longer supplies a passive contribution: it is aggregated
 	// from the learned skill set, which starts empty.
 	character.m_definition.passives = Stats::PassiveContribution();
+	// VERTICAL-004: nor a codex contribution. It is aggregated from the completed
+	// codex set, which starts empty.
+	character.m_definition.codex = Stats::CodexContribution();
+
+	// RAN seats every codex entry the character does not have at character load
+	// (GLCharDataCodex.cpp:72-93, and the GM/new-character path at
+	// GLCharDataLoad.cpp:357-373), so a freshly created character already has a
+	// progress record for every definition. Doing it here rather than lazily
+	// means the published snapshot is complete from the first frame, and it is
+	// the same call a reload uses.
+	if (character.m_codexDefinitions != nullptr)
+	{
+		character.m_codex.Reconcile(*character.m_codexDefinitions);
+	}
 
 	const Status calculated = character.Recalculate();
 	if (calculated.IsError())
@@ -111,6 +128,43 @@ Status ServerCharacter::Recalculate()
 		m_passives = aggregated.GetValue().contribution;
 	}
 
+	// VERTICAL-004: aggregate the completed codex set.
+	//
+	// This is RAN's CODEX_STATS (GLogixExPC.cpp:5103), reached from
+	// GLChar::CodexComplete (GLCharCodex.cpp:57), from the client-side mirror
+	// (GLCharacterMsg.cpp:5214) and from character initialisation
+	// (GLChar.cpp:601, GLCharacter.cpp:921). Every one of those is a full
+	// recompute from the completed map, so rebuilding here on every
+	// recalculation is the same shape and is idempotent.
+	//
+	// RAN's version is not a failure path: a completed entry whose definition
+	// cannot be resolved is skipped silently (GLogixExPC.cpp:5131) and the
+	// aggregation continues. That is kept, and the count of skipped entries is
+	// recorded so a caller can ask, because a reward that silently pays nothing
+	// is otherwise indistinguishable from a working one.
+	m_codexSkipReason = CodexContributionError::None;
+	m_contributingCodex = 0;
+	if (m_codexDefinitions != nullptr)
+	{
+		const Result<CodexContributionResult> aggregated =
+			CodexContributionAggregator::Aggregate(m_codex, *m_codexDefinitions);
+		if (aggregated.IsError())
+		{
+			return aggregated.GetStatus();
+		}
+		m_codexContribution  = aggregated.GetValue().contribution;
+		m_codexSkipReason    = aggregated.GetValue().skipReason;
+		m_contributingCodex  = aggregated.GetValue().contributingCodex;
+	}
+	else
+	{
+		// No definitions means no codex entries can be resolved, so the
+		// contribution is zero rather than stale. A character created without a
+		// codex table publishes no codex bonuses, which is visible in its
+		// statistics rather than a stale number surviving a table being detached.
+		m_codexContribution = Stats::CodexContribution();
+	}
+
 	Stats::StatCalculationInput input;
 		input.characterClass  = m_classIndex;
 		input.level           = m_definition.level;
@@ -118,7 +172,7 @@ Status ServerCharacter::Recalculate()
 		input.allocatedStats  = m_definition.allocatedStats;
 		input.items           = m_items;
 		input.passives        = m_passives;
-		input.codex           = m_definition.codex;
+		input.codex           = m_codexContribution;
 		input.confPointRate   = m_definition.confPointRate;
 
 		const Result<Stats::DerivedStats> result = Stats::Calculate(input);
@@ -183,12 +237,90 @@ Status ServerCharacter::Recalculate()
 		// - so a non-zero value was accepted, reported as success, and discarded.
 		// A silently discarded contribution is worse than a refusal, because the
 		// caller has no way to tell the two apart.
-		if (!Stats::IsZero(items) || !Stats::IsZero(passives))
+		//
+		// VERTICAL-004 extends that to the codex contribution, which used to be
+		// the one parameter this function still honoured. It is aggregated from
+		// the completed codex set now, so honouring it here would let a caller
+		// override a character's actual codex.
+		//
+		// The test is on the *argument*, like the two above. Testing the derived
+		// `m_codexContribution` instead would invert the check twice over: a
+		// caller passing a non-zero value would be told it was fine and have it
+		// dropped, and a character with any real codex progress would be told
+		// even a zeroed call was not allowed.
+		if (!Stats::IsZero(items) || !Stats::IsZero(passives) ||
+		    !Stats::IsZero(codex))
 		{
 			return Status(ErrorCode::NotAllowed);
 		}
-		m_definition.codex = codex;
 		return Recalculate();
+	}
+
+	Result<CodexRegistration> ServerCharacter::RegisterCodexItem(CodexId id,
+	                                                            const ItemInstance& item)
+	{
+		if (m_codexDefinitions == nullptr)
+		{
+			return Status(ErrorCode::InvalidArgument);
+		}
+
+		// Stage the change on a copy, so a failure part-way cannot leave a
+		// half-written record or a contribution that does not match it. The same
+		// shape as LearnSkill and Equip.
+		CodexState staged = m_codex;
+		const Result<CodexRegistration> registered = staged.RegisterItem(id, item);
+		if (registered.IsError())
+		{
+			return registered;
+		}
+
+		// A refused registration changes nothing, so there is no need to
+		// recalculate. RAN's path does send an update message on this branch
+		// (GLCharCodex.cpp:154-156) and none on a completion, because completion
+		// sends its own; that is a transport detail, not a state change.
+		if (!registered.GetValue().recorded)
+		{
+			return registered;
+		}
+
+		const CodexState previous = m_codex;
+		m_codex = staged;
+		const Status calculated = Recalculate();
+		if (calculated.IsError())
+		{
+			m_codex = previous;
+			(void) Recalculate();
+			return calculated;
+		}
+		return registered;
+	}
+
+	Status ServerCharacter::ReconcileCodex()
+	{
+		if (m_codexDefinitions == nullptr)
+		{
+			// Reconciling against nothing would wipe every record, so this is
+			// refused rather than performed.
+			return Status(ErrorCode::InvalidArgument);
+		}
+		if (m_codexDefinitions->GetAll().empty())
+		{
+			// Same reason. An empty table is almost always a data fault, and
+			// dropping a character's codex to nothing because a file failed to
+			// load is not a recoverable outcome.
+			return Status(ErrorCode::InvalidArgument);
+		}
+
+		const CodexState previous = m_codex;
+		m_codex.Reconcile(*m_codexDefinitions);
+		const Status calculated = Recalculate();
+		if (calculated.IsError())
+		{
+			m_codex = previous;
+			(void) Recalculate();
+			return calculated;
+		}
+		return Ok();
 	}
 
 Status ServerCharacter::LearnSkill(const SkillId& id)
@@ -462,6 +594,60 @@ Status ServerCharacter::Equip(EquipmentSlot slot, const ItemInstance& item)
 			skills.skills.push_back(std::move(entry));
 		}
 		snapshot.skills = std::move(skills);
+
+		// The codex, published so a client can present a codex panel. RAN sends
+		// the two maps as two blocks in one join message (GLCharEx.cpp:445-465)
+		// and the client inserts each into its own map
+		// (DxGameStage.cpp:931, :950); they are flattened here because a panel
+		// shows both, and `completed` says which is which.
+		//
+		// Completed entries come first in RAN's tables only by accident of
+		// iteration, so both maps are walked in id order and merged: the published
+		// list is sorted by CodexId, which is also what the snapshot validator
+		// requires.
+		Gameplay::CodexList codex;
+		if (m_codexDefinitions != nullptr)
+		{
+			// A record is published only if its definition still resolves, so a
+			// client is never sent an entry it could not name. RAN's character
+			// load drops the same records (GLCharDataCodex.cpp:95-132); doing it
+			// here as well keeps the two consistent even if a record was seated
+			// before a definition disappeared.
+			auto publish = [&](CodexId id, const CodexProgress& record, bool completed)
+			{
+				const CodexDefinition* definition = m_codexDefinitions->Find(id);
+				if (definition == nullptr)
+				{
+					return;
+				}
+				Gameplay::CodexEntry entry;
+				entry.id            = id;
+				entry.type          = definition->type;
+				entry.name          = definition->title;
+				entry.description   = definition->description;
+				entry.badge         = definition->rewardBadge ? definition->badge : std::string();
+				entry.completed     = completed;
+				entry.requiredCount = record.requiredCount;
+				entry.doneCount     = record.doneCount;
+				codex.entries.push_back(std::move(entry));
+			};
+
+			// Two maps merged into one sorted list. The completed map first, then
+			// the progress map, then a single sort: an id is in exactly one of the
+			// two, so this cannot produce a duplicate.
+			for (const auto& [id, record] : m_codex.GetAllCompleted())
+			{
+				publish(id, record, /*completed*/ true);
+			}
+			for (const auto& [id, record] : m_codex.GetAllProgress())
+			{
+				publish(id, record, /*completed*/ false);
+			}
+			std::sort(codex.entries.begin(), codex.entries.end(),
+			          [](const Gameplay::CodexEntry& lhs, const Gameplay::CodexEntry& rhs)
+			          { return lhs.id < rhs.id; });
+		}
+		snapshot.codex = std::move(codex);
 
 		return Gameplay::CharacterSnapshot::Create(std::move(snapshot));
 	}

@@ -21,6 +21,9 @@
 #include "item/ItemInstance.h"
 #include "math/Vector3.h"
 #include "character/ServerCharacter.h"
+#include "progression/CodexDefinition.h"
+#include "progression/CodexDefinitionProvider.h"
+#include "progression/CodexState.h"
 #include "skills/PassiveContributionAggregator.h"
 #include "skills/SkillDefinition.h"
 #include "skills/SkillDefinitionProvider.h"
@@ -29,6 +32,7 @@
 #include "stats/Contributions.h"
 #include "types/Result.h"
 
+#include <initializer_list>
 #include <limits>
 
 using namespace Modern;
@@ -204,7 +208,8 @@ namespace
 		const ItemDefinitionProvider* itemProvider = nullptr,
 		const SkillDefinitionProvider* skillProvider = nullptr,
 		const SkillState* skills = nullptr,
-		const EquipmentState* equipment = nullptr)
+		const EquipmentState* equipment = nullptr,
+		const Stats::CodexContribution* codex = nullptr)
 	{
 		const EquipmentState emptyEquipment;
 		const SkillState emptySkills;
@@ -243,7 +248,7 @@ namespace
 		input.allocatedStats = definition.allocatedStats;
 		input.items          = items;
 		input.passives       = passives;
-		input.codex          = definition.codex;
+		input.codex          = codex != nullptr ? *codex : definition.codex;
 		input.confPointRate  = definition.confPointRate;
 		return Stats::Calculate(input).GetValue();
 	}
@@ -850,16 +855,24 @@ MODERN_TEST(Server_SetContributionsRefusesAnItemOrPassiveContribution)
 
 	CHECK(character.GetDerivedStats() == RecalculateIndependently(definition, nullptr, &provider));
 
-	// The codex is still the caller's to set, and it does move a derived value,
-	// so the two refusals above are not the function refusing everything.
+	// VERTICAL-004: the codex joins them. The completed codex set is the only
+	// source for the codex contribution, so the third parameter is refused on
+	// the same terms as the other two. This used to be the one parameter the
+	// function still honoured.
 	Stats::CodexContribution codex;
 	codex.hp = 90;
 	CHECK(character.SetContributions(Stats::ItemContribution(),
-	                                 Stats::PassiveContribution(), codex).IsOk());
-	ServerCharacterDefinition withCodex = definition;
-	withCodex.codex = codex;
-	CHECK(character.GetDerivedStats() ==
-		RecalculateIndependently(withCodex, nullptr, &provider));
+	                                 Stats::PassiveContribution(), codex).IsError());
+
+	// A refused argument must leave the character untouched, and the refusal
+	// must be about the argument rather than about the character's own state:
+	// a character with real codex progress can still be recalculated through
+	// the same call with all-zero arguments.
+	CHECK(character.GetDerivedStats() == RecalculateIndependently(definition, nullptr, &provider));
+	CHECK(character.SetContributions(Stats::ItemContribution(),
+	                                 Stats::PassiveContribution(),
+	                                 Stats::CodexContribution()).IsOk());
+	CHECK(character.GetDerivedStats() == RecalculateIndependently(definition, nullptr, &provider));
 
 	// And the learned set is still the only way to raise hp.
 	CHECK(character.LearnSkill(MakeTestSkillId(30012)).IsOk());
@@ -1224,6 +1237,439 @@ MODERN_TEST(Server_RejectedEquipLeavesCharacterIntact)
 	CHECK_EQ(character.GetEquipment().GetOccupiedCount(), occupiedBefore);
 	CHECK(character.GetDerivedStats() == before);
 }
+
+
+// ---------------------------------------------------------------------------
+// VERTICAL-004: codex
+// ---------------------------------------------------------------------------
+//
+// The server is the only writer of codex state. These cases are about the three
+// things that make the character authoritative: that registering an item moves
+// the derived statistics, that a completed entry pays exactly once, and that
+// what a snapshot publishes is exactly what the state behind it holds.
+//
+// The slot arithmetic, the required-count cascade and the aggregation rules are
+// pinned in modern/tests/CodexTests.cpp. What is left to prove here is that the
+// character is wired to that state correctly - that a registration reaches it,
+// that the aggregate reaches the stat formula, and that the snapshot is a
+// faithful copy rather than a second, independently maintained truth.
+
+namespace
+{
+	// A codex requirement naming one item and one count. The requirement holds
+	// the item *definition* id, and there is no ItemInstance involved in
+	// seating a definition.
+	CodexRequirement CodexReq(ItemId item, uint16_t quantity)
+	{
+		CodexRequirement requirement;
+		requirement.item          = item;
+		requirement.quantity      = quantity;
+		requirement.requiredGrade = 0;
+		return requirement;
+	}
+
+	// A codex definition with a title, because the snapshot publishes the
+	// definition's strings to the client. The requirements are written into the
+	// five slots in order, which is the only shape a codex table really has -
+	// slot order is meaningful, and `RequiredSlotCount` reads it.
+	CodexDefinition CodexTableEntry(CodexId id, CodexType type,
+	                                 const char* title, uint32_t rewardPoint,
+	                                 std::initializer_list<CodexRequirement> requirements)
+	{
+		CodexDefinition definition;
+		definition.id          = id;
+		definition.type        = type;
+		definition.title       = title;
+		definition.rewardPoint = rewardPoint;
+
+		uint8_t slot = 0;
+		for (const CodexRequirement& requirement : requirements)
+		{
+			if (slot >= kCodexMaxRequirements)
+			{
+				break;
+			}
+			definition.requirements[slot] = requirement;
+			++slot;
+		}
+		return definition;
+	}
+
+	// A registration argument: a usable instance of the named item at the given
+	// count. The serial has to be non-zero, or the instance is not valid and the
+	// registration is refused as a bad argument.
+	ItemInstance CodexStack(ItemId item, uint32_t count, uint64_t serial)
+	{
+		ItemInstance instance;
+		instance.definition = item;
+		instance.serial     = serial;
+		instance.count      = count;
+		return instance;
+	}
+
+	const CodexId kHpCodex     = CodexId(11u);
+	const CodexId kDefenseCodex = CodexId(12u);
+	const ItemId   kHpItem      = ItemId(20001u);
+	const ItemId   kOtherItem   = ItemId(20002u);
+
+	// A one-requirement table. One requirement means one required slot, so each
+	// entry completes on a single registration - which keeps these cases about
+	// the server wiring rather than about the slot arithmetic.
+	InMemoryCodexDefinitions SingleRequirementCodexTable()
+	{
+		InMemoryCodexDefinitions definitions;
+		// ReachLevel pays into HP.
+		(void) definitions.Add(CodexTableEntry(kHpCodex, CodexType::ReachLevel,
+		                                       "First Steps", 100u,
+		                                       { CodexReq(kHpItem, 1) }));
+		return definitions;
+	}
+
+	ServerCharacterDefinition DefinitionWithCodex(const CodexDefinitionProvider& definitions)
+	{
+		ServerCharacterDefinition definition = StandardDefinition();
+		definition.codexDefinitions = &definitions;
+		return definition;
+	}
+}
+
+MODERN_TEST(Server_CodexIsSeatedFromTheDefinitionTableOnCreate)
+{
+	InMemoryCodexDefinitions definitions = SingleRequirementCodexTable();
+	const ServerCharacterDefinition definition = DefinitionWithCodex(definitions);
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	const ServerCharacter character = created.GetValue();
+
+	// Every definition is seated and nothing is completed yet, so the aggregate
+	// is zero and the character matches one holding no codex at all.
+	CHECK_EQ(character.GetCodex().GetProgressCount(), size_t(1));
+	CHECK_EQ(character.GetCodex().GetCompletedCount(), size_t(0));
+	CHECK(character.GetCodex().IsInProgress(kHpCodex));
+	CHECK(!character.GetCodex().IsCompleted(kHpCodex));
+	CHECK_EQ(character.GetCodexContribution().hp, uint32_t(0));
+	CHECK_EQ(character.GetContributingCodexCount(), size_t(0));
+	CHECK(character.GetDerivedStats() == RecalculateIndependently(definition));
+}
+
+MODERN_TEST(Server_RegisteringACodexItemMovesTheDerivedStatistics)
+{
+	InMemoryCodexDefinitions definitions = SingleRequirementCodexTable();
+	const ServerCharacterDefinition definition = DefinitionWithCodex(definitions);
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	const uint32_t hpBefore = character.GetDerivedStats().maxHp;
+
+	CHECK(character.RegisterCodexItem(kHpCodex, CodexStack(kHpItem, 1, 1u)).IsOk());
+	CHECK(character.GetCodex().IsCompleted(kHpCodex));
+	CHECK_EQ(character.GetCodexContribution().hp, uint32_t(100));
+	CHECK_EQ(character.GetContributingCodexCount(), size_t(1));
+
+	// The character is not holding a contribution the stat formula cannot
+	// account for, which is the whole reason the aggregate exists.
+	Stats::CodexContribution earned;
+	earned.hp = 100;
+	CHECK(character.GetDerivedStats() ==
+	      RecalculateIndependently(definition, nullptr, nullptr, nullptr, nullptr, &earned));
+	CHECK(character.GetDerivedStats().maxHp > hpBefore);
+}
+
+MODERN_TEST(Server_OnlyACompletedCodexEntryPays)
+{
+	InMemoryCodexDefinitions definitions = SingleRequirementCodexTable();
+	const ServerCharacterDefinition definition = DefinitionWithCodex(definitions);
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	// The entry names kHpItem, so a stack of something else records nothing and
+	// pays nothing. The caller is told, which is what lets it keep the item.
+	Result<CodexRegistration> miss =
+		character.RegisterCodexItem(kHpCodex, CodexStack(kOtherItem, 1, 2u));
+	CHECK(miss.IsOk());
+	CHECK(miss.GetValue().IsOk());
+	CHECK(!miss.GetValue().recorded);
+	CHECK(!miss.GetValue().completed);
+	CHECK_EQ(character.GetCodexContribution().hp, uint32_t(0));
+	CHECK(character.GetCodex().IsInProgress(kHpCodex));
+	CHECK(character.GetDerivedStats() == RecalculateIndependently(definition));
+}
+
+MODERN_TEST(Server_ACodexRewardIsPaidExactlyOnce)
+{
+	InMemoryCodexDefinitions definitions = SingleRequirementCodexTable();
+	const ServerCharacterDefinition definition = DefinitionWithCodex(definitions);
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	CHECK(character.RegisterCodexItem(kHpCodex, CodexStack(kHpItem, 1, 3u)).IsOk());
+	CHECK_EQ(character.GetCodexContribution().hp, uint32_t(100));
+
+	// A second registration for the completed entry is refused as already
+	// completed, before the item is looked at, so the aggregate cannot be
+	// rebuilt from a second payment.
+	Result<CodexRegistration> again =
+		character.RegisterCodexItem(kHpCodex, CodexStack(kHpItem, 1, 4u));
+	CHECK(again.IsOk());
+	CHECK(again.GetValue().error == CodexRegisterError::AlreadyCompleted);
+	CHECK(!again.GetValue().recorded);
+	CHECK_EQ(character.GetCodexContribution().hp, uint32_t(100));
+}
+
+MODERN_TEST(Server_ReconcilingTheCodexDoesNotRepayACompletedEntry)
+{
+	InMemoryCodexDefinitions definitions = SingleRequirementCodexTable();
+	const ServerCharacterDefinition definition = DefinitionWithCodex(definitions);
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	CHECK(character.RegisterCodexItem(kHpCodex, CodexStack(kHpItem, 1, 5u)).IsOk());
+	CHECK_EQ(character.GetCodexContribution().hp, uint32_t(100));
+
+	// This is the load path. A completed entry is skipped, so it cannot be
+	// re-seated and paid for a second time.
+	CHECK(character.ReconcileCodex().IsOk());
+	CHECK(character.GetCodex().IsCompleted(kHpCodex));
+	CHECK(!character.GetCodex().IsInProgress(kHpCodex));
+	CHECK_EQ(character.GetCodexContribution().hp, uint32_t(100));
+}
+
+MODERN_TEST(Server_CodexAggregateIsAFullRecompute)
+{
+	InMemoryCodexDefinitions definitions;
+	// Two entries that both pay HP, so an aggregate that added to the previous
+	// total instead of rebuilding would show up as 200 here.
+	(void) definitions.Add(CodexTableEntry(kHpCodex, CodexType::ReachLevel,
+	                                       "First Steps", 100u,
+	                                       { CodexReq(kHpItem, 1) }));
+	(void) definitions.Add(CodexTableEntry(kDefenseCodex, CodexType::TakeItem,
+	                                       "Salvaged", 40u,
+	                                       { CodexReq(kOtherItem, 1) }));
+	const ServerCharacterDefinition definition = DefinitionWithCodex(definitions);
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	CHECK(character.RegisterCodexItem(kHpCodex, CodexStack(kHpItem, 1, 6u)).IsOk());
+	CHECK_EQ(character.GetCodexContribution().hp, uint32_t(100));
+
+	// RAN's CODEX_STATS is a full recompute over the done set, not an
+	// accumulation, so the answer must not drift across reloads.
+	for (int pass = 0; pass < 4; ++pass)
+	{
+		CHECK(character.ReconcileCodex().IsOk());
+		CHECK_EQ(character.GetCodexContribution().hp, uint32_t(100));
+	}
+
+	// The second entry pays defense, a different statistic, so this also pins
+	// the per-type mapping at the server boundary.
+	CHECK(character.RegisterCodexItem(kDefenseCodex, CodexStack(kOtherItem, 1, 7u)).IsOk());
+	CHECK_EQ(character.GetCodexContribution().hp, uint32_t(100));
+	CHECK_EQ(character.GetCodexContribution().defense, uint32_t(40));
+	CHECK_EQ(character.GetContributingCodexCount(), size_t(2));
+}
+
+MODERN_TEST(Server_ACodexWithNoDefinitionProviderIsInert)
+{
+	// No provider at all. The character still has to be usable, with an empty
+	// codex and no contribution, rather than refusing to be created.
+	const ServerCharacterDefinition definition = StandardDefinition();
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	CHECK(character.GetCodex().GetProgressCount() == 0);
+	CHECK(character.GetCodex().GetCompletedCount() == 0);
+	CHECK_EQ(character.GetCodexContribution().hp, uint32_t(0));
+	CHECK(character.BuildSnapshot().GetValue().codex.entries.empty());
+	CHECK(Gameplay::CharacterSnapshot::IsValid(character.BuildSnapshot().GetValue()));
+	CHECK(character.GetDerivedStats() == RecalculateIndependently(definition));
+
+	// With no provider there is no codex to register against, so both entry
+	// points are refused as bad arguments. Neither is a rule outcome, and
+	// neither may touch the state.
+	Result<CodexRegistration> miss =
+		character.RegisterCodexItem(kHpCodex, CodexStack(kHpItem, 1, 8u));
+	CHECK(miss.IsError());
+	CHECK(miss.GetError() == ErrorCode::InvalidArgument);
+	CHECK(character.ReconcileCodex().GetCode() == ErrorCode::InvalidArgument);
+	CHECK(character.BuildSnapshot().GetValue().codex.entries.empty());
+	CHECK(character.GetCodex() == CodexState());
+}
+
+MODERN_TEST(Server_ReconcileCodexRefusesAnEmptyDefinitionTable)
+{
+	// An empty provider is a legitimate object but a table that failed to load.
+	// Reconciling against it would drop every record a character holds, so it is
+	// refused rather than obeyed.
+	InMemoryCodexDefinitions empty;
+	const ServerCharacterDefinition definition = DefinitionWithCodex(empty);
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	CHECK(character.ReconcileCodex().GetCode() == ErrorCode::InvalidArgument);
+	CHECK(character.GetCodex().GetProgressCount() == 0);
+	CHECK(Gameplay::CharacterSnapshot::IsValid(character.BuildSnapshot().GetValue()));
+	CHECK(character.GetDerivedStats() == RecalculateIndependently(definition));
+}
+
+MODERN_TEST(Server_CodexSnapshotPublishesTheAuthoritativeProgress)
+{
+	InMemoryCodexDefinitions definitions;
+	// Two requirements, so one registration leaves the entry in progress and
+	// the snapshot has to publish a partial entry, not only finished ones.
+	(void) definitions.Add(CodexTableEntry(kDefenseCodex, CodexType::TakeItem,
+	                                       "Salvaged", 40u,
+	                                       { CodexReq(kHpItem, 1),
+	                                         CodexReq(kOtherItem, 1) }));
+	const ServerCharacterDefinition definition = DefinitionWithCodex(definitions);
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+
+	CHECK(character.RegisterCodexItem(kDefenseCodex, CodexStack(kHpItem, 1, 9u)).IsOk());
+	CHECK(character.GetCodex().IsInProgress(kDefenseCodex));
+
+	const Gameplay::CharacterSnapshot snapshot = character.BuildSnapshot().GetValue();
+	CHECK(Gameplay::CharacterSnapshot::IsValid(snapshot));
+	CHECK_EQ(snapshot.codex.GetCount(), size_t(1));
+	if (!snapshot.codex.Has(kDefenseCodex))
+	{
+		return;
+	}
+
+	const Gameplay::CodexEntry& entry = *snapshot.codex.Find(kDefenseCodex);
+	CHECK(entry.id == kDefenseCodex);
+	CHECK(entry.type == CodexType::TakeItem);
+	CHECK(entry.name == "Salvaged");
+	CHECK(!entry.completed);
+	// The counters are the ones the state holds, because they are what a codex
+	// panel draws its bar from.
+	CHECK_EQ(entry.doneCount, uint8_t(1));
+	CHECK_EQ(entry.requiredCount, uint8_t(2));
+	CHECK(entry.GetProgressFraction() > 0.0f);
+	CHECK(entry.GetProgressFraction() < 1.0f);
+
+	// A finished entry reports a full fraction, and one the character does not
+	// hold is absent rather than reported as uncompleted.
+	CHECK(character.RegisterCodexItem(kDefenseCodex, CodexStack(kOtherItem, 1, 10u)).IsOk());
+	const Gameplay::CharacterSnapshot finished = character.BuildSnapshot().GetValue();
+	CHECK(Gameplay::CharacterSnapshot::IsValid(finished));
+	CHECK(finished.codex.IsCompleted(kDefenseCodex));
+	CHECK_EQ(finished.codex.GetCompletedCount(), size_t(1));
+	CHECK_EQ(finished.codex.GetInProgressCount(), size_t(0));
+	CHECK(!finished.codex.Has(kHpCodex));
+	if (const Gameplay::CodexEntry* done = finished.codex.Find(kDefenseCodex))
+	{
+		CHECK(done->GetProgressFraction() == 1.0f);
+		CHECK_EQ(done->doneCount, uint8_t(2));
+	}
+}
+
+MODERN_TEST(Server_RepeatedCodexSnapshotsAreIdentical)
+{
+	InMemoryCodexDefinitions definitions = SingleRequirementCodexTable();
+	const ServerCharacterDefinition definition = DefinitionWithCodex(definitions);
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+	CHECK(character.RegisterCodexItem(kHpCodex, CodexStack(kHpItem, 1, 11u)).IsOk());
+
+	// Publishing a snapshot must not itself be an event that changes anything,
+	// or a client that re-reads its state would see it move.
+	const Gameplay::CharacterSnapshot first = character.BuildSnapshot().GetValue();
+	const Gameplay::CharacterSnapshot second = character.BuildSnapshot().GetValue();
+	CHECK(first == second);
+	CHECK_EQ(character.GetCodexContribution().hp, uint32_t(100));
+	CHECK_EQ(character.GetCodex().GetCompletedCount(), size_t(1));
+}
+
+MODERN_TEST(Server_RejectedCodexRegistrationLeavesTheCharacterIntact)
+{
+	InMemoryCodexDefinitions definitions = SingleRequirementCodexTable();
+	const ServerCharacterDefinition definition = DefinitionWithCodex(definitions);
+
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+	const CodexState before = character.GetCodex();
+	const Stats::DerivedStats statsBefore = character.GetDerivedStats();
+
+	// An unknown entry, an invalid id, and an unusable instance: three
+	// different bad arguments, none of which may touch the state.
+	Result<CodexRegistration> unknown =
+		character.RegisterCodexItem(kDefenseCodex, CodexStack(kHpItem, 1, 12u));
+	CHECK(unknown.IsOk());
+	CHECK(unknown.GetValue().error == CodexRegisterError::UnknownCodex);
+
+	CHECK(character.RegisterCodexItem(CodexId::MakeInvalid(),
+	                                  CodexStack(kHpItem, 1, 13u)).IsError());
+	CHECK(character.RegisterCodexItem(kHpCodex, ItemInstance()).IsError());
+
+	CHECK(character.GetCodex() == before);
+	CHECK(character.GetDerivedStats() == statsBefore);
+	CHECK_EQ(character.GetCodexContribution().hp, uint32_t(0));
+	CHECK(character.BuildSnapshot().GetValue() == character.BuildSnapshot().GetValue());
+}
+
 
 int main()
 {

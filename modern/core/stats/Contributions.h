@@ -231,4 +231,11 @@ namespace Modern::Stats
 	// behind the struct.
 	bool IsZero(const ItemContribution& value) noexcept;
 	bool IsZero(const PassiveContribution& value) noexcept;
+
+	// Same check for the codex block, and needed for the same reason as the other
+	// two. VERTICAL-001 accepted a caller-supplied codex contribution, and its
+	// VERTICAL-004 successor refuses one: the completed codex set is the only
+	// source for it, so a caller offering a value has to be told no rather than
+	// have it accepted and dropped.
+	bool IsZero(const CodexContribution& value) noexcept;
 }

@@ -27,6 +27,21 @@ const Modern::Gameplay::SkillList& ClientCharacterState::EmptySkills() noexcept
 	static const Modern::Gameplay::SkillList empty;
 	return empty;
 }
+
+const Modern::Gameplay::CodexList& ClientCharacterState::EmptyCodex() noexcept
+{
+	static const Modern::Gameplay::CodexList empty;
+	return empty;
+}
+
+const Modern::Gameplay::CodexEntry& ClientCharacterState::EmptyCodexEntry() noexcept
+{
+	// A default-constructed entry has an invalid id, so a caller can tell "no such
+	// entry" from a real one without a separate bool.
+	static const Modern::Gameplay::CodexEntry empty;
+	return empty;
+}
+
 const std::string& ClientCharacterState::EmptyName() noexcept
 	{
 		static const std::string empty;
