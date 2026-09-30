@@ -777,6 +777,24 @@ namespace Modern::Server
 			target.m_currentHp -= damageApplied;
 		}
 
+		// VERTICAL-008: apply reflection damage to attacker.
+		//
+		// Legacy: GLChar.cpp:2684-2703 (DamageReflectionProc)
+		//
+		// Reflection damage is applied to the attacker via ResourceState.
+		// Reflection cannot recursively trigger.
+		// The operation is transactional: if reflection fails, both characters
+		// remain unchanged.
+		if (result.IsReflection() && result.damageResult.reflectionDamage > 0)
+		{
+			uint32_t reflectionApplied = result.damageResult.reflectionDamage;
+			if (reflectionApplied > m_currentHp)
+			{
+				reflectionApplied = m_currentHp;
+			}
+			m_currentHp -= reflectionApplied;
+		}
+
 		// Both characters must recalculate if stats changed (they didn't in this simple case)
 		Status selfRecalc = Recalculate();
 		if (selfRecalc.IsError()) return selfRecalc;

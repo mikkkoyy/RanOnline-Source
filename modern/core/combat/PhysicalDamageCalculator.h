@@ -124,6 +124,39 @@ namespace Modern::Combat
 		if (result.damage == 0)
 			result.damage = 1;
 
+		// VERTICAL-008: damage reflection.
+		//
+		// Legacy: GLogixExPC.cpp:1745-1763, GLogicExNPC.cpp:319-338
+		//
+		// Reflection is checked AFTER final damage (post-critical, post-reduction).
+		// It uses the post-reduction damage value.
+		// Reflection cannot recursively trigger (calls ToDamage directly).
+		// Reflection applies on critical/crushing hits.
+		// Dead targets cannot reflect.
+		//
+		// Formula: (int)(((damage * reflection) * level) / maxLevel)
+		if (input.damageReflectionRate > 0.0f && result.damage > 0)
+		{
+			uint32_t reflectionRoll = static_cast<uint32_t>(input.reflectionRoll * 100.0f);
+			result.reflectionRoll = reflectionRoll;
+
+			if (static_cast<uint32_t>(input.damageReflectionRate * 100.0f) > reflectionRoll)
+			{
+				result.reflectionTriggered = true;
+
+				int32_t nDamageReflection = Modern::Engine::DamageReflectionAmount(
+					static_cast<int32_t>(result.damage),
+					input.damageReflection,
+					static_cast<int32_t>(input.targetLevel),
+					static_cast<int32_t>(constants.maxLevel));
+
+				if (nDamageReflection > 0)
+				{
+					result.reflectionDamage = static_cast<uint32_t>(nDamageReflection);
+				}
+			}
+		}
+
 		return result;
 	}
 }

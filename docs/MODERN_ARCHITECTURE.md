@@ -3096,3 +3096,114 @@ if (damageReduce > 0.0f) {
 | Brightness/environment | DEFERRED | Hardcoded to Aver |
 | Magic combat | DEFERRED | Not part of VERTICAL-007 |
 | Ranged combat | DEFERRED | Melee only |
+
+---
+
+# VERTICAL-008: Combat Event Resolution & Reflection
+
+VERTICAL-007 connected equipment and character state to combat inputs.
+VERTICAL-008 establishes the combat event resolution chain and implements
+physical damage reflection.
+
+## Verified source files
+
+| Legacy file | What was taken from it |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:1745-1763`             | Reflection calculation in CALCDAMAGE_20060328                                      |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:2041-2058`             | Reflection calculation in CALCDAMAGE_2004                                          |
+| `legacy/Lib_Client/G-Logic/GLogicExNPC.cpp:319-338`              | Reflection calculation in NPC combat                                               |
+| `legacy/Lib_Client/G-Logic/GLChar.cpp:2684-2703`                 | `DamageReflectionProc` — applies reflection damage to attacker                     |
+| `legacy/Lib_Client/G-Logic/GLChar.cpp:2342-2353`                 | `ToDamage` — calls `ReceiveDamage` directly (no recursion)                          |
+| `legacy/Lib_Client/G-Logic/GLCharData.h:266-273`                 | `DAMAGE_SPEC` struct with reflection fields                                         |
+| `legacy/Lib_Engine/Common/GameCharacterCalculations.cpp:554-563` | `DamageReflectionAmount` formula                                                   |
+| `legacy/Lib_Engine/G-Logic/GLDefine.h:772-785`                   | `DAMAGE_TYPE_PSY_REFLECTION` flag                                                   |
+
+## Reflection formula
+
+```
+nDamageReflection = (int)(((rResultDAMAGE * fDamageReflection) * nLEVEL) / GLCONST_CHAR::wMAX_LEVEL)
+```
+
+Where:
+- `rResultDAMAGE` = post-reduction, post-critical final damage
+- `fDamageReflection` = reflection modifier (percentage as decimal)
+- `nLEVEL` = target's level (the one reflecting)
+- `wMAX_LEVEL` = 300 (constant)
+
+## Reflection ordering
+
+1. Raw damage (base damage range + skill VAR + item damage)
+2. Defense subtraction
+3. Critical/Crushing blow multiplication
+4. Damage reduction
+5. Final primary damage
+6. Reflection (calculated from final damage, applied to attacker)
+
+## Reflection recursion
+
+**NO** — reflection cannot recursively trigger.
+
+`DamageReflectionProc` calls `ToDamage` directly, NOT `CALCDAMAGE`. The call chain is:
+```
+DamageReflectionProc → ToDamage → ReceiveDamage → RECEIVE_DAMAGE (direct HP decrease)
+```
+
+## Reflection on critical/crushing
+
+**YES** — reflection applies on critical/crushing hits. It is checked after critical/crushing damage is applied.
+
+## Reflection damage flag
+
+**YES** — `DAMAGE_TYPE_PSY_REFLECTION = 0x0020` for physical reflection.
+
+## Reflection can kill attacker
+
+**YES** — reflection damage is applied directly to attacker HP via `ResourceState::ApplyDamage()`.
+
+## Reflection random roll
+
+```
+if (fDamageReflectionRate > RANDOM_POS)
+```
+
+`RANDOM_POS` is a random float in [0.0, 1.0]. Reflection triggers when `RANDOM_POS < fDamageReflectionRate`.
+
+## Dead targets cannot reflect
+
+**NO** — dead targets cannot reflect. The server checks that the target is alive before applying damage.
+
+## Low-SP condition
+
+**LIMITED**: Legacy uses `bLowSP = (float(m_sSP.dwNow) < float(m_wSUM_DisSP))` (GLCharacter.cpp:3446). Without a skill system, we use `currentSP == 0` as a proxy.
+
+## Modern implementation mapping
+
+| Legacy | Modern |
+|--------|--------|
+| `fDamageReflectionRate` | `CombatInput::targetDamageReflectionRate` |
+| `fDamageReflection` | `CombatInput::targetDamageReflection` |
+| `DamageReflectionAmount()` | `GameCharacterCalculations::DamageReflectionAmount()` |
+| `DamageReflectionProc()` | `ServerCharacter::Attack()` (reflection application) |
+| `DAMAGE_TYPE_PSY_REFLECTION` | `Combat::DAMAGE_TYPE_PSY_REFLECTION` |
+| `RANDOM_POS` | `CombatInput::reflectionRoll` |
+
+## Tests
+
+| Suite | Cases | What it covers |
+| ------------------------------ | ----- | ------------------------------------------------------------------ |
+| `ModernCoreTests` | +16 | Reflection disabled, threshold, boundary, amount, truncation, level scaling, critical+reflection, crushing+reflection, damage reduction+reflection, no recursion, attacker HP tracked, miss no reflection |
+| `ModernServerTests` | +6 | Reflection enabled/disabled, target dies, attacker dies, transactional failure |
+| `ModernClientGameplayTests` | +4 | Authoritative reflection result, client does not calculate reflection |
+
+## Limitations
+
+| Behavior | Status | Notes |
+|----------|--------|-------|
+| Low-SP detection | LIMITED | Uses `currentSP == 0` as proxy |
+| State damage | LIMITED | Set to 1.0f |
+| Brightness/environment | DEFERRED | Hardcoded to Aver |
+| Elemental resistance | LIMITED | Not connected to physical combat |
+| Magic combat | DEFERRED | Not part of VERTICAL-008 |
+| Ranged combat | DEFERRED | Melee only; reflection disabled for ranged in legacy |
+| PK damage penalty | DEFERRED | Legacy has `fPK_POINT_DEC_PHY` for PC reflection |
+| Block damage back | DEFERRED | Legacy has `RANPARAM::bFeatureBlockDamageBack` |

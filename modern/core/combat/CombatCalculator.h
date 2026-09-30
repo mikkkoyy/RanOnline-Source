@@ -130,6 +130,7 @@ namespace Modern::Combat
 		damageInput.damageRoll = 0.5f;
 		damageInput.criticalRoll = 0.5f;
 		damageInput.crushingRoll = 0.5f;
+		damageInput.reflectionRoll = input.reflectionRoll;
 
 		// 3. Calculate damage
 		result.damageResult = CalculatePhysicalDamage(damageInput);
@@ -146,6 +147,29 @@ namespace Modern::Combat
 		// 5. Build damage flags
 		if (result.damageResult.critical)   result.damageFlag |= DAMAGE_TYPE_CRITICAL;
 		if (result.damageResult.crushing)  result.damageFlag |= DAMAGE_TYPE_CRUSHING_BLOW;
+		if (result.damageResult.reflectionTriggered) result.damageFlag |= DAMAGE_TYPE_PSY_REFLECTION;
+
+		// 6. VERTICAL-008: track attacker HP for reflection.
+		//
+		// Legacy: GLChar.cpp:2684-2703 (DamageReflectionProc)
+		//
+		// Reflection damage is applied to the attacker via ResourceState.
+		// The attacker HP values are tracked here for the server to apply.
+		// Reflection cannot recursively trigger.
+		result.attackerHPBefore = input.attackerCurrentHP;
+		if (result.damageResult.reflectionTriggered && result.damageResult.reflectionDamage > 0)
+		{
+			uint32_t reflectionApplied = result.damageResult.reflectionDamage;
+			if (reflectionApplied > input.attackerCurrentHP)
+			{
+				reflectionApplied = input.attackerCurrentHP;
+			}
+			result.attackerHPAfter = input.attackerCurrentHP - reflectionApplied;
+		}
+		else
+		{
+			result.attackerHPAfter = input.attackerCurrentHP;
+		}
 
 		return result;
 	}

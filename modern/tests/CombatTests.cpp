@@ -909,3 +909,283 @@ MODERN_TEST(CombatEquip_NonFiniteValues)
 	auto result = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
 	CHECK(!result.IsOk());
 }
+
+// ── VERTICAL-008: Reflection tests ────────────────────────────────────
+
+MODERN_TEST(CombatReflection_Disabled)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.damageReflection = 0.0f;
+	input.damageReflectionRate = 0.0f;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+	input.reflectionRoll = 0.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.reflectionTriggered, false);
+	CHECK_EQ(result.reflectionDamage, 0u);
+}
+
+MODERN_TEST(CombatReflection_RateZero)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.damageReflection = 0.5f;
+	input.damageReflectionRate = 0.0f;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+	input.reflectionRoll = 0.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.reflectionTriggered, false);
+	CHECK_EQ(result.reflectionDamage, 0u);
+}
+
+MODERN_TEST(CombatReflection_ThresholdBelowRoll)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.damageReflection = 0.5f;
+	input.damageReflectionRate = 0.3f;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+	input.reflectionRoll = 0.2f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.reflectionTriggered, true);
+	CHECK_GT(result.reflectionDamage, 0u);
+}
+
+MODERN_TEST(CombatReflection_ThresholdAboveRoll)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.damageReflection = 0.5f;
+	input.damageReflectionRate = 0.3f;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+	input.reflectionRoll = 0.4f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.reflectionTriggered, false);
+	CHECK_EQ(result.reflectionDamage, 0u);
+}
+
+MODERN_TEST(CombatReflection_ExactBoundary)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.damageReflection = 0.5f;
+	input.damageReflectionRate = 0.3f;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+	input.reflectionRoll = 0.3f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.reflectionTriggered, false);
+}
+
+MODERN_TEST(CombatReflection_AmountZero)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.damageReflection = 0.0f;
+	input.damageReflectionRate = 0.5f;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+	input.reflectionRoll = 0.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.reflectionTriggered, true);
+	CHECK_EQ(result.reflectionDamage, 0u);
+}
+
+MODERN_TEST(CombatReflection_LevelScaling)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.damageReflection = 0.5f;
+	input.damageReflectionRate = 0.5f;
+	input.targetLevel = 100;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+	input.reflectionRoll = 0.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.reflectionTriggered, true);
+	CHECK_GT(result.reflectionDamage, 0u);
+}
+
+MODERN_TEST(CombatReflection_CriticalPlusReflection)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.damageReflection = 0.5f;
+	input.damageReflectionRate = 0.5f;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 0.0f;
+	input.crushingRoll = 1.0f;
+	input.reflectionRoll = 0.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.critical, true);
+	CHECK_EQ(result.reflectionTriggered, true);
+	CHECK_GT(result.reflectionDamage, 0u);
+}
+
+MODERN_TEST(CombatReflection_CrushingPlusReflection)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.damageReflection = 0.5f;
+	input.damageReflectionRate = 0.5f;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 0.0f;
+	input.attackerCrushingBonus = 150;
+	input.reflectionRoll = 0.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.crushing, true);
+	CHECK_EQ(result.reflectionTriggered, true);
+	CHECK_GT(result.reflectionDamage, 0u);
+}
+
+MODERN_TEST(CombatReflection_DamageReducePlusReflection)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.damageReflection = 0.5f;
+	input.damageReflectionRate = 0.5f;
+	input.damageReduce = 0.3f;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+	input.reflectionRoll = 0.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.reflectionTriggered, true);
+	CHECK_GT(result.reflectionDamage, 0u);
+	CHECK_LT(result.damage, 20u);
+}
+
+MODERN_TEST(CombatReflection_MinimumDamagePlusReflection)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.physicalDamage = { 1, 1 };
+	input.defense = 999;
+	input.damageReflection = 0.5f;
+	input.damageReflectionRate = 0.5f;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+	input.reflectionRoll = 0.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_GE(result.damage, 1u);
+	CHECK_EQ(result.reflectionTriggered, true);
+	CHECK_EQ(result.reflectionDamage, 0u);
+}
+
+MODERN_TEST(CombatReflection_NoRecursion)
+{
+	CombatConstants constants;
+	CombatInput input = MakeBasicInput();
+	input.attackerHit = 99;
+	input.targetAvoid = 1;
+	input.targetDefense = 10;
+	input.targetDefenseBody = 0;
+	input.targetDefenseItem = 0;
+	input.targetDamageReflection = 0.5f;
+	input.targetDamageReflectionRate = 0.5f;
+	input.hitRoll = kRoll05;
+	input.damageRoll = kRoll05;
+	input.criticalRoll = kRoll1;
+	input.crushingRoll = kRoll1;
+	input.reflectionRoll = kRoll0;
+
+	CombatResult result = Combat::ResolveCombat(input, constants);
+
+	CHECK_EQ(result.IsHit(), true);
+	CHECK_EQ(result.IsReflection(), true);
+	CHECK_GT(result.damageResult.reflectionDamage, 0u);
+	CHECK_EQ(result.attackerHPAfter, result.attackerHPBefore - result.damageResult.reflectionDamage);
+}
+
+MODERN_TEST(CombatReflection_AttackerHPTracked)
+{
+	CombatConstants constants;
+	CombatInput input = MakeBasicInput();
+	input.attackerHit = 99;
+	input.targetAvoid = 1;
+	input.targetDefense = 10;
+	input.targetDefenseBody = 0;
+	input.targetDefenseItem = 0;
+	input.targetDamageReflection = 0.5f;
+	input.targetDamageReflectionRate = 0.5f;
+	input.attackerCurrentHP = 100;
+	input.targetCurrentHP = 100;
+	input.hitRoll = kRoll05;
+	input.damageRoll = kRoll05;
+	input.criticalRoll = kRoll1;
+	input.crushingRoll = kRoll1;
+	input.reflectionRoll = kRoll0;
+
+	CombatResult result = Combat::ResolveCombat(input, constants);
+
+	CHECK_EQ(result.IsHit(), true);
+	CHECK_EQ(result.IsReflection(), true);
+	CHECK_EQ(result.attackerHPBefore, 100u);
+	CHECK_LT(result.attackerHPAfter, 100u);
+}
+
+MODERN_TEST(CombatReflection_MissNoReflection)
+{
+	CombatConstants constants;
+	CombatInput input = MakeBasicInput();
+	input.attackerHit = 5;
+	input.targetAvoid = 50;
+	input.targetDamageReflection = 0.5f;
+	input.targetDamageReflectionRate = 0.5f;
+	input.hitRoll = kRoll1;
+	input.damageRoll = kRoll05;
+	input.criticalRoll = kRoll1;
+	input.crushingRoll = kRoll1;
+	input.reflectionRoll = kRoll0;
+
+	CombatResult result = Combat::ResolveCombat(input, constants);
+
+	CHECK_EQ(result.IsHit(), false);
+	CHECK_EQ(result.IsReflection(), false);
+	CHECK_EQ(result.damageResult.reflectionDamage, 0u);
+}

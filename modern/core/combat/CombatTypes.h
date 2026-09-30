@@ -34,6 +34,17 @@ namespace Modern::Combat
 		bool critical = false;             // critical hit
 		bool crushing = false;             // crushing blow
 		bool lowSP = false;                // low SP modifier applied
+
+		// VERTICAL-008: reflection result.
+		//
+		// Legacy: GLogixExPC.cpp:1745-1763, GLogicExNPC.cpp:319-338
+		//
+		// Reflection is checked AFTER final damage (post-critical, post-reduction).
+		// It uses the post-reduction damage value.
+		// Reflection cannot recursively trigger (calls ToDamage directly).
+		bool reflectionTriggered = false;  // reflection rate check passed
+		uint32_t reflectionDamage = 0;     // damage reflected back to attacker
+		uint32_t reflectionRoll = 0;       // the roll that was compared (0-99)
 	};
 
 	// Complete combat result.
@@ -45,10 +56,20 @@ namespace Modern::Combat
 		uint32_t targetHPAfter = 0;
 		uint32_t damageFlag = 0;           // DAMAGE_TYPE_* flags
 
+		// VERTICAL-008: attacker state after reflection.
+		//
+		// Legacy: GLChar.cpp:2684-2703 (DamageReflectionProc)
+		//
+		// Reflection damage is applied to the attacker via ResourceState.
+		// The attacker HP values are tracked here for the server to apply.
+		uint32_t attackerHPBefore = 0;
+		uint32_t attackerHPAfter = 0;
+
 		constexpr bool IsHit() const noexcept { return hitResult.hit; }
 		constexpr bool IsMiss() const noexcept { return !hitResult.hit; }
 		constexpr bool IsCritical() const noexcept { return damageResult.critical; }
 		constexpr bool IsCrushing() const noexcept { return damageResult.crushing; }
+		constexpr bool IsReflection() const noexcept { return damageResult.reflectionTriggered; }
 	};
 
 // Inputs for hit calculation.
