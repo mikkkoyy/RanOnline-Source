@@ -10,6 +10,7 @@ add_executable(ModernCoreTests
     EquipmentTests.cpp
     SkillTests.cpp
     CodexTests.cpp
+    CombatTests.cpp
 )
 
 target_link_libraries(ModernCoreTests PRIVATE Modern)

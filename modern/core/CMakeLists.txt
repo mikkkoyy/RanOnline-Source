@@ -30,6 +30,8 @@ set(MODERN_SOURCES
     stats/StatCalculator.cpp
     types/Result.cpp
     resources/ResourceState.cpp
+    combat/CombatCalculator.h
+    engine/GameCharacterCalculations.cpp
 )
 
 add_library(Modern STATIC ${MODERN_SOURCES})

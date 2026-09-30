@@ -2767,3 +2767,201 @@ equipment, items, inventory, skills, passives, the codex, combat, PvP, monsters,
 NPCs, quests, maps, movement networking, a HUD, rendering, animation. Each
 would feed the boundary that now exists rather than requiring it to be
 rebuilt.
+
+---
+
+# VERTICAL-006: Basic Physical Combat Resolution
+
+The first combat system. It resolves a basic physical attack from one character
+to another, with the server as the sole authority.
+
+## Verified source files
+
+| Legacy file | What was taken from it |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:1291`                   | `CHECKHIT` — hit/miss determination                                                |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:1363`                   | `CALCDAMAGE_20060328` — physical damage calculation                               |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:1603-1613`              | Critical base rate calculation                                                     |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:1668`                   | Random damage range interpolation                                                  |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:1684`                   | State damage application                                                           |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:1728`                   | Damage reduce amount                                                               |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:1742`                   | Damage reflection amount                                                           |
+| `legacy/Lib_Engine/Common/GameCharacterCalculations.h`            | `HitRate`, `Defense`, `CriticalBaseRate`, `RandomDamageRange`, `ApplyStateDamage` |
+
+## Dependency graph
+
+```
+ServerCharacter (attacker)          ServerCharacter (target)
+        |                                   |
+        v                                   v
+    DerivedStats                        DerivedStats
+        |                                   |
+        +----------- CombatInput ----------+
+                        |
+                        v
+               Combat::ResolveCombat
+                        |
+                        v
+                  CombatResult
+                        |
+                        v
+            ResourceState::ApplyDamage
+                        |
+                        v
+                   new HP
+                        |
+                        v
+                    snapshot
+```
+
+## Hit formula
+
+```
+hitRate = BASIC(100) + nHit - nAvoid + brightnessModifier
+hitRate = clamp(hitRate, MIN_HIT=20, MAX_HIT=99)
+if (lowSP):
+    hitRate = hitRate * (1 - fLOWSP_HIT_DROP)
+hit = (hitRate >= hitRoll * 100)
+```
+
+## Damage formula
+
+```
+nDAMAGE_NOW = gdDamage.dwLow + (gdDamage.dwHigh - gdDamage.dwLow) * RANDOM_POS
+if (targetLevel > attackerLevel):
+    nExtFORCE = RANDOM_POS * (targetLevel - attackerLevel) / 10
+nDAMAGE_OLD = nDAMAGE_NOW + nExtFORCE
+
+defenseUsed = 1.0f
+if (lowSP):
+    defenseUsed = 1.0f - fLOW_SEED_DAMAGE
+
+nNetDAMAGE = nDAMAGE_OLD * defenseUsed - nDEFENSE
+if (nNetDAMAGE < 0): nNetDAMAGE = 0
+
+if (nNetDAMAGE > 0):
+    resultDamage = nNetDAMAGE
+else:
+    resultDamage = nDAMAGE_OLD * fLOW_SEED_DAMAGE * RANDOM_POS
+
+resultDamage = resultDamage * fSTATE_DAMAGE
+
+if (nDEFENSE_BODY > 0 && nDEFENSE_ITEM > 0):
+    fDecRate = 1.0f / (fDAMAGE_DEC_RATE * (1.769 * targetLevel / 120.0f))
+    fFinalRate = nDEFENSE_BODY * nDEFENSE_ITEM * fDecRate
+    fFinalRate = clamp(fFinalRate, 0.0f, 0.6f)
+    resultDamage = resultDamage * (1.0f - fFinalRate)
+```
+
+## Critical
+
+```
+ndxLvl = clamp(nLEVEL - GETLEVEL(), -5, 5)
+nPerHP = (GETHP() * 100) / GETMAXHP()
+if (nPerHP <= 10): nPerHP = 10
+nPercentCri = 1000 / nPerHP - 10 + ndxLvl
+nPercentCri = clamp(nPercentCri, 0, dwCRITICAL_MAX)
+bCritical = (nPercentCri > criticalRoll * 100)
+if (bCritical):
+    resultDamage = nDAMAGE_OLD * dwCRITICAL_DAMAGE / 100
+```
+
+## Crushing blow
+
+```
+nCrushingBlow = clamp(attackerCrushingBonus, 0, dwCRUSHING_BLOW_MAX)
+bCrushingBlow = (nCrushingBlow > crushingRoll * 100)
+if (bCritical && bCrushingBlow):
+    resultDamage = nDAMAGE_OLD * dwCRUSHING_BLOW_DAMAGE / 100
+else if (bCritical):
+    resultDamage = nDAMAGE_OLD * dwCRITICAL_DAMAGE / 100
+else if (bCrushingBlow):
+    resultDamage = nDAMAGE_OLD * dwCRUSHING_BLOW_DAMAGE / 100
+```
+
+## Minimum damage
+
+```
+if (resultDamage == 0):
+    resultDamage = 1
+```
+
+A successful hit always deals at least 1 damage. A miss deals 0 damage.
+
+## Random input model
+
+All random values are supplied by the caller as deterministic inputs:
+
+| Input | Range | Used for |
+|-------|-------|----------|
+| `hitRoll` | [0.0, 1.0] | Hit/miss determination |
+| `damageRoll` | [0.0, 1.0] | Damage range interpolation |
+| `criticalRoll` | [0.0, 1.0] | Critical hit determination |
+| `crushingRoll` | [0.0, 1.0] | Crushing blow determination |
+
+No `rand()` or `std::rand()` is called inside combat rules.
+
+## Combat constants
+
+| Constant | Value | Classification |
+|----------|-------|----------------|
+| `lowSPHitDrop` | 0.25f | SOURCE-VERIFIED |
+| `lowSPDamage` | 0.50f | SOURCE-VERIFIED |
+| `lowSeedDamage` | 0.05f | SOURCE-VERIFIED |
+| `damageDecayRate` | 40000.0f | SOURCE-VERIFIED |
+| `damageGradeK` | 10.0f | SOURCE-VERIFIED |
+| `resistPhysicG` | 0.5f | SOURCE-VERIFIED |
+| `criticalDamage` | 120 | SOURCE-VERIFIED |
+| `criticalMax` | 40 | SOURCE-VERIFIED |
+| `crushingBlowDamage` | 150 | SOURCE-VERIFIED |
+| `crushingBlowMax` | 20 | SOURCE-VERIFIED |
+| `crushingBlowRange` | 10.0f | SOURCE-VERIFIED |
+| `maxHitRate` | 99 | SOURCE-VERIFIED |
+| `minHitRate` | 20 | SOURCE-VERIFIED |
+| `basicHitRate` | 100 | SOURCE-VERIFIED |
+
+## Limited and deferred behavior
+
+| Behavior | Status | Notes |
+|----------|--------|-------|
+| Brightness/environment | DEFERRED | Hardcoded to Aver; modern Core does not model world brightness |
+| Low-SP detection | LIMITED | Uses `currentSP == 0` as proxy |
+| Item critical/crushing bonuses | LIMITED | Set to 0; not yet modeled |
+| Item defense | LIMITED | Set to 0; not yet modeled |
+| Damage reduction | LIMITED | Set to 0; not yet modeled |
+| Damage reflection | LIMITED | Set to 0; not yet modeled |
+| Element resistance | LIMITED | Set to 0; not yet modeled |
+| State damage | LIMITED | Set to 1.0f |
+| Magic combat | DEFERRED | Not part of VERTICAL-006 |
+| Skill-specific damage | DEFERRED | Not part of VERTICAL-006 |
+| Ranged combat | DEFERRED | Melee only |
+
+## Modern implementation mapping
+
+| Legacy | Modern |
+|--------|--------|
+| `GLHITRATE` | `HitCalculator::CalculateHitRate` |
+| `CHECKHIT` | `HitCalculator::CheckHit` |
+| `CALCDAMAGE_20060328` | `PhysicalDamageCalculator::CalculatePhysicalDamage` |
+| `GLDEFENSE` | `GameCharacterCalculations::Defense` |
+| `CriticalBaseRate` | `GameCharacterCalculations::CriticalBaseRate` |
+| `RandomDamageRange` | `GameCharacterCalculations::RandomDamageRange` |
+| `ApplyStateDamage` | `GameCharacterCalculations::ApplyStateDamage` |
+| `DamageReduceAmount` | `GameCharacterCalculations::DamageReduceAmount` |
+| `DamageReflectionAmount` | `GameCharacterCalculations::DamageReflectionAmount` |
+| `GLCHARLOGIC::RECEIVE_DAMAGE` | `ResourceState::ApplyDamage` |
+
+## Tests
+
+| Suite | Cases | What it covers |
+| ------------------------------ | ----- | ------------------------------------------------------------------ |
+| `ModernCoreTests` | +30 | Hit/miss, damage range, critical, crushing, low-SP, defense, minimum damage |
+| `ModernServerTests` | +6 | Attack reduces HP, attacker unchanged, self-attack refused, dead target refused, snapshot exposes HP |
+| `ModernClientGameplayTests` | +8 | Empty state, authoritative hit/miss/damage/critical/crushing presentation, snapshot replacement |
+
+## What is deferred, by design
+
+Magic combat, skill-specific damage, PvP systems, monster AI, NPC combat,
+quests, maps, movement networking, target selection networking, animation,
+VFX, production sockets, database persistence, real ASURA client combat
+integration, MiniA.exe.

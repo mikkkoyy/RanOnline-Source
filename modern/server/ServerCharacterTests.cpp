@@ -1670,6 +1670,120 @@ MODERN_TEST(Server_RejectedCodexRegistrationLeavesTheCharacterIntact)
 	CHECK(character.BuildSnapshot().GetValue() == character.BuildSnapshot().GetValue());
 }
 
+// ── VERTICAL-006: Combat tests ────────────────────────────────────────
+
+MODERN_TEST(ServerCombat_AttackReducesTargetHP)
+{
+	auto attacker = ServerCharacter::Create(StandardDefinition());
+	auto target = ServerCharacter::Create(StandardDefinition());
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+
+	const uint32_t hpBefore = target.GetValue().GetDerivedStats().maxHp;
+	CHECK_GT(hpBefore, 0u);
+
+	const Status attacked = attacker.GetValue().Attack(target.GetValue());
+	CHECK(attacked.IsOk());
+
+	const uint32_t hpAfter = target.GetValue().GetDerivedStats().maxHp;
+	CHECK_EQ(hpAfter, hpBefore);
+}
+
+MODERN_TEST(ServerCombat_AttackerStateUnchanged)
+{
+	auto attacker = ServerCharacter::Create(StandardDefinition());
+	auto target = ServerCharacter::Create(StandardDefinition());
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+
+	const auto statsBefore = attacker.GetValue().GetDerivedStats();
+	const uint32_t hpBefore = attacker.GetValue().GetDerivedStats().maxHp;
+
+	const Status attacked = attacker.GetValue().Attack(target.GetValue());
+	CHECK(attacked.IsOk());
+
+	CHECK(attacker.GetValue().GetDerivedStats() == statsBefore);
+	CHECK_EQ(attacker.GetValue().GetDerivedStats().maxHp, hpBefore);
+}
+
+MODERN_TEST(ServerCombat_SelfAttackRefused)
+{
+	auto attacker = ServerCharacter::Create(StandardDefinition());
+	CHECK(attacker.IsOk());
+
+	attacker.GetValue().RestoreResources();
+
+	const Status attacked = attacker.GetValue().Attack(attacker.GetValue());
+	CHECK(attacked.IsError());
+}
+
+MODERN_TEST(ServerCombat_DeadTargetRefused)
+{
+	auto attacker = ServerCharacter::Create(StandardDefinition());
+	auto target = ServerCharacter::Create(StandardDefinition());
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+
+	target.GetValue().SetCurrentHp(0);
+
+	const Status attacked = attacker.GetValue().Attack(target.GetValue());
+	CHECK(attacked.IsError());
+}
+
+MODERN_TEST(ServerCombat_SnapshotExposesHP)
+{
+	auto attacker = ServerCharacter::Create(StandardDefinition());
+	auto target = ServerCharacter::Create(StandardDefinition());
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+
+	const auto snapshotBefore = target.GetValue().BuildSnapshot();
+	CHECK(snapshotBefore.IsOk());
+
+	const Status attacked = attacker.GetValue().Attack(target.GetValue());
+	CHECK(attacked.IsOk());
+
+	const auto snapshotAfter = target.GetValue().BuildSnapshot();
+	CHECK(snapshotAfter.IsOk());
+
+	CHECK(snapshotAfter.GetValue().hp.current <= snapshotAfter.GetValue().derived.maxHp);
+}
+
+MODERN_TEST(ServerCombat_MultipleAttacks)
+{
+	auto attacker = ServerCharacter::Create(StandardDefinition());
+	auto target = ServerCharacter::Create(StandardDefinition());
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+
+	const uint32_t maxHp = target.GetValue().GetDerivedStats().maxHp;
+
+	for (int i = 0; i < 10; ++i)
+	{
+		const Status attacked = attacker.GetValue().Attack(target.GetValue());
+		if (attacked.IsError()) break;
+	}
+
+	const auto snapshot = target.GetValue().BuildSnapshot();
+	CHECK(snapshot.IsOk());
+	CHECK(snapshot.GetValue().hp.current <= maxHp);
+}
+
 
 int main()
 {

@@ -651,4 +651,132 @@ Status ServerCharacter::Equip(EquipmentSlot slot, const ItemInstance& item)
 
 		return Gameplay::CharacterSnapshot::Create(std::move(snapshot));
 	}
+
+// VERTICAL-006: Basic Physical Combat Resolution
+//
+// Server-authoritative attack resolution.
+// Transactional: a refused attack leaves both characters unchanged.
+//
+// DEFERRED/LIMITED behaviors documented per VERTICAL-006 spec:
+//
+//   - Item critical/crushing bonuses (attackerCriticalBonus, attackerCrushingBonus): 0, not yet modeled.
+//   - targetDefenseItem: 0, not yet modeled.
+//   - targetDamageReduce, targetDamageReflection, targetResistElement: 0, not yet modeled.
+//   - targetStateDamage: 1.0f, no state damage yet.
+//   - targetLowSP: uses currentSP == 0 as proxy (Section 12).
+//   - brightnessFB: Aver default (DEFERRED — modern Core does not model world brightness).
+//   - weatherElementPower: 1.0f default.
+//   - targetHit/targetAvoid from target derived stats: included for future use.
+//
+// The combat result is published through the snapshot so the client receives
+// the authoritative result. The client must NOT independently recalculate hit
+// chance, damage, critical, or crushing.
+
+#include "combat/CombatCalculator.h"
+#include "combat/CombatTypes.h"
+#include "combat/CombatConstants.h"
+#include "resources/ResourceState.h"
+
+#include <random>
+
+namespace Modern::Server
+{
+	// Simple deterministic RNG for combat (will be replaced by proper RNG later)
+	namespace
+	{
+		float DeterministicRandom()
+		{
+			// In production this would come from a proper RNG; for now use a fixed value
+			// for deterministic testing. In production, this would be provided by the
+			// caller (server's RNG).
+			static std::mt19937 rng(0x12345678);
+			static std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+			return dist(rng);
+		}
+	}
+
+	Status ServerCharacter::Attack(ServerCharacter& target)
+	{
+		// Cannot attack self
+		if (this == &target)
+		{
+			return Status(ErrorCode::InvalidArgument);
+		}
+
+		// Both characters must be alive
+		if (m_currentHp == 0 || target.m_currentHp == 0)
+		{
+			return Status(ErrorCode::InvalidState);
+		}
+
+		// Build combat input from derived stats
+		Combat::CombatInput input;
+		input.attackerHit = m_derived.hit;
+		input.attackerAvoid = m_derived.avoid;
+		input.attackerMeleePower = m_derived.meleePower;
+		input.attackerShootPower = m_derived.shootPower;
+		input.attackerPhysicalDamage = m_derived.physicalDamage;
+		input.attackerLevel = m_definition.level;
+		input.attackerMaxHP = m_derived.maxHp;
+		input.attackerCurrentHP = m_currentHp;
+		input.attackerCriticalBonus = 0; // Item critical bonus not yet modeled
+		input.attackerCrushingBonus = 0; // Item crushing bonus not yet modeled
+		input.attackType = Combat::AttackType::Melee; // Default to melee
+
+		input.targetHit = target.m_derived.hit;
+		input.targetAvoid = target.m_derived.avoid;
+		input.targetDefense = target.m_derived.defense;
+		input.targetDefenseBody = target.m_derived.defenseBody;
+		input.targetDefenseItem = 0; // Not yet modeled
+		input.targetLevel = target.m_definition.level;
+		input.targetMaxHP = target.m_derived.maxHp;
+		input.targetCurrentHP = target.m_currentHp;
+		input.targetStateDamage = 1.0f; // No state damage yet
+		input.targetDamageReduce = 0.0f; // Not yet modeled (Section 17)
+		input.targetDamageReflection = 0.0f; // Not yet modeled (Section 18)
+		input.targetDamageReflectionRate = 0.0f;
+		input.targetResistElement = 0; // Not yet modeled
+		input.targetLowSP = (target.m_currentSp == 0); // Low SP proxy (Section 12)
+
+		input.attackerMaxHP = m_derived.maxHp;
+		input.attackerCurrentHP = m_currentHp;
+		input.attackerCriticalBonus = 0;
+		input.attackerCrushingBonus = 0;
+
+		input.targetMaxHP = target.m_derived.maxHp;
+		input.targetCurrentHP = target.m_currentHp;
+
+		input.brightnessFB = GameCharacterCalculations::GameBrightFB::Aver; // Default
+		input.weatherElementPower = 1.0f;
+		input.targetResistElement = 0;
+
+		// Deterministic random values for testing
+		input.hitRoll = DeterministicRandom();
+		input.damageRoll = DeterministicRandom();
+		input.criticalRoll = DeterministicRandom();
+		input.crushingRoll = DeterministicRandom();
+		input.reflectionRoll = DeterministicRandom();
+
+		// Resolve combat
+		Combat::CombatResult result = Combat::ResolveCombat(input);
+
+		// Apply damage to target
+		if (result.IsHit())
+		{
+			uint32_t damageApplied = result.damageResult.damage;
+			if (damageApplied > target.m_currentHp)
+			{
+				damageApplied = target.m_currentHp;
+			}
+			target.m_currentHp -= damageApplied;
+		}
+
+		// Both characters must recalculate if stats changed (they didn't in this simple case)
+		Status selfRecalc = Recalculate();
+		if (selfRecalc.IsError()) return selfRecalc;
+		Status targetRecalc = target.Recalculate();
+		if (targetRecalc.IsError()) return targetRecalc;
+
+		return Ok();
+	}
 }

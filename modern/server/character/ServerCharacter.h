@@ -30,6 +30,8 @@
 
 #include "character/Character.h"
 #include "character/CharacterClassTable.h"
+#include "combat/CombatCalculator.h"
+#include "combat/CombatTypes.h"
 #include "equipment/EquipmentState.h"
 #include "equipment/ItemDefinitionProvider.h"
 #include "gameplay/CharacterSnapshot.h"
@@ -282,7 +284,18 @@ namespace Modern::Server
 		// How many completed entries paid a non-zero reward point. A character
 		// holding a contribution with a zero here has completed entries that
 		// reward nothing, which is a different bug from having no contribution.
-		size_t GetContributingCodexCount() const noexcept { return m_contributingCodex; }
+size_t GetContributingCodexCount() const noexcept { return m_contributingCodex; }
+
+		// ---- Combat (VERTICAL-006) ----
+		//
+		// Resolves a basic physical attack against another server character.
+		// The attack is resolved using the authoritative derived stats of both
+		// characters. The target's HP is reduced through its ResourceState,
+		// which enforces saturation and floors. The combat result is published
+		// through the snapshot so the client receives the authoritative result.
+		//
+		// Transactional: a refused attack leaves both characters unchanged.
+		Status Attack(ServerCharacter& target);
 
 	private:
 		ServerCharacter() = default;

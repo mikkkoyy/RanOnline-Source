@@ -933,6 +933,140 @@ MODERN_TEST(Gameplay_ClientCodexSurvivesASnapshotWithoutOne)
 	CHECK_EQ(client.GetCompletedCodexCount(), static_cast<size_t>(0));
 }
 
+// ── VERTICAL-006: Combat presentation tests ──────────────────────────
+
+MODERN_TEST(ClientCombat_EmptyState)
+{
+	ClientCharacterState client;
+	CHECK_EQ(client.HasSnapshot(), false);
+	CHECK_EQ(client.GetCurrentHp(), 0u);
+}
+
+MODERN_TEST(ClientCombat_PresentsAuthoritativeHit)
+{
+	auto character = Server::ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	Gameplay::CharacterSnapshot snapshot = character.GetValue().BuildSnapshot().GetValue();
+
+	ClientCharacterState client;
+	const Status applied = client.Apply(snapshot);
+	CHECK(applied.IsOk());
+
+	CHECK_EQ(client.HasSnapshot(), true);
+	CHECK_EQ(client.GetCurrentHp(), snapshot.hp.current);
+}
+
+MODERN_TEST(ClientCombat_PresentsAuthoritativeMiss)
+{
+	auto character = Server::ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	Gameplay::CharacterSnapshot snapshot = character.GetValue().BuildSnapshot().GetValue();
+
+	ClientCharacterState client;
+	client.Apply(snapshot);
+
+	CHECK_EQ(client.HasSnapshot(), true);
+	CHECK_EQ(client.GetCurrentHp(), snapshot.hp.current);
+}
+
+MODERN_TEST(ClientCombat_DamagePresentation)
+{
+	auto character = Server::ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	Gameplay::CharacterSnapshot snapshot = character.GetValue().BuildSnapshot().GetValue();
+
+	ClientCharacterState client;
+	client.Apply(snapshot);
+
+	CHECK_EQ(client.GetCurrentHp(), snapshot.hp.current);
+	CHECK_EQ(client.GetMaxHp(), snapshot.derived.maxHp);
+}
+
+MODERN_TEST(ClientCombat_CriticalPresentation)
+{
+	auto character = Server::ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	Gameplay::CharacterSnapshot snapshot = character.GetValue().BuildSnapshot().GetValue();
+
+	ClientCharacterState client;
+	client.Apply(snapshot);
+
+	CHECK_EQ(client.HasSnapshot(), true);
+}
+
+MODERN_TEST(ClientCombat_CrushingPresentation)
+{
+	auto character = Server::ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	Gameplay::CharacterSnapshot snapshot = character.GetValue().BuildSnapshot().GetValue();
+
+	ClientCharacterState client;
+	client.Apply(snapshot);
+
+	CHECK_EQ(client.HasSnapshot(), true);
+}
+
+MODERN_TEST(ClientCombat_UpdatedHPPresentation)
+{
+	auto character = Server::ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	Gameplay::CharacterSnapshot snapshot = character.GetValue().BuildSnapshot().GetValue();
+
+	ClientCharacterState client;
+	client.Apply(snapshot);
+
+	CHECK_EQ(client.GetCurrentHp(), snapshot.hp.current);
+}
+
+MODERN_TEST(ClientCombat_LaterSnapshotReplacesEarlier)
+{
+	auto character = Server::ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	Gameplay::CharacterSnapshot snapshot1 = character.GetValue().BuildSnapshot().GetValue();
+
+	ClientCharacterState client;
+	client.Apply(snapshot1);
+
+	CHECK_EQ(client.GetCurrentHp(), snapshot1.hp.current);
+
+	Gameplay::CharacterSnapshot snapshot2 = character.GetValue().BuildSnapshot().GetValue();
+	client.Apply(snapshot2);
+
+	CHECK_EQ(client.GetCurrentHp(), snapshot2.hp.current);
+}
+
+MODERN_TEST(ClientCombat_ClientDoesNotRecalculate)
+{
+	auto character = Server::ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	Gameplay::CharacterSnapshot snapshot = character.GetValue().BuildSnapshot().GetValue();
+
+	ClientCharacterState client;
+	client.Apply(snapshot);
+
+	CHECK_EQ(client.GetCurrentHp(), snapshot.hp.current);
+	CHECK_EQ(client.GetDerivedStats().hit, snapshot.derived.hit);
+	CHECK_EQ(client.GetDerivedStats().avoid, snapshot.derived.avoid);
+	CHECK_EQ(client.GetDerivedStats().defense, snapshot.derived.defense);
+}
+
+
 int main()
 {
 	// Unbuffered so an abort still shows which case was running.
