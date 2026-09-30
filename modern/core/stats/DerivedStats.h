@@ -123,6 +123,19 @@ namespace Modern::Stats
 		// m_sSUMRESIST after summing and clamping each element to zero or more.
 		Resistances resistances;
 
+		// VERTICAL-007: combat modifiers derived from items and passives.
+		//
+		// Legacy: m_sSUMITEM.fIncR_Critical + m_sSUM_PASSIVE critical rate
+		// (GLogixExPC.cpp:570, 1620)
+		//
+		// These are rates (floats), not percentage points. The legacy
+		// conversion happens at the point of use in combat.
+		float criticalRate = 0.0f;
+		float crushingBlow = 0.0f;
+		float damageReduce = 0.0f;
+		float damageReflection = 0.0f;
+		float damageReflectionRate = 0.0f;
+
 		constexpr bool operator==(const DerivedStats& other) const noexcept
 		{
 			return totalStats == other.totalStats && maxHp == other.maxHp &&
@@ -137,7 +150,12 @@ namespace Modern::Stats
 			       meleePower == other.meleePower && shootPower == other.shootPower &&
 			       magicAttack == other.magicAttack && hit == other.hit && avoid == other.avoid &&
 			       defenseBody == other.defenseBody && defense == other.defense &&
-			       physicalDamage == other.physicalDamage && resistances == other.resistances;
+			       physicalDamage == other.physicalDamage && resistances == other.resistances &&
+			       criticalRate == other.criticalRate &&
+			       crushingBlow == other.crushingBlow &&
+			       damageReduce == other.damageReduce &&
+			       damageReflection == other.damageReflection &&
+			       damageReflectionRate == other.damageReflectionRate;
 		}
 	};
 }

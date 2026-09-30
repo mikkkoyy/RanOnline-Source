@@ -143,6 +143,13 @@ namespace Modern
 
 		// Summon time — not in stat pipeline, kept for completeness.
 		SummonTime = 31, // EMFOR_SUMMONTIME
+
+		// VERTICAL-007: combat modifiers from passive skills.
+		CriticalRate = 32,   // EMFOR_CRITICAL_RATE
+		CrushingBlow = 33,   // EMFOR_CRUSHING_BLOW
+		DamageReduce = 34,   // EMFOR_DAMAGE_REDUCE
+		DamageReflection = 35, // EMFOR_DAMAGE_REFLECTION
+		DamageReflectionRate = 36, // EMFOR_DAMAGE_REFLECTION_RATE
 	};
 
 	// Passive skill impact (addon) type. Mirrors SKILL::EMIMPACT_ADDON
@@ -167,6 +174,13 @@ namespace Modern
 		MpRate         = 15, // EMIMPACTA_MP_RATE
 		SpRate         = 16, // EMIMPACTA_SP_RATE
 		Resist         = 17, // EMIMPACTA_RESIST
+
+		// VERTICAL-007: combat modifiers from passive skill impacts.
+		CriticalRate   = 18, // EMIMPACTA_CRITICAL_RATE
+		CrushingBlow   = 19, // EMIMPACTA_CRUSHING_BLOW
+		DamageReduce   = 20, // EMIMPACTA_DAMAGE_REDUCE
+		DamageReflection = 21, // EMIMPACTA_DAMAGE_REFLECTION
+		DamageReflectionRate = 22, // EMIMPACTA_DAMAGE_REFLECTION_RATE
 	};
 
 	// Passive skill spec (special) type. Mirrors SKILL::EMSPEC_ADDON

@@ -11,6 +11,14 @@
 #include "combat/PhysicalDamageCalculator.h"
 #include "combat/CombatCalculator.h"
 #include "engine/GameCharacterCalculations.h"
+#include "equipment/EquipmentState.h"
+#include "equipment/ItemContributionAggregator.h"
+#include "equipment/ItemDefinitionProvider.h"
+#include "item/ItemDefinition.h"
+#include "item/ItemInstance.h"
+#include "types/Ids.h"
+
+#include <limits>
 
 using namespace Modern;
 using namespace Modern::Combat;
@@ -663,4 +671,241 @@ MODERN_TEST(Combat_ CombatConstantsSourceVerified)
 	CHECK_EQ(constants.maxHitRate, 99u);
 	CHECK_EQ(constants.minHitRate, 20u);
 	CHECK_EQ(constants.basicHitRate, 100u);
+}
+
+// ── VERTICAL-007: Equipment combat integration tests ──────────────────
+
+namespace
+{
+	Modern::ItemDefinition MakeCombatItem(const std::string& name,
+	                                      float criticalRate,
+	                                      float crushingBlow,
+	                                      float damageReduce,
+	                                      float damageReflection,
+	                                      float damageReflectionRate,
+	                                      int32_t defense)
+	{
+		Modern::ItemDefinition def;
+		def.id = Modern::ItemId(1u);
+		def.name = name;
+		def.kind = Modern::ItemKind::Armor;
+		def.stats.criticalRate = criticalRate;
+		def.stats.crushingBlow = crushingBlow;
+		def.stats.damageReduce = damageReduce;
+		def.stats.damageReflection = damageReflection;
+		def.stats.damageReflectionRate = damageReflectionRate;
+		def.stats.defense = defense;
+		return def;
+	}
+}
+
+MODERN_TEST(CombatEquip_NoCombatBonus)
+{
+	Modern::InMemoryItemDefinitions provider;
+	Modern::ItemDefinition def = MakeCombatItem("PlainArmor", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+	provider.Add(def);
+
+	Modern::EquipmentState equipment;
+	Modern::ItemInstance instance;
+	instance.definition = def.id;
+	equipment.Equip(Modern::EquipmentSlot::Upper, instance);
+
+	auto result = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.criticalRate, 0.0f);
+	CHECK_EQ(result.GetValue().contribution.crushingBlow, 0.0f);
+	CHECK_EQ(result.GetValue().contribution.damageReduce, 0.0f);
+	CHECK_EQ(result.GetValue().contribution.damageReflection, 0.0f);
+	CHECK_EQ(result.GetValue().contribution.damageReflectionRate, 0.0f);
+}
+
+MODERN_TEST(CombatEquip_CriticalRateItem)
+{
+	Modern::InMemoryItemDefinitions provider;
+	Modern::ItemDefinition def = MakeCombatItem("CritArmor", 0.05f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+	provider.Add(def);
+
+	Modern::EquipmentState equipment;
+	Modern::ItemInstance instance;
+	instance.definition = def.id;
+	equipment.Equip(Modern::EquipmentSlot::Upper, instance);
+
+	auto result = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.criticalRate, 0.05f);
+}
+
+MODERN_TEST(CombatEquip_MultipleCriticalItems)
+{
+	Modern::InMemoryItemDefinitions provider;
+	Modern::ItemDefinition def1 = MakeCombatItem("CritArmor1", 0.03f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+	Modern::ItemDefinition def2 = MakeCombatItem("CritArmor2", 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+	provider.Add(def1);
+	provider.Add(def2);
+
+	Modern::EquipmentState equipment;
+	Modern::ItemInstance inst1; inst1.definition = def1.id;
+	Modern::ItemInstance inst2; inst2.definition = def2.id;
+	equipment.Equip(Modern::EquipmentSlot::Upper, inst1);
+	equipment.Equip(Modern::EquipmentSlot::Headgear, inst2);
+
+	auto result = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.criticalRate, 0.05f);
+}
+
+MODERN_TEST(CombatEquip_CrushingBlowItem)
+{
+	Modern::InMemoryItemDefinitions provider;
+	Modern::ItemDefinition def = MakeCombatItem("CrushArmor", 0.0f, 0.03f, 0.0f, 0.0f, 0.0f, 0);
+	provider.Add(def);
+
+	Modern::EquipmentState equipment;
+	Modern::ItemInstance instance;
+	instance.definition = def.id;
+	equipment.Equip(Modern::EquipmentSlot::Upper, instance);
+
+	auto result = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.crushingBlow, 0.03f);
+}
+
+MODERN_TEST(CombatEquip_DamageReduceItem)
+{
+	Modern::InMemoryItemDefinitions provider;
+	Modern::ItemDefinition def = MakeCombatItem("ReduceArmor", 0.0f, 0.0f, 0.1f, 0.0f, 0.0f, 0);
+	provider.Add(def);
+
+	Modern::EquipmentState equipment;
+	Modern::ItemInstance instance;
+	instance.definition = def.id;
+	equipment.Equip(Modern::EquipmentSlot::Upper, instance);
+
+	auto result = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.damageReduce, 0.1f);
+}
+
+MODERN_TEST(CombatEquip_DamageReflectionItem)
+{
+	Modern::InMemoryItemDefinitions provider;
+	Modern::ItemDefinition def = MakeCombatItem("ReflectArmor", 0.0f, 0.0f, 0.0f, 0.2f, 0.5f, 0);
+	provider.Add(def);
+
+	Modern::EquipmentState equipment;
+	Modern::ItemInstance instance;
+	instance.definition = def.id;
+	equipment.Equip(Modern::EquipmentSlot::Upper, instance);
+
+	auto result = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.damageReflection, 0.2f);
+	CHECK_EQ(result.GetValue().contribution.damageReflectionRate, 0.5f);
+}
+
+MODERN_TEST(CombatEquip_ItemDefense)
+{
+	Modern::InMemoryItemDefinitions provider;
+	Modern::ItemDefinition def = MakeCombatItem("DefArmor", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 50);
+	provider.Add(def);
+
+	Modern::EquipmentState equipment;
+	Modern::ItemInstance instance;
+	instance.definition = def.id;
+	equipment.Equip(Modern::EquipmentSlot::Upper, instance);
+
+	auto result = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.defense, 50);
+}
+
+MODERN_TEST(CombatEquip_UnequipRemovesBonus)
+{
+	Modern::InMemoryItemDefinitions provider;
+	Modern::ItemDefinition def = MakeCombatItem("CritArmor", 0.05f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+	provider.Add(def);
+
+	Modern::EquipmentState equipment;
+	Modern::ItemInstance instance;
+	instance.definition = def.id;
+	equipment.Equip(Modern::EquipmentSlot::Upper, instance);
+
+	auto result1 = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK(result1.IsOk());
+	CHECK_EQ(result1.GetValue().contribution.criticalRate, 0.05f);
+
+	equipment.Unequip(Modern::EquipmentSlot::Upper);
+
+	auto result2 = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK(result2.IsOk());
+	CHECK_EQ(result2.GetValue().contribution.criticalRate, 0.0f);
+}
+
+MODERN_TEST(CombatEquip_ReplaceChangesBonus)
+{
+	Modern::InMemoryItemDefinitions provider;
+	Modern::ItemDefinition def1 = MakeCombatItem("CritArmor1", 0.05f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+	Modern::ItemDefinition def2 = MakeCombatItem("CritArmor2", 0.10f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+	provider.Add(def1);
+	provider.Add(def2);
+
+	Modern::EquipmentState equipment;
+	Modern::ItemInstance inst1; inst1.definition = def1.id;
+	equipment.Equip(Modern::EquipmentSlot::Upper, inst1);
+
+	auto result1 = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK(result1.IsOk());
+	CHECK_EQ(result1.GetValue().contribution.criticalRate, 0.05f);
+
+	Modern::ItemInstance inst2; inst2.definition = def2.id;
+	equipment.Equip(Modern::EquipmentSlot::Upper, inst2);
+
+	auto result2 = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK(result2.IsOk());
+	CHECK_EQ(result2.GetValue().contribution.criticalRate, 0.10f);
+}
+
+MODERN_TEST(CombatEquip_EmptyEquipment)
+{
+	Modern::InMemoryItemDefinitions provider;
+	Modern::EquipmentState equipment;
+
+	auto result = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.criticalRate, 0.0f);
+	CHECK_EQ(result.GetValue().contribution.crushingBlow, 0.0f);
+	CHECK_EQ(result.GetValue().contribution.damageReduce, 0.0f);
+	CHECK_EQ(result.GetValue().contribution.damageReflection, 0.0f);
+	CHECK_EQ(result.GetValue().contribution.damageReflectionRate, 0.0f);
+}
+
+MODERN_TEST(CombatEquip_MissingDefinition)
+{
+	Modern::InMemoryItemDefinitions provider;
+	Modern::EquipmentState equipment;
+	Modern::ItemInstance instance;
+	instance.definition = Modern::ItemId(999u);
+	equipment.Equip(Modern::EquipmentSlot::Upper, instance);
+
+	auto result = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK(!result.IsOk());
+}
+
+MODERN_TEST(CombatEquip_NonFiniteValues)
+{
+	Modern::InMemoryItemDefinitions provider;
+	Modern::ItemDefinition def;
+	def.id = Modern::ItemId(1u);
+	def.name = "BadArmor";
+	def.kind = Modern::ItemKind::Armor;
+	def.stats.criticalRate = std::numeric_limits<float>::quiet_NaN();
+	provider.Add(def);
+
+	Modern::EquipmentState equipment;
+	Modern::ItemInstance instance;
+	instance.definition = def.id;
+	equipment.Equip(Modern::EquipmentSlot::Upper, instance);
+
+	auto result = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK(!result.IsOk());
 }

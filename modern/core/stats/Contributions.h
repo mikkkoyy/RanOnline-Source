@@ -133,6 +133,24 @@ namespace Modern::Stats
 		// Resistances: sResist.
 		Resistances resistances;
 
+		// VERTICAL-007: combat modifiers from items.
+		//
+		// Legacy: m_sSUMITEM.fIncR_Critical, m_sSUMITEM.fIncR_CrushingBlow
+		// (GLogixExPC.cpp:570-574, 595-596)
+		//
+		// These are rates (floats), not percentage points. The legacy
+		// conversion happens at the point of use.
+		float criticalRate = 0.0f;
+		float crushingBlow = 0.0f;
+
+		// VERTICAL-007: damage reduction and reflection from items.
+		//
+		// Legacy: sDamageSpec.m_fPsyDamageReduce, m_fPsyDamageReflection,
+		// m_fPsyDamageReflectionRate (GLogixExPC.cpp:1409-1411)
+		float damageReduce = 0.0f;
+		float damageReflection = 0.0f;
+		float damageReflectionRate = 0.0f;
+
 		constexpr bool operator==(const ItemContribution& other) const noexcept
 		{
 			return stats == other.stats && hp == other.hp && mp == other.mp && sp == other.sp &&
@@ -147,7 +165,12 @@ namespace Modern::Stats
 			       hitRatePercent == other.hitRatePercent &&
 			       avoidRatePercent == other.avoidRatePercent && defense == other.defense &&
 			       damageLow == other.damageLow && damageHigh == other.damageHigh &&
-			       resistances == other.resistances;
+			       resistances == other.resistances &&
+			       criticalRate == other.criticalRate &&
+			       crushingBlow == other.crushingBlow &&
+			       damageReduce == other.damageReduce &&
+			       damageReflection == other.damageReflection &&
+			       damageReflectionRate == other.damageReflectionRate;
 		}
 	};
 
@@ -191,6 +214,17 @@ namespace Modern::Stats
 		// m_sSUMRESIST.
 		Resistances resistances;
 
+		// VERTICAL-007: combat modifiers from passive skills.
+		//
+		// Legacy: sSKILL_SPEC.fVAR2 for crushing blow
+		// (GLogixExPC.cpp:1499), and passive contributions to
+		// DAMAGE_SPEC fields (GLogixExPC.cpp:1409-1411).
+		float criticalRate = 0.0f;
+		float crushingBlow = 0.0f;
+		float damageReduce = 0.0f;
+		float damageReflection = 0.0f;
+		float damageReflectionRate = 0.0f;
+
 		constexpr bool operator==(const PassiveContribution& other) const noexcept
 		{
 			return hp == other.hp && mp == other.mp && sp == other.sp &&
@@ -199,7 +233,12 @@ namespace Modern::Stats
 			       spRecoveryRate == other.spRecoveryRate && meleePower == other.meleePower &&
 			       shootPower == other.shootPower && magicAttack == other.magicAttack &&
 			       hit == other.hit && avoid == other.avoid && defense == other.defense &&
-			       damage == other.damage && resistances == other.resistances;
+			       damage == other.damage && resistances == other.resistances &&
+			       criticalRate == other.criticalRate &&
+			       crushingBlow == other.crushingBlow &&
+			       damageReduce == other.damageReduce &&
+			       damageReflection == other.damageReflection &&
+			       damageReflectionRate == other.damageReflectionRate;
 		}
 	};
 

@@ -94,13 +94,20 @@ namespace Modern
 			result.contribution.damageLow  += block.damageLow;
 			result.contribution.damageHigh += block.damageHigh;
 
-			// The five SRESIST elements, element by element.
-			result.contribution.resistances.fire     += block.resistFire;
-			result.contribution.resistances.ice      += block.resistIce;
-			result.contribution.resistances.electric += block.resistElectric;
-			result.contribution.resistances.poison   += block.resistPoison;
-			result.contribution.resistances.spirit   += block.resistSpirit;
-		}
+		// The five SRESIST elements, element by element.
+		result.contribution.resistances.fire     += block.resistFire;
+		result.contribution.resistances.ice      += block.resistIce;
+		result.contribution.resistances.electric += block.resistElectric;
+		result.contribution.resistances.poison   += block.resistPoison;
+		result.contribution.resistances.spirit   += block.resistSpirit;
+
+		// VERTICAL-007: combat modifiers.
+		result.contribution.criticalRate += block.criticalRate;
+		result.contribution.crushingBlow += block.crushingBlow;
+		result.contribution.damageReduce += block.damageReduce;
+		result.contribution.damageReflection += block.damageReflection;
+		result.contribution.damageReflectionRate += block.damageReflectionRate;
+	}
 
 		return result;
 	}

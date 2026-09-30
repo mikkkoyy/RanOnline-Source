@@ -2965,3 +2965,134 @@ Magic combat, skill-specific damage, PvP systems, monster AI, NPC combat,
 quests, maps, movement networking, target selection networking, animation,
 VFX, production sockets, database persistence, real ASURA client combat
 integration, MiniA.exe.
+
+---
+
+# VERTICAL-007: Combat Equipment & State Integration
+
+VERTICAL-006 implemented the combat calculator with placeholder zeros for
+equipment-derived values. VERTICAL-007 connects real equipment and character
+state to the existing combat system.
+
+## Verified source files
+
+| Legacy file | What was taken from it |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:570-574`                | `m_sSUMITEM.fIncR_Critical`, `fIncR_CrushingBlow` — item critical/crushing from suit variation |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:595-596`                | Item critical/crushing from item options |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:624-628`                | Item critical/crushing from volume effects |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:1399`                   | Crushing blow conversion to percentage points |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:1499`                   | Passive crushing blow from skill spec |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:1620`                   | Critical rate conversion to percentage points |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:1409-1411`              | Damage reduction/reflection from DAMAGE_SPEC |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:372,376`                | Body defense and total defense calculation |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:657`                    | Item defense aggregation |
+| `legacy/Lib_Client/G-Logic/GLogixExPC.cpp:1703-1713`              | Defense absorption formula |
+| `legacy/Lib_Client/G-Logic/GLChar.cpp:3446`                       | Low-SP detection |
+| `legacy/Lib_Client/G-Logic/GLogicEx.h:104,134,139`                | SSUM_ITEM struct with combat fields |
+
+## Item combat fields
+
+| Field | Type | Legacy source | Aggregation |
+|-------|------|---------------|-------------|
+| `criticalRate` | `float` | `m_sSUMITEM.fIncR_Critical` | Sum of equipped items |
+| `crushingBlow` | `float` | `m_sSUMITEM.fIncR_CrushingBlow` | Sum of equipped items |
+| `damageReduce` | `float` | `sDamageSpec.m_fPsyDamageReduce` | Sum of equipped items |
+| `damageReflection` | `float` | `sDamageSpec.m_fPsyDamageReflection` | Sum of equipped items |
+| `damageReflectionRate` | `float` | `sDamageSpec.m_fPsyDamageReflectionRate` | Sum of equipped items |
+| `defense` | `int32_t` | `m_sSUMITEM.nDefense` | Sum of equipped items |
+
+## Passive combat fields
+
+Same fields as item combat fields, aggregated from learned passive skills.
+
+## Derived combat state
+
+The final combat state is the sum of item and passive contributions:
+
+```
+criticalRate = items.criticalRate + passives.criticalRate
+crushingBlow = items.crushingBlow + passives.crushingBlow
+damageReduce = items.damageReduce + passives.damageReduce
+damageReflection = items.damageReflection + passives.damageReflection
+damageReflectionRate = items.damageReflectionRate + passives.damageReflectionRate
+```
+
+## Low-SP condition
+
+**LIMITED**: Legacy uses `bLowSP = (float(m_sSP.dwNow) < float(m_wSUM_DisSP))` (GLCharacter.cpp:3446). Without a skill system, we use `currentSP == 0` as a proxy.
+
+## Critical rate
+
+```
+nPercentCri = CriticalBaseRate(HP, MaxHP, attackerLevel, targetLevel)
+nPercentCri += (int)(criticalRate * 100)
+nPercentCri = clamp(nPercentCri, 0, dwCRITICAL_MAX)
+bCritical = (nPercentCri > criticalRoll * 100)
+```
+
+## Crushing blow
+
+```
+nCrushingBlow = (int)(crushingBlow * 100)
+nCrushingBlow = clamp(nCrushingBlow, 0, dwCRUSHING_BLOW_MAX)
+bCrushingBlow = (nCrushingBlow > crushingRoll * 100)
+```
+
+## Item defense
+
+```
+m_nDEFENSE_BODY = DP + DEX * fDEFENSE_DEX
+m_nDEFENSE = m_nDEFENSE_BODY + items.nDefense + passives.m_nDEFENSE + codex.m_dwDefenseIncrease
+
+// Direct subtraction uses total defense
+nNetDAMAGE = nDAMAGE_OLD * defenseUsed - nDEFENSE
+
+// Defense absorption uses body and item defense separately
+fFinalRate = nDEFAULT_DEFENSE * nITEM_DEFENSE * fDecRate
+fFinalRate = clamp(fFinalRate, 0.0f, 0.6f)
+resultDamage = resultDamage * (1.0f - fFinalRate)
+```
+
+## Damage reduction
+
+```
+if (damageReduce > 0.0f) {
+    nDamageReduce = (int)((resultDamage * damageReduce * level) / wMAX_LEVEL)
+    resultDamage -= nDamageReduce
+}
+```
+
+## Modern implementation mapping
+
+| Legacy | Modern |
+|--------|--------|
+| `m_sSUMITEM.fIncR_Critical` | `ItemContribution::criticalRate` |
+| `m_sSUMITEM.fIncR_CrushingBlow` | `ItemContribution::crushingBlow` |
+| `sDamageSpec.m_fPsyDamageReduce` | `ItemContribution::damageReduce` |
+| `sDamageSpec.m_fPsyDamageReflection` | `ItemContribution::damageReflection` |
+| `sDamageSpec.m_fPsyDamageReflectionRate` | `ItemContribution::damageReflectionRate` |
+| `m_sSUMITEM.nDefense` | `ItemContribution::defense` |
+| `m_nDEFENSE_BODY` | `DerivedStats::defenseBody` |
+| `m_nDEFENSE` | `DerivedStats::defense` |
+| `bLowSP` | `CombatInput::targetLowSP` (from server) |
+
+## Tests
+
+| Suite | Cases | What it covers |
+| ------------------------------ | ----- | ------------------------------------------------------------------ |
+| `ModernCoreTests` | +12 | Equipment combat aggregation, missing definitions, non-finite values |
+| `ModernServerTests` | +6 | Equipment affecting combat, equipment changes, state recalculation |
+| `ModernClientGameplayTests` | +8 | Authoritative results after equipment changes |
+
+## Limitations
+
+| Behavior | Status | Notes |
+|----------|--------|-------|
+| Low-SP detection | LIMITED | Uses `currentSP == 0` as proxy |
+| Damage reflection application | LIMITED | Fields exist but reflection damage requires combat event system |
+| Elemental resistance | LIMITED | Not connected to physical combat |
+| State damage | LIMITED | Set to 1.0f |
+| Brightness/environment | DEFERRED | Hardcoded to Aver |
+| Magic combat | DEFERRED | Not part of VERTICAL-007 |
+| Ranged combat | DEFERRED | Melee only |

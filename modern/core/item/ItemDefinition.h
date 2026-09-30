@@ -129,6 +129,27 @@ namespace Modern
 		int32_t resistPoison   = 0;
 		int32_t resistSpirit   = 0;
 
+		// VERTICAL-007: combat modifiers from items.
+		//
+		// Legacy: m_sSUMITEM.fIncR_Critical, m_sSUMITEM.fIncR_CrushingBlow,
+		// m_sSUMITEM.fInc_Critical, m_sSUMITEM.fInc_CrushingBlow
+		// (GLogixExPC.cpp:570-574, 595-596, 624-628)
+		//
+		// These are rates (floats), not percentage points. The legacy
+		// conversion to percentage points happens at the point of use:
+		//   nPercentCri += (int)(m_sSUMITEM.fIncR_Critical * 100)
+		//   nCrushingBlow = (int)(m_sSUMITEM.fIncR_CrushingBlow * 100)
+		float criticalRate = 0.0f;
+		float crushingBlow = 0.0f;
+
+		// VERTICAL-007: damage reduction and reflection from items.
+		//
+		// Legacy: sDamageSpec.m_fPsyDamageReduce, m_fPsyDamageReflection,
+		// m_fPsyDamageReflectionRate (GLogixExPC.cpp:1409-1411)
+		float damageReduce = 0.0f;
+		float damageReflection = 0.0f;
+		float damageReflectionRate = 0.0f;
+
 		// True when the block contributes nothing, which lets the aggregator
 		// skip a definition cheaply without changing the result.
 		bool IsZero() const noexcept;
@@ -154,7 +175,12 @@ namespace Modern
 			       resistFire == other.resistFire && resistIce == other.resistIce &&
 			       resistElectric == other.resistElectric &&
 			       resistPoison == other.resistPoison &&
-			       resistSpirit == other.resistSpirit;
+			       resistSpirit == other.resistSpirit &&
+			       criticalRate == other.criticalRate &&
+			       crushingBlow == other.crushingBlow &&
+			       damageReduce == other.damageReduce &&
+			       damageReflection == other.damageReflection &&
+			       damageReflectionRate == other.damageReflectionRate;
 		}
 	};
 

@@ -657,20 +657,23 @@ Status ServerCharacter::Equip(EquipmentSlot slot, const ItemInstance& item)
 // Server-authoritative attack resolution.
 // Transactional: a refused attack leaves both characters unchanged.
 //
-// DEFERRED/LIMITED behaviors documented per VERTICAL-006 spec:
+// VERTICAL-007: Combat state now connected to real character/equipment data.
+//   - attackerCriticalBonus: from derived criticalRate (items + passives)
+//   - attackerCrushingBonus: from derived crushingBlow (items + passives)
+//   - targetDefenseItem: from item contribution defense
+//   - targetDamageReduce: from derived damageReduce (items + passives)
+//   - targetDamageReflection: from derived damageReflection (items + passives)
+//   - targetDamageReflectionRate: from derived damageReflectionRate
+//   - targetLowSP: from SP state (SP == 0 proxy, see below)
 //
-//   - Item critical/crushing bonuses (attackerCriticalBonus, attackerCrushingBonus): 0, not yet modeled.
-//   - targetDefenseItem: 0, not yet modeled.
-//   - targetDamageReduce, targetDamageReflection, targetResistElement: 0, not yet modeled.
-//   - targetStateDamage: 1.0f, no state damage yet.
-//   - targetLowSP: uses currentSP == 0 as proxy (Section 12).
-//   - brightnessFB: Aver default (DEFERRED — modern Core does not model world brightness).
-//   - weatherElementPower: 1.0f default.
-//   - targetHit/targetAvoid from target derived stats: included for future use.
+// Still deferred:
+//   - brightnessFB: Aver default (modern Core does not model world brightness)
+//   - weatherElementPower: 1.0f default
+//   - targetStateDamage: 1.0f (no state damage yet)
 //
-// The combat result is published through the snapshot so the client receives
-// the authoritative result. The client must NOT independently recalculate hit
-// chance, damage, critical, or crushing.
+// Low-SP detection: legacy uses bLowSP = (float(m_sSP.dwNow) < float(m_wSUM_DisSP))
+// (GLCharacter.cpp:3446). Without a skill system, we use SP == 0 as a proxy.
+// This is documented as LIMITED.
 
 #include "combat/CombatCalculator.h"
 #include "combat/CombatTypes.h"
@@ -709,7 +712,7 @@ namespace Modern::Server
 			return Status(ErrorCode::InvalidState);
 		}
 
-		// Build combat input from derived stats
+		// Build combat input from derived stats and equipment contributions
 		Combat::CombatInput input;
 		input.attackerHit = m_derived.hit;
 		input.attackerAvoid = m_derived.avoid;
@@ -719,36 +722,39 @@ namespace Modern::Server
 		input.attackerLevel = m_definition.level;
 		input.attackerMaxHP = m_derived.maxHp;
 		input.attackerCurrentHP = m_currentHp;
-		input.attackerCriticalBonus = 0; // Item critical bonus not yet modeled
-		input.attackerCrushingBonus = 0; // Item crushing bonus not yet modeled
-		input.attackType = Combat::AttackType::Melee; // Default to melee
+		// VERTICAL-007: critical rate from items + passives
+		input.attackerCriticalBonus = static_cast<int32_t>(m_derived.criticalRate * 100.0f);
+		// VERTICAL-007: crushing blow from items + passives
+		input.attackerCrushingBonus = static_cast<int32_t>(m_derived.crushingBlow * 100.0f);
+		input.attackType = Combat::AttackType::Melee;
 
 		input.targetHit = target.m_derived.hit;
 		input.targetAvoid = target.m_derived.avoid;
 		input.targetDefense = target.m_derived.defense;
 		input.targetDefenseBody = target.m_derived.defenseBody;
-		input.targetDefenseItem = 0; // Not yet modeled
+		// VERTICAL-007: item defense from equipment contribution
+		input.targetDefenseItem = target.GetItemContribution().defense;
 		input.targetLevel = target.m_definition.level;
 		input.targetMaxHP = target.m_derived.maxHp;
 		input.targetCurrentHP = target.m_currentHp;
 		input.targetStateDamage = 1.0f; // No state damage yet
-		input.targetDamageReduce = 0.0f; // Not yet modeled (Section 17)
-		input.targetDamageReflection = 0.0f; // Not yet modeled (Section 18)
-		input.targetDamageReflectionRate = 0.0f;
-		input.targetResistElement = 0; // Not yet modeled
-		input.targetLowSP = (target.m_currentSp == 0); // Low SP proxy (Section 12)
+		// VERTICAL-007: damage reduction from items + passives
+		input.targetDamageReduce = target.m_derived.damageReduce;
+		// VERTICAL-007: damage reflection from items + passives
+		input.targetDamageReflection = target.m_derived.damageReflection;
+		input.targetDamageReflectionRate = target.m_derived.damageReflectionRate;
+		input.targetResistElement = 0; // Not yet modeled (elemental combat)
+		// VERTICAL-007: low-SP detection (SP == 0 proxy, see note above)
+		input.targetLowSP = (target.m_currentSp == 0);
 
 		input.attackerMaxHP = m_derived.maxHp;
 		input.attackerCurrentHP = m_currentHp;
-		input.attackerCriticalBonus = 0;
-		input.attackerCrushingBonus = 0;
 
 		input.targetMaxHP = target.m_derived.maxHp;
 		input.targetCurrentHP = target.m_currentHp;
 
-		input.brightnessFB = GameCharacterCalculations::GameBrightFB::Aver; // Default
+		input.brightnessFB = GameCharacterCalculations::GameBrightFB::Aver;
 		input.weatherElementPower = 1.0f;
-		input.targetResistElement = 0;
 
 		// Deterministic random values for testing
 		input.hitRoll = DeterministicRandom();

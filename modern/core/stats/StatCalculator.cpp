@@ -411,6 +411,16 @@ namespace Modern::Stats
 		stats.mpRecoveryFlat = RecoveryFlatConstant::kMp + input.items.mpRecoveryFlat;
 		stats.spRecoveryFlat = RecoveryFlatConstant::kSp + input.items.spRecoveryFlat;
 
+		// VERTICAL-007: combat modifiers from items and passives.
+		//
+		// Legacy: m_sSUMITEM.fIncR_Critical + m_sSUM_PASSIVE critical rate
+		// (GLogixExPC.cpp:570, 1620)
+		stats.criticalRate = input.items.criticalRate + input.passives.criticalRate;
+		stats.crushingBlow = input.items.crushingBlow + input.passives.crushingBlow;
+		stats.damageReduce = input.items.damageReduce + input.passives.damageReduce;
+		stats.damageReflection = input.items.damageReflection + input.passives.damageReflection;
+		stats.damageReflectionRate = input.items.damageReflectionRate + input.passives.damageReflectionRate;
+
 		return DerivedStats(std::move(stats));
 	}
 }

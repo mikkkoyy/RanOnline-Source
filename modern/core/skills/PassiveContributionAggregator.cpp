@@ -141,9 +141,26 @@ namespace Modern
 					break;
 				}
 
-				// Summon time: not in stat pipeline.
-				case PassiveApplyType::SummonTime:
-					break;
+			// Summon time: not in stat pipeline.
+			case PassiveApplyType::SummonTime:
+				break;
+
+			// VERTICAL-007: combat modifiers.
+			case PassiveApplyType::CriticalRate:
+				c.criticalRate += value;
+				break;
+			case PassiveApplyType::CrushingBlow:
+				c.crushingBlow += value;
+				break;
+			case PassiveApplyType::DamageReduce:
+				c.damageReduce += value;
+				break;
+			case PassiveApplyType::DamageReflection:
+				c.damageReflection += value;
+				break;
+			case PassiveApplyType::DamageReflectionRate:
+				c.damageReflectionRate += value;
+				break;
 			}
 		}
 
@@ -213,8 +230,25 @@ namespace Modern
 					c.resistances.spirit   += resistVal;
 					break;
 				}
-				default:
-					break;
+			default:
+				break;
+
+			// VERTICAL-007: combat modifiers from impacts.
+			case PassiveImpactType::CriticalRate:
+				c.criticalRate += value;
+				break;
+			case PassiveImpactType::CrushingBlow:
+				c.crushingBlow += value;
+				break;
+			case PassiveImpactType::DamageReduce:
+				c.damageReduce += value;
+				break;
+			case PassiveImpactType::DamageReflection:
+				c.damageReflection += value;
+				break;
+			case PassiveImpactType::DamageReflectionRate:
+				c.damageReflectionRate += value;
+				break;
 			}
 		}
 
