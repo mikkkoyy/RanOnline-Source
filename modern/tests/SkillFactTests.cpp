@@ -1322,3 +1322,104 @@ MODERN_TEST(SkillFactV023_BothAggregatorsAgreeOnUnreferencedImpacts)
 	CHECK_EQ(ticked.hpRecoveryRate, 0.0f);
 	CHECK_EQ(ticked.mpRate, 0.0f);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VERTICAL-024: the damage-rate FACT axis
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// `EMIMPACTA_DAMAGE_RATE` accumulates as a plain `+=` on a float
+// (GLogixExPC.cpp:2340, with the item-FACT and system-buff twins at :2767 and
+// :2889), so SUM with no cast - unlike the V019 impacts, which are `int()`-ed.
+
+// Exactly representable binary fractions, so the assertion tests the stacking
+// rule and not float subtraction.
+MODERN_TEST(SkillFactV024_DamageRateStacksBySum)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::DamageRate, 0.125f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+		SkillFactImpactType::DamageRate, 0.25f));
+
+	const SkillFactModifiers m = AdvanceSkillFacts(container, 1.0f).modifiers;
+	CHECK_EQ(m.damageRate, 0.125f + 0.25f);
+}
+
+// A negative rate is carried faithfully. It must NOT be clamped or sanitised
+// at the aggregator: the consumer's unsigned conversion is where the
+// interesting behaviour lives, and hiding it here would change the number.
+MODERN_TEST(SkillFactV024_NegativeDamageRateIsCarriedFaithfully)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::DamageRate, -0.5f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.damageRate, -0.5f);
+}
+
+// No cast on this path, so a fractional value survives exactly. An `int()`
+// would silently discard everything below 1.0.
+MODERN_TEST(SkillFactV024_FractionalDamageRateIsNotTruncated)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::DamageRate, 0.015625f));  // 2^-6
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.damageRate, 0.015625f);
+}
+
+// `defenseRate` is a sibling axis, not the same one. Keeping them apart is what
+// stops a defence buff from being mistaken for a damage buff.
+MODERN_TEST(SkillFactV024_DamageRateAndDefenseRateAreIndependent)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::DamageRate, 0.25f));
+
+	const SkillFactModifiers m = AdvanceSkillFacts(container, 1.0f).modifiers;
+	CHECK_EQ(m.damageRate, 0.25f);
+	CHECK_EQ(m.defenseRate, 0.0f);
+}
+
+// Expiry rebuilds from zero - no save/restore.
+MODERN_TEST(SkillFactV024_DamageRateIsRemovedOnExpiry)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 5.0f,
+		SkillFactImpactType::DamageRate, 0.25f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.damageRate, 0.25f);
+
+	// The advance crossing the boundary still reports the fact, so the rebuilt
+	// state is read on the following tick - the shape every expiry test here uses.
+	AdvanceSkillFacts(container, 6.0f);
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.damageRate, 0.0f);
+}
+
+// One expiring must leave the other's contribution intact. This is what
+// distinguishes a rebuild from a restore.
+MODERN_TEST(SkillFactV024_OneExpiryDoesNotDisturbTheSurvivingFact)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 5.0f,
+		SkillFactImpactType::DamageRate, 0.125f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 20.0f,
+		SkillFactImpactType::DamageRate, 0.25f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.damageRate, 0.375f);
+
+	AdvanceSkillFacts(container, 6.0f);
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.damageRate, 0.25f);
+}
+
+// Both aggregators must agree, or a caller's total would depend on its path.
+MODERN_TEST(SkillFactV024_BothAggregatorsAgreeOnDamageRate)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::DamageRate, 0.125f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+		SkillFactImpactType::DamageRate, 0.25f));
+
+	CHECK_EQ(AggregateSkillFacts(container).damageRate, 0.375f);
+}

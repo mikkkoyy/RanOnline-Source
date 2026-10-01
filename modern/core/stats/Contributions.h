@@ -214,10 +214,22 @@ namespace Modern::Stats
 		float mpRate = 0.0f;
 		float spRate = 0.0f;
 
-    // VERTICAL-021: m_sSUM_PASSIVE.m_fDEFENSE_RATE. A multiplier around 1.0,
-    // not a percentage - legacy seeds m_fDefenseRate = 1.0f + this
-    // (GLogixExPC.cpp:2220). Sourced from EMIMPACTA_DEFENSE_RATE at :1046.
-    float defenseRate = 0.0f;
+		// VERTICAL-021: m_sSUM_PASSIVE.m_fDEFENSE_RATE. A multiplier around 1.0,
+		// not a percentage - legacy seeds m_fDefenseRate = 1.0f + this
+		// (GLogixExPC.cpp:2220). Sourced from EMIMPACTA_DEFENSE_RATE at :1046.
+		float defenseRate = 0.0f;
+
+		// VERTICAL-024: m_sSUM_PASSIVE.m_fDAMAGE_RATE (GLogixExPC.cpp:1042).
+		//
+		// Unlike `defenseRate` this is NOT consumed by the stat pipeline: legacy
+		// seeds `m_fDamageRate = 1.0f + this` in the per-tick reset (:2219) and
+		// reads it inside CALCDAMAGE (:1600-1603, :1958-1961) as a multiplier on
+		// the damage RANGE, before the roll. It is therefore a COMBAT-BOUNDARY
+		// value and deliberately has no `DerivedStats` field - see
+		// docs/reference/server/VERTICAL-024_DAMAGE_RATE_INVESTIGATION.md.
+		//
+		// This is an increment on 1.0, so 0.2f is a 1.2 multiplier.
+		float damageRate = 0.0f;
 
 		// m_fINCR_HP, m_fINCR_MP, m_fINCR_SP: flat additions to the recovery
 		// rate, on top of the class constant and the item contribution.
@@ -255,6 +267,7 @@ namespace Modern::Stats
 			return hp == other.hp && mp == other.mp && sp == other.sp &&
 			       hpRate == other.hpRate && mpRate == other.mpRate && spRate == other.spRate &&
 			       defenseRate == other.defenseRate &&
+			       damageRate == other.damageRate &&
 			       hpRecoveryRate == other.hpRecoveryRate && mpRecoveryRate == other.mpRecoveryRate &&
 			       spRecoveryRate == other.spRecoveryRate && meleePower == other.meleePower &&
 			       shootPower == other.shootPower && magicAttack == other.magicAttack &&
@@ -350,6 +363,16 @@ int32_t hit = 0;
 		// added RAW - legacy does not normalise it to a percentage.
 		float defenseRate = 0.0f;
 
+		// VERTICAL-024: the EMIMPACTA_DAMAGE_RATE accumulator,
+		// `m_fDamageRate += fADDON_VAR` (GLogixExPC.cpp:2340, and the item-FACT
+		// and system-buff twins at :2767 and :2889). Float, SUM, added RAW.
+		//
+		// Like `defenseRate` this is an increment on a 1.0 seed rather than a
+		// percentage, and like it the consumer is CALCDAMAGE, not the stat
+		// pipeline - so it travels to the combat boundary and never becomes a
+		// `DerivedStats` field.
+		float damageRate = 0.0f;
+
 		// VERTICAL-022: the RECOVERY RATE impacts, EMIMPACTA_VARHP /
 		// VARMP / VARSP / VARAP.
 		//
@@ -388,6 +411,7 @@ int32_t hit = 0;
 			       magicAttack == other.magicAttack && hit == other.hit && avoid == other.avoid &&
 			       damage == other.damage && defense == other.defense && resist == other.resist &&
 			       defenseRate == other.defenseRate &&
+			       damageRate == other.damageRate &&
 			       hpRecoveryRate == other.hpRecoveryRate &&
 			       mpRecoveryRate == other.mpRecoveryRate &&
 			       spRecoveryRate == other.spRecoveryRate &&
@@ -398,7 +422,8 @@ int32_t hit = 0;
 		{
 			return meleePower == 0 && shootPower == 0 && magicAttack == 0 &&
 			       hit == 0 && avoid == 0 && damage == 0 && defense == 0 && resist == 0 &&
-			       defenseRate == 0.0f && hpRecoveryRate == 0.0f &&
+			       defenseRate == 0.0f && damageRate == 0.0f &&
+			       hpRecoveryRate == 0.0f &&
 			       mpRecoveryRate == 0.0f && spRecoveryRate == 0.0f &&
 			       hpRate == 0.0f && mpRate == 0.0f && spRate == 0.0f;
 		}

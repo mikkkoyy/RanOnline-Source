@@ -105,6 +105,15 @@ namespace Modern::Skills
 		// Float, SUM, added raw - no percentage normalisation.
 		float defenseRate = 0.0f;
 
+		// VERTICAL-024: the EMIMPACTA_DAMAGE_RATE accumulator,
+		// `m_fDamageRate += fADDON_VAR` (GLogixExPC.cpp:2340, with the item-FACT
+		// and system-buff twins at :2767 and :2889). Float, SUM, added RAW, and
+		// an increment on the 1.0 that seeds it (:2219) rather than a percentage.
+		//
+		// Consumed in CALCDAMAGE (:1600-1603, :1958-1961) on the damage range
+		// before the roll, so this stays at the combat boundary.
+		float damageRate = 0.0f;
+
 		// VERTICAL-022: the RECOVERY RATE, from EMIMPACTA_VARHP / VARMP /
 		// VARSP / VARAP (GLogixExPC.cpp:2331-2338).
 		//
@@ -226,6 +235,12 @@ namespace Modern::Skills
 						break;
 					case SkillFactImpactType::DefenseRate:
 						modifiers.defenseRate += impact.value;
+						break;
+
+					// VERTICAL-024. Float, SUM, raw - no cast, no percentage
+					// normalisation. Legacy: GLogixExPC.cpp:2340.
+					case SkillFactImpactType::DamageRate:
+						modifiers.damageRate += impact.value;
 						break;
 
 					// VERTICAL-022. Recovery RATE, not a flat amount and not a
@@ -401,6 +416,11 @@ namespace Modern::Skills
 						break;
 					case SkillFactImpactType::DefenseRate:
 						modifiers.defenseRate += impact.value;
+						break;
+					// VERTICAL-024: identical accumulation to the advancing
+					// aggregator above. See there for the provenance.
+					case SkillFactImpactType::DamageRate:
+						modifiers.damageRate += impact.value;
 						break;
 					// VERTICAL-022: identical accumulation to the advancing
 					// aggregator above. `AggregateSkillFacts` reads an already

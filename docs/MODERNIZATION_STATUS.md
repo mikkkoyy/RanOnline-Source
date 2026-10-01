@@ -17,9 +17,9 @@ formula provenance.
 | ---- | ----- |
 | Legacy import | complete |
 | Core foundation | complete |
-| Vertical gameplay slices 001-023 | complete |
+| Vertical gameplay slices 001-024 | complete |
 | Build verification (BUILD-001) | complete |
-| Impact/addon modifiers, world targeting | partial — combat and resource FACT axes through VERTICAL-022; enum 19-23 proven unreferenced in VERTICAL-023; velocity, status, range and world targeting still deferred |
+| Impact/addon modifiers, world targeting | partial — damage, defence and resource FACT axes through VERTICAL-024; enum 19-23 proven unreferenced in VERTICAL-023; velocity, status, range and world targeting still deferred |
 
 ---
 
@@ -53,6 +53,7 @@ formula provenance.
 | VERTICAL-021 FACT defense-rate axis | [x] | `7f3550d` |
 | VERTICAL-022 Recovery / HP-MP-SP-AP FACT | [x] | `96c330a` |
 | VERTICAL-023 Recovery VAR / CP consumer investigation | [x] complete — investigated, no proven runtime consumers | see `docs/reference/server/VERTICAL-023_RECOVERY_VAR_CP_INVESTIGATION.md` |
+| VERTICAL-024 DAMAGE_RATE FACT axis | [x] | see `docs/reference/server/VERTICAL-024_DAMAGE_RATE_INVESTIGATION.md` |
 
 ---
 
@@ -527,13 +528,75 @@ implementable, whereas a missing subsystem would have to be built first.
 Four tests pin the negative result - if a future milestone legitimately
 implements one of these, they are what should fail.
 
-**Next:** the remaining deferred FACT impacts. Recovery deferred with subsystems:
-pet, land effect, item FACT, system buff. Also open: velocity, potion,
-invisibility, pierce, range, stun, continuous damage, curse, immunity, stigma,
-enhancement, `DEFENSE_SKILL_ACTIVE`, `REFDAMAGE`, `TALK_TO_NPC`,
-`DAMAGE_LOOP`, `TAR_BUFF`, `CHANGESTATS`, and the world/entity, networking,
-movement and client-presentation layers. The count is deliberately left open
-rather than invented.
+**VERTICAL-024 - DAMAGE_RATE FACT investigation + integration.** Complete. See
+`docs/reference/server/VERTICAL-024_DAMAGE_RATE_INVESTIGATION.md`.
+
+The first fully live axis since V021, and the pipeline position turned out to be
+the whole story. `m_fDamageRate` (a multiplier around 1.0, **not** a percentage)
+is read in exactly one place per damage function:
+
+```cpp
+gdDamage.dwLow  = ApplyDamageRate(gdDamage.dwLow,  m_fDamageRate);
+gdDamage.dwHigh = ApplyDamageRate(gdDamage.dwHigh, m_fDamageRate);
+// GLogixExPC.cpp:1600-1603  (and :1958-1961 in CALCDAMAGE_2004)
+```
+
+so it multiplies **both ends of the range, immediately before the roll** - after
+the attack power, after resistance, and before critical, defence, low-SP and
+reflection. `CALCDAMAGE` dispatches on a country macro to two functions
+(`CALCDAMAGE_20060328` / `CALCDAMAGE_2004`), and both apply the rate at the same
+structural point, so the conclusion does not depend on which was built.
+
+Equipment and codex were proven **not** rate contributors - `m_sSUMITEM` has no
+damage-rate member and `m_dwAttackIncrease` folds flat into `m_gdDAMAGE` at
+`:380` - which is what makes the modern axis complete.
+
+**No `DerivedStats` field was added.** Legacy reads this accumulator only inside
+`CALCDAMAGE`, so a derived statistic would have been a second, divergent
+statement of a combat-boundary value - the trap V019 already documented for
+`EMIMPACTA_DAMAGE`. Two pieces were already half-built: V013 had created
+`CombatInput::attackerDamageRate` and wired it to the magic input, and
+`MagicDamageInput::damageRate` already applied it at the correct position, but
+nothing ever supplied a value, so the axis was inert on both channels. The
+physical path had no field at all.
+
+Two findings worth carrying forward. **The authored clamp was commented out**:
+`if (m_fDamageRate <= 0.0f) { dwLow = 0; dwHigh = 0; }` exists at
+`:1644-1648` and again at `:1972-1976`, both inside commented blocks, so a
+non-positive rate reaches the conversion unchecked. And a negative rate does
+**not** wrap to a huge figure as it first appeared to - `static_cast<uint32_t>`
+does wrap (`-100.0f` becomes `0xFFFFFF9C`, verified with a standalone probe),
+but the roll converts that back to float, `4294967196` is not representable near
+2^32, and it rounds to exactly 2^32, whose conversion yields 0. The range
+collapses and damage floors at 1. Reproduced as measured; both conversions are
+pinned so the rounding is visible.
+
+A **dead legacy write** was found and left alone: the enhancement system's
+damage-rate bonus is added at `:1630`, after the range was already rated at
+`:1600`, and the only other rate application in that function is the commented
+block - so it has no effect.
+
+One pre-existing deviation is recorded and deliberately **not** touched:
+`PhysicalDamageCalculator` applies physical resistance to the rolled figure
+where legacy applies it to the range before the roll. That is VERTICAL-009
+behaviour; fixing it would move V006/V009 baselines and needs its own milestone.
+
+14 tests. `DamageRate_AppliesToTheRangeBeforeTheRoll` is the ordering
+discriminator (range 101..102 at rate 1.5 with roll 0.5 gives 152 pre-roll and
+151 post-roll), and `Magic_DamageRateAppliesAfterResistanceAndBeforeTheRoll`
+pins 112 against 113 for the magic-only resist-then-rate order. The stat oracle
+was deliberately **not** extended - the rate never enters the stat calculator,
+so there is nothing to re-derive. Debug and Release both 0 errors / 0 warnings,
+CTest 14/14, core 514, server 114.
+
+**Next:** the remaining deferred FACT impacts. Damage rate deferred with
+subsystems: item FACT, system buff, pet skill FACT, QITEM, GM event, land effect.
+Recovery deferred with subsystems: pet, land effect, item FACT, system buff.
+Also open: velocity, potion, invisibility, pierce, range, stun, continuous
+damage, curse, immunity, stigma, enhancement, `DEFENSE_SKILL_ACTIVE`,
+`REFDAMAGE`, `TALK_TO_NPC`, `DAMAGE_LOOP`, `TAR_BUFF`, `CHANGESTATS`, and the
+world/entity, networking, movement and client-presentation layers. The count is
+deliberately left open rather than invented.
 
 ---
 

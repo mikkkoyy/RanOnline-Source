@@ -129,6 +129,22 @@ namespace Modern::Combat
 		// magic, matching legacy's single `m_gdDAMAGE_SKILL`.
 		int32_t factDamage = 0;
 
+		// VERTICAL-024: `m_fDamageRate`, the aggregated damage-rate multiplier.
+		//
+		// Legacy seeds it per tick as `1.0f + m_sSUM_PASSIVE.m_fDAMAGE_RATE`
+		// (GLogixExPC.cpp:2219) and every timed `EMIMPACTA_DAMAGE_RATE` adds to
+		// it (:2340). It is a multiplier around 1.0 - NOT a percentage - and it
+		// is applied ONCE, to the range, immediately before the roll:
+		//
+		//   gdDamage.dwLow  = ApplyDamageRate(gdDamage.dwLow,  m_fDamageRate);
+		//   gdDamage.dwHigh = ApplyDamageRate(gdDamage.dwHigh, m_fDamageRate);
+		//                                            // :1600-1603
+		//
+		// which is why it must sit here and not on the rolled figure: a
+		// multiplier applied after `RandomDamageRange` would produce a different
+		// number, and applying it before the attack power would produce another.
+		float damageRate = 1.0f;
+
 		// Target stats
 		int32_t defense = 0;                // target's defense
 		int32_t defenseBody = 0;            // target's body defense

@@ -90,6 +90,34 @@ const int32_t attackPower = (input.attackType == AttackType::Ranged)
 		damage.low  = ApplyAttackPower(damage.low,  attackPower);
 		damage.high = ApplyAttackPower(damage.high, attackPower);
 
+		// VERTICAL-024: `m_fDamageRate`, the single application point.
+		//
+		// Legacy order in CALCDAMAGE_20060328 (GLogixExPC.cpp):
+		//
+		//   :1448/:1460   + weapon item damage
+		//   :1451/:1463   VAR_PARAM(attack power)
+		//   :1551-1552   skill damage reduction      (skill path only)
+		//   :1562-1563   resistance                  (skill path only)
+		//   :1600-1603   ApplyDamageRate             <-- HERE
+		//   :1672-1673   RandomDamageRange
+		//
+		// and identically in CALCDAMAGE_2004 at :1958-1961. So the rate is a
+		// multiplier on the pre-roll range, applied after the attack power and
+		// after resistance. Applying it to the rolled figure instead would give
+		// a different integer, and applying it before the attack power would
+		// give a different one again - `DefenseRate_...` in
+		// StatCalculationTests pins the analogous defence-side ordering.
+		//
+		// There is NO clamp. Legacy authored one (`if (m_fDamageRate <= 0.0f) {
+		// dwLow = 0; dwHigh = 0; }`) and then commented the whole block out at
+		// :1634-1650 and :1963-1977, so a non-positive rate reaches
+		// `ApplyDamageRate` and truncates into an unsigned range end. That is
+		// reproduced rather than "fixed": see
+		// docs/reference/server/VERTICAL-024_DAMAGE_RATE_INVESTIGATION.md
+		// section 8 for what a negative rate actually does.
+		damage.low  = Modern::Engine::ApplyDamageRate(damage.low,  input.damageRate);
+		damage.high = Modern::Engine::ApplyDamageRate(damage.high, input.damageRate);
+
 		uint32_t nDAMAGE_NOW = static_cast<uint32_t>(
 			static_cast<float>(damage.low) +
 			(static_cast<float>(damage.high) -

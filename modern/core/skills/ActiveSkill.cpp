@@ -401,6 +401,12 @@ namespace Modern::Skills
 			combat.skillBasicVar      = level.basicVar;
 			combat.skillCrushingBonus = static_cast<int32_t>(input.skillCrushingBonus * 100.0f);
 
+			// VERTICAL-024: the damage-rate multiplier, for every apply kind -
+			// melee, ranged and magic alike, because legacy applies it at the one
+			// point (:1600-1603) after the per-apply switch has already chosen the
+			// attack power.
+			combat.attackerDamageRate = input.attackerDamageRate;
+
 			combat.targetHit                 = input.target.hit;
 			combat.targetAvoid               = input.target.avoid;
 			combat.targetDefense             = input.target.defense;

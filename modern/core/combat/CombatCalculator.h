@@ -223,7 +223,11 @@ namespace Modern::Combat
 			damageInput.meleePower = input.attackerMeleePower;
 			damageInput.shootPower = input.attackerShootPower;
 			damageInput.attackType = input.attackType;
-				damageInput.factDamage = input.factDamage;
+			damageInput.factDamage = input.factDamage;
+			// VERTICAL-024: the damage-rate multiplier. Magic already received it
+			// (:192); the physical path did not have the field at all, which is
+			// why `EMIMPACTA_DAMAGE_RATE` never reached a basic attack.
+			damageInput.damageRate = input.attackerDamageRate;
 			damageInput.defense = input.targetDefense;
 			damageInput.defenseBody = input.targetDefenseBody;
 			damageInput.defenseItem = input.targetDefenseItem;

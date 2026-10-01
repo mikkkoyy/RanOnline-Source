@@ -196,8 +196,13 @@ namespace Modern
 					c.spRecoveryRate += value;
 					break;
 				case PassiveImpactType::DamageRate:
-					// Not in PassiveContribution — legacy has m_fDAMAGE_RATE but
-					// it's not in the stat pipeline.
+					// VERTICAL-024: GLogixExPC.cpp:1042
+					//   m_sSUM_PASSIVE.m_fDAMAGE_RATE += fADDON;
+					// Added raw, and it is an increment on the 1.0 that seeds
+					// `m_fDamageRate` (:2219), not a percentage. Legacy consumes it
+					// in CALCDAMAGE on the damage range, so it is a combat-boundary
+					// value and never reaches `DerivedStats`.
+					c.damageRate += value;
 					break;
 				case PassiveImpactType::DefenseRate:
 					// VERTICAL-021: GLogixExPC.cpp:1046

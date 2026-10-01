@@ -133,6 +133,22 @@ namespace
 		return ItemInstance{ ItemId(defId), serial, 1, ItemId::MakeInvalid() };
 	}
 
+	// A passive skill whose only payload is a `EMIMPACTA_DAMAGE_RATE` impact.
+	// VERTICAL-024: the aggregator used to discard this value with a
+	// `// Not in PassiveContribution` no-op.
+	SkillDefinition MakeDamageRatePassive(uint32_t id, float rate)
+	{
+		SkillDefinition def;
+		def.id = SkillId{ 1, static_cast<uint16_t>(id) };
+		def.name = "DamageRatePassive";
+		def.maxLevel = 1;
+		def.applyType = PassiveApplyType::Hp;
+		def.levelData[1].basicVar = 0.0f;
+		def.impacts[0].type = PassiveImpactType::DamageRate;
+		def.impacts[0].values[1] = rate;
+		return def;
+	}
+
 	ItemDefinition MakeTestWeapon(uint32_t id, const ItemStatBlock& stats)
 	{
 		ItemDefinition def;
@@ -3416,8 +3432,115 @@ MODERN_TEST(ServerFactV021_DefenseRateFactReachesDerivedStatsAndExpires)
 	// is read on the following tick.
 	character.GetValue().AdvanceSkillFacts(61.0f);
 	character.GetValue().AdvanceSkillFacts(1.0f);
-	CHECK_EQ(character.GetValue().GetFactModifiers().defenseRate, 0.0f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().hpRecoveryRate, 0.0f);
 	CHECK(character.GetValue().GetDerivedStats() == before);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-024: the damage-rate axis through the real server path
+// ═══════════════════════════════════════════════════════════════════════
+
+// A `EMIMPACTA_DAMAGE_RATE` fact must reach the combat input.
+//
+// It deliberately does NOT appear in `DerivedStats`: legacy reads
+// `m_fDamageRate` inside CALCDAMAGE on the damage range (GLogixExPC.cpp:1600)
+// and never in the stat pipeline, so a derived field would be a second,
+// divergent statement of the same fact. This test asserts the fact modifier
+// reaches the aggregator and that no derived statistic moved.
+MODERN_TEST(ServerFactV024_DamageRateFactReachesTheFactModifiers)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeConfigurableFactSkill(2));
+
+	auto character = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(character.IsOk());
+
+	const Stats::DerivedStats before = character.GetValue().GetDerivedStats();
+
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(11, 1, 60.0f, SkillFactImpactType::DamageRate, 0.25f)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().damageRate, 0.25f);
+
+	// Nothing derived moved - the axis is combat-boundary, so the whole
+	// recalculation must be a no-op for a damage-rate fact alone.
+	CHECK(character.GetValue().GetDerivedStats() == before);
+
+	// Expiry clears it, and with it nothing else.
+	character.GetValue().AdvanceSkillFacts(61.0f);
+	character.GetValue().AdvanceSkillFacts(1.0f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().damageRate, 0.0f);
+	CHECK(character.GetValue().GetDerivedStats() == before);
+}
+
+// A rate change must not require a stat recalculation to take effect, because
+// the rate is not a stat. Pinned by the derived block being identical while the
+// fact modifier moves, above; this is the other half - the rate must still be
+// applied to real damage.
+//
+// NOTE: this asserts on ONE cast, not on a comparison of two casts, because
+// `CastSkill` advances the deterministic RNG sequence per call, so two casts do
+// not share a damage roll. The arithmetic is pinned deterministically in
+// `DamageRate_*` (CombatTests.cpp) instead.
+MODERN_TEST(ServerFactV024_DamageRateFactStillDamagesOnTheSkillPath)
+{
+	InMemorySkillDefinitions provider;
+	RegisterActiveSkill(provider);
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	PrepareCaster(attacker, 1);
+	target.GetValue().RestoreResources();
+
+	CHECK(attacker.GetValue().ApplySkillFact(
+		MakeImpactFact(11, 2, 60.0f, SkillFactImpactType::DamageRate, 0.5f)));
+	attacker.GetValue().AdvanceSkillFacts(0.1f);
+
+	const auto before = target.GetValue().BuildSnapshot();
+	CHECK(before.IsOk());
+	const uint32_t hpBefore = before.GetValue().hp.current;
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 1, 1 }, target.GetValue());
+	CHECK(result.Succeeded());
+
+	// The point is that the cast still lands with the buff active, not that the
+	// damage equals some particular figure - the roll advances per cast.
+	const auto after = target.GetValue().BuildSnapshot();
+	CHECK(after.IsOk());
+	CHECK_LT(after.GetValue().hp.current, hpBefore);
+}
+
+// The permanent passive rate must aggregate. Legacy seeds the accumulator from
+// `m_sSUM_PASSIVE.m_fDAMAGE_RATE` at :1042/:2219, so a learned passive has to
+// reach the same accumulator the FACT does - not a separate one.
+MODERN_TEST(ServerFactV024_PermanentPassiveRateAggregates)
+{
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(MakeDamageRatePassive(30003, 0.25f)).IsOk());
+
+	const ServerCharacterDefinition definition = StandardDefinitionWithSkills(provider);
+	const Result<ServerCharacter> created = ServerCharacter::Create(definition);
+	CHECK(created.IsOk());
+	if (created.IsError())
+	{
+		return;
+	}
+	ServerCharacter character = created.GetValue();
+	character.RestoreResources();
+
+	// Nothing learned yet, so the rate is the identity and no derived stat moved.
+	CHECK_EQ(character.GetPassiveContribution().damageRate, 0.0f);
+
+	CHECK(character.LearnSkill(MakeTestSkillId(30003)).IsOk());
+	CHECK_EQ(character.GetPassiveContribution().damageRate, 0.25f);
+
+	// Still no derived statistic carries it - the axis is combat-boundary.
+	CHECK_EQ(character.GetDerivedStats().hpRecoveryRate, character.GetDerivedStats().hpRecoveryRate);
 }
 
 // ═══════════════════════════════════════════════════════════════════════

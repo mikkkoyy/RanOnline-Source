@@ -766,6 +766,15 @@ namespace Modern::Server
 		input.attackerCrushingBonus = static_cast<int32_t>(m_derived.crushingBlow * 100.0f);
 		input.attackType = Combat::AttackType::Melee;
 
+		// VERTICAL-024: `m_fDamageRate`, the damage-rate multiplier.
+		//
+		// Legacy rebuilds it per tick as `1.0f + m_sSUM_PASSIVE.m_fDAMAGE_RATE`
+		// (GLogixExPC.cpp:2219) and adds each active `EMIMPACTA_DAMAGE_RATE` on
+		// top (:2340). It is consumed on the damage range before the roll, so it
+		// travels through the combat input and never becomes a derived stat.
+		input.attackerDamageRate = 1.0f + m_passives.damageRate +
+		                           m_factModifiers.damageRate;
+
 		input.targetHit = target.m_derived.hit;
 		input.targetAvoid = target.m_derived.avoid;
 		input.targetDefense = target.m_derived.defense;
@@ -980,6 +989,17 @@ namespace Modern::Server
 		// second prohibition check here: `ActiveSkillResolver` owns the decision
 		// and already refuses with `NotCastable`.
 		input.skillProhibited = m_factModifiers.prohibitSkill;
+
+		// VERTICAL-024: `m_fDamageRate`, the damage-rate multiplier, for the
+		// skill path.
+		//
+		// Legacy rebuilds it per tick as `1.0f + m_sSUM_PASSIVE.m_fDAMAGE_RATE`
+		// (GLogixExPC.cpp:2219) and adds every active `EMIMPACTA_DAMAGE_RATE`
+		// on top (:2340); `CALCDAMAGE` then reads it on the damage range before
+		// the roll (:1600-1603). It is injected rather than recomputed from
+		// `DerivedStats` because no derived statistic carries it - it is
+		// combat-boundary state by construction.
+		input.attackerDamageRate = 1.0f + m_passives.damageRate + m_factModifiers.damageRate;
 
 		// NONBLOW. The target's immunity mask, aggregated from its FACTs, handed
 		// to the status resolver as a plain value. The two domains stay separate:

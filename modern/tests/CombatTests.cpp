@@ -1887,6 +1887,49 @@ MODERN_TEST(Magic_ResistanceIsClampedToTheLegacyMaximum)
 	CHECK_EQ(CalculateMagicDamage(capped).rawDamage, 51u);
 }
 
+// VERTICAL-024: magic consumes the same `m_fDamageRate` as physical, at the
+// same pipeline position. VERTICAL-013 gave `MagicDamageInput` a `damageRate`
+// field and applied it at :1600-1603's equivalent, but nothing ever supplied a
+// value, so the axis was inert on both channels.
+//
+// Magic needs this pinned separately because its resistance is applied to the
+// RANGE before the roll (:1562-1563), unlike physical's post-roll form. Rate
+// and resistance therefore do NOT commute on magic, and the order is
+// resist-then-rate.
+MODERN_TEST(Magic_DamageRateAppliesAfterResistanceAndBeforeTheRoll)
+{
+	MagicDamageInput plain = MakeMagicInput(100);
+	plain.skillBasicVar = 0.0f;   // range {100,100}
+	plain.resistElement = 0;
+	plain.damageRate = 1.5f;
+	plain.damageRoll = 0.0f;
+
+	// 100 * 1.5 = 150.
+	CHECK_EQ(CalculateMagicDamage(plain).rawDamage, 150u);
+
+	// With resistance: legacy reduces the range first (100 - 25 = 75) and only
+	// then applies the rate (75 * 1.5 = 112.5 -> 112). Rate-first would give
+	// 150 - DWORD(150*0.25) = 150 - 37 = 113. The two differ, so the assertion
+	// discriminates the order rather than merely exercising both.
+	MagicDamageInput resisted = plain;
+	resisted.resistElement = 50;
+
+	CHECK_EQ(CalculateMagicDamage(resisted).rawDamage, 112u);
+}
+
+// Rate 1.0 must be an identity here too, which is what keeps every V013 magic
+// baseline unmoved.
+MODERN_TEST(Magic_DamageRateOneIsAnIdentity)
+{
+	MagicDamageInput input = MakeMagicInput(100);
+	input.skillBasicVar = 0.0f;
+	input.resistElement = 0;
+	input.damageRate = 1.0f;
+	input.damageRoll = 0.0f;
+
+	CHECK_EQ(CalculateMagicDamage(input).rawDamage, 100u);
+}
+
 // The reduction cap: a resistance large enough to exceed 0.8 is held at 0.8.
 MODERN_TEST(Magic_ResistanceReductionIsCappedAtEightyPercent)
 {
@@ -2372,4 +2415,169 @@ MODERN_TEST(DefenseRate_BoostedDefenseBeyondDamageFloorsDamage)
 
 	// 30 - 200 goes below zero and the damage floor is 1, not 0.
 	CHECK_EQ(CalculatePhysicalDamage(defended).damage, 1u);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VERTICAL-024: the damage-rate multiplier on the physical path
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace
+{
+	// A damage-rate case with every other axis pinned: no attack power, no
+	// resistance, no critical, no defense, no reduction, no reflection. Only
+	// `damageRate` can move the result, so a failure localises to the axis.
+	PhysicalDamageInput MakeDamageRateInput(uint32_t low, uint32_t high, float rate)
+	{
+		PhysicalDamageInput in = MakeBasicDamageInput();
+		in.physicalDamage = { low, high };
+		in.meleePower = 0;
+		in.shootPower = 0;
+		in.damageRate = rate;
+		in.defense = 0;
+		in.defenseBody = 0;
+		in.defenseItem = 0;
+		in.resistElement = 0;
+		in.damageRoll = 0.0f;      // take the low end exactly
+		in.criticalRoll = 1.0f;    // never crit
+		in.crushingRoll = 1.0f;    // never crush
+		in.lowSP = false;
+		return in;
+	}
+}
+
+// Rate 1.0 is the identity. This is the load-bearing no-buff property: it is
+// what lets the axis be added without moving any VERTICAL-006/009 baseline.
+MODERN_TEST(DamageRate_RateOneIsAnIdentityOnBothEnds)
+{
+	const DamageResult atOne = CalculatePhysicalDamage(MakeDamageRateInput(100, 200, 1.0f));
+	CHECK_EQ(atOne.rawDamage, 100u);
+	CHECK_EQ(atOne.damage, 100u);
+}
+
+// ORDERING, and the reason this test exists. Legacy applies the rate to the
+// RANGE immediately before the roll (GLogixExPC.cpp:1600-1603 then :1672), not
+// to the rolled figure and not before the attack power.
+//
+// range 100, rate 1.5:
+//   legacy  (pre-roll)  -> int(100 * 1.5)               = 150
+//   post-roll           -> int(100) then int(100 * 1.5)= 150  (same here)
+// so a single case cannot discriminate; this one does, with a fractional
+// product and a non-zero roll:
+//
+// range 101..102, rate 1.5, roll 0.5
+//   legacy:  int(101*1.5)=151, int(102*1.5)=153, roll -> 152
+//   post-roll: roll 101.5 -> 101, then int(101*1.5)    = 151
+// The two differ, so the assertion pins the pre-roll position.
+MODERN_TEST(DamageRate_AppliesToTheRangeBeforeTheRoll)
+{
+	PhysicalDamageInput in = MakeDamageRateInput(101, 102, 1.5f);
+	in.damageRoll = 0.5f;
+
+	// The pre-roll range is observable through `rawDamage`, which modern sets
+	// immediately after the roll from the (already rated) range.
+	const DamageResult rated = CalculatePhysicalDamage(in);
+	CHECK_EQ(rated.rawDamage, 152u);
+
+	// The pre-roll ends must be 151 and 153 - not 101/102 (no rate applied) and
+	// not the post-roll alternative. Recomputed independently here rather than
+	// read back from a field, so a change in the calculator cannot agree with
+	// itself.
+	CHECK_EQ(Modern::Engine::ApplyDamageRate(101u, 1.5f), 151u);
+	CHECK_EQ(Modern::Engine::ApplyDamageRate(102u, 1.5f), 153u);
+}
+
+// Truncation is toward zero, applied to the multiplied value.
+MODERN_TEST(DamageRate_TruncatesTowardZero)
+{
+	// 101 * 1.333 = 134.633 -> 134
+	CHECK_EQ(CalculatePhysicalDamage(MakeDamageRateInput(101, 101, 1.333f)).rawDamage, 134u);
+}
+
+// ORDERING against the attack power. Legacy adds the power BEFORE the rate
+// (:1594 then :1600), so a rate scales the power too. Applying it first would
+// give a different integer, and this range is chosen so it does.
+MODERN_TEST(DamageRate_AppliesAfterTheAttackPower)
+{
+	PhysicalDamageInput in = MakeDamageRateInput(100, 100, 1.5f);
+	in.meleePower = 3;
+
+	// (100 + 3) * 1.5 = 154.5 -> 154. Rate-before-power would give
+	// 100 * 1.5 + 3 = 153.
+	CHECK_EQ(CalculatePhysicalDamage(in).rawDamage, 154u);
+}
+
+// A rate below 1.0 is a reduction, and legacy clamps nothing.
+MODERN_TEST(DamageRate_BelowOneReducesWithoutAClamp)
+{
+	CHECK_EQ(CalculatePhysicalDamage(MakeDamageRateInput(100, 100, 0.5f)).rawDamage, 50u);
+	// 0.0 drives the range to zero, and the damage floor of 1 then applies -
+	// the floor is downstream of the rate, at :1777.
+	CHECK_EQ(CalculatePhysicalDamage(MakeDamageRateInput(100, 100, 0.0f)).damage, 1u);
+}
+
+// NEGATIVE, and this pins a two-step legacy hazard rather than tidying it up.
+//
+// `ApplyDamageRate` is `static_cast<GameUInt32>(float(damage) * rate)`
+// (GameCharacterCalculations.cpp:667-668). With a negative rate the product is
+// negative and the conversion wraps two's-complement: -100.0f becomes
+// 0xFFFFFF9C. Legacy authored a clamp for exactly this
+// (`if (m_fDamageRate <= 0.0f) { dwLow = 0; dwHigh = 0; }`) and then commented
+// the whole block out at GLogixExPC.cpp:1634-1650 and :1963-1977, so it never
+// runs.
+//
+// The end-to-end result is NOT simply "wraps to a huge number", and this test
+// exists because the first draft of it asserted exactly that and was wrong. The
+// roll converts the range end back to float, and 4294967196 is not
+// representable: floats near 2^32 are spaced 512 apart, so it rounds to
+// 2^32 exactly. `static_cast<uint32_t>(2^32)` is then out of range and MSVC
+// yields 0. The damage therefore floors at 1 like any other empty roll.
+//
+// Reproduced as measured, not as guessed: an invented clamp would change a
+// number RAN produces, and an invented wrap model would have hidden the
+// rounding that actually decides the outcome.
+MODERN_TEST(DamageRate_NegativeRateWrapsThenCollapsesToZeroThroughTheRoll)
+{
+	// Step 1: the conversion itself wraps, on this compiler.
+	CHECK_EQ(Modern::Engine::ApplyDamageRate(100u, -1.0f), 0xFFFFFF9Cu);
+
+	// Step 2: that value cannot survive the float round-trip in the roll.
+	const DamageResult negative = CalculatePhysicalDamage(
+		MakeDamageRateInput(100, 100, -1.0f));
+	CHECK_EQ(negative.rawDamage, 0u);
+	CHECK_EQ(negative.damage, 1u);
+}
+
+// The rate is independent of the V019 flat `factDamage`: they are separate
+// impacts, added at separate points, and one must not stand in for the other.
+MODERN_TEST(DamageRate_IsSeparateFromTheFactDamageImpact)
+{
+	PhysicalDamageInput flat = MakeDamageRateInput(100, 100, 1.0f);
+	flat.factDamage = 10;
+
+	PhysicalDamageInput rate = MakeDamageRateInput(100, 100, 1.5f);
+	rate.factDamage = 10;
+
+	// flat only  -> 100 + 10, saturating at 1, then * 1.0 = 110
+	CHECK_EQ(CalculatePhysicalDamage(flat).rawDamage, 110u);
+	// both       -> (100 + 10) * 1.5 = 165
+	CHECK_EQ(CalculatePhysicalDamage(rate).rawDamage, 165u);
+}
+
+// ORDERING against the low-SP reduction. Legacy applies the rate to the range
+// long before the low-SP multiplier, which lives in the defender's
+// `PreStrikeProc` (GLChar.cpp:2488-2491) and runs on the rolled figure. These
+// therefore never interact arithmetically, and the test says so.
+MODERN_TEST(DamageRate_AndLowSpAreIndependent)
+{
+	PhysicalDamageInput in = MakeDamageRateInput(100, 100, 2.0f);
+	in.lowSP = true;
+
+	const DamageResult lowSp = CalculatePhysicalDamage(in);
+
+	// Rate doubles the range to 200; low-SP then scales the post-defence figure.
+	// The point is that the rate is already inside `rawDamage` when low-SP
+	// runs, not that the product is some particular number.
+	CHECK_EQ(lowSp.rawDamage, 200u);
+	CHECK_EQ(lowSp.lowSP, true);
+	CHECK(CalculatePhysicalDamage(in).damage < 200u);
 }

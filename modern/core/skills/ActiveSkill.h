@@ -176,6 +176,18 @@ namespace Modern::Skills
 		// legacy line uses.
 		float skillCrushingBonus = 0.0f;
 
+	// VERTICAL-024: the attacker's damage-rate multiplier, `m_fDamageRate`.
+	//
+	// Legacy rebuilds it every tick in UPDATE_DATA
+	// (`m_fDamageRate = 1.0f + m_sSUM_PASSIVE.m_fDAMAGE_RATE`, GLogixExPC.cpp:2219)
+	// and then every active `EMIMPACTA_DAMAGE_RATE` adds to it (:2340). It is
+	// read inside CALCDAMAGE on the damage range before the roll, so it is
+	// combat-boundary state rather than a derived statistic - which is why it is
+	// injected here instead of being computed from `Stats::DerivedStats`.
+	//
+	// The caller supplies `1.0f + passiveDamageRate + factDamageRate`.
+	float attackerDamageRate = 1.0f;
+
 		// ── VERTICAL-014: status application inputs ─────────────────────────
 		//
 		// `ActiveSkillResolver` does not own status state; it reports the
