@@ -46,7 +46,8 @@ formula provenance.
 | VERTICAL-014 Status effect foundation | [x] | `24b5f65` |
 | VERTICAL-015 Skill FACT / buff foundation | [x] | `d05cc2d` |
 | VERTICAL-016 FACT consumer investigation | [x] | `ef4daab` |
-| VERTICAL-017 FACT combat / cast integration | [x] | this commit |
+| VERTICAL-017 FACT combat / cast integration | [x] | `c73aba1` |
+| VERTICAL-018 FACT hit/avoid/damage investigation | [x] | this commit |
 
 ---
 
@@ -326,9 +327,37 @@ Two of the three previously-invisible hand-offs now work in a real cast; the thi
 (PA/SA/MA) needed the derived-stat snapshot to be refreshed when a power impact
 moves, which legacy gets for free by reading its accumulators live.
 
-**Next:** the remaining deferred FACT consumers, each needing its own subsystem
-(resource recovery, hit/avoid, damage range, world targeting). The number is
-deliberately left open rather than invented.
+**VERTICAL-018 — FACT hit / avoid / damage investigation.** Complete,
+documentation only. See
+`docs/reference/server/VERTICAL-018_FACT_HIT_AVOID_DAMAGE_INVESTIGATION.md`.
+
+`EMIMPACTA_HITRATE`, `EMIMPACTA_AVOIDRATE` and `EMIMPACTA_DAMAGE` are fully
+traced. All three are **PROVEN**, each with an existing modern owner, but nothing
+was implemented — the three share one aggregation switch and one
+`FactContribution`, and `DAMAGE` additionally requires positioning itself relative
+to the attack-power `VAR_PARAM` inside both damage calculators, which deserves
+its own commit.
+
+The finding that matters most is a **timing** one that the field names actively
+mislead about: `CHECKHIT` is reached for basic attacks and for active
+**physical/ranged** skills, but **magic skills never roll for a hit at all**.
+`GLChar::PreStrikeProc` sets `sTargetID.dwID = EMTARGET_NULL` for
+`emAPPLY == EMAPPLY_MAGIC` (`GLChar.cpp:2402-2405`), and the null target skips the
+check at `:2414`. A hit/avoid FACT therefore does nothing for magic.
+
+Two accessor chains were checked because they look like synonyms and are not:
+the hit formula uses `GETHIT()` for the attacker but `pActor->GetAvoid()` for the
+defender, which resolves `GLChar.h:503` -> `GETAVOID()` -> `m_nSUM_AVOID`. Both
+reach the accumulators.
+
+All three impacts are **additive** — the opposite of the MAX semantics of the
+reduction and reflection specs wired in VERTICAL-017. `DAMAGE` is a `VAR_PARAM`
+on both ends of the range, applied **before** item damage and before the attack
+power, and because `m_gdDAMAGE_SKILL` seeds both the skill range (`:1415`) and the
+basic-attack range (`:2997`), it raises damage on **both** paths.
+
+**Next:** implementing these three against the owners recorded in §7 of the
+investigation. The number is deliberately left open rather than invented.
 
 ---
 
