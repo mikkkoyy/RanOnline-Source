@@ -117,6 +117,18 @@ namespace Modern::Combat
 		uint16_t shootPower = 0;            // attacker's shoot power
 		AttackType attackType = AttackType::Melee;
 
+		// VERTICAL-019: the aggregated `EMIMPACTA_DAMAGE` contribution.
+		//
+		// Legacy: `m_gdDAMAGE_SKILL.VAR_PARAM(int(fADDON_VAR))`
+		// (GLogixExPC.cpp:2329) - a saturating add to BOTH ends of the damage
+		// range, floored at 1, applied BEFORE the weapon's item damage and
+		// BEFORE the attack power.
+		//
+		// It is applied here, at the range, rather than to the rolled figure,
+		// because that is what legacy does. One field serves physical, ranged and
+		// magic, matching legacy's single `m_gdDAMAGE_SKILL`.
+		int32_t factDamage = 0;
+
 		// Target stats
 		int32_t defense = 0;                // target's defense
 		int32_t defenseBody = 0;            // target's body defense

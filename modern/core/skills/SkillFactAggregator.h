@@ -84,6 +84,18 @@ namespace Modern::Skills
 		int32_t meleePower = 0;
 		int32_t shootPower = 0;
 		int32_t magicAttack = 0;
+
+		// VERTICAL-019: the hit/avoid accumulators and the range damage.
+		//
+		// `hit` is attacker-side (it is the caster's own hit), `avoid` is
+		// defender-side. Both feed the stat pipeline, exactly like the powers.
+		//
+		// `damage` is NOT a damage figure: legacy stores it as a VAR_PARAM on
+		// `m_gdDAMAGE_SKILL`, so it is carried as the signed integer the legacy
+		// `int()` produced and applied to both range ends at the combat boundary.
+		int32_t hit = 0;
+		int32_t avoid = 0;
+		int32_t damage = 0;
 	};
 
 	struct SkillFactAdvanceResult
@@ -155,14 +167,37 @@ namespace Modern::Skills
 					case SkillFactImpactType::Ma:
 						modifiers.magicAttack += static_cast<int32_t>(impact.value);
 						break;
+
+					// VERTICAL-019, the remaining three proven consumers.
+					//
+					// GLogixExPC.cpp:2327-2329
+					//   m_nSUM_HIT   += int(fADDON_VAR);
+					//   m_nSUM_AVOID += int(fADDON_VAR);
+					//   m_gdDAMAGE_SKILL.VAR_PARAM( int(fADDON_VAR) );
+					//
+					// All three are SUM. The first two are flat integers; DAMAGE
+					// is a range modifier, carried as an integer here and applied
+					// through `ApplyAttackPower` at the combat boundary, because
+					// legacy modifies BOTH ends of the range BEFORE the roll -
+					// not the rolled figure.
+					case SkillFactImpactType::HitRate:
+						modifiers.hit += static_cast<int32_t>(impact.value);
+						break;
+					case SkillFactImpactType::AvoidRate:
+						modifiers.avoid += static_cast<int32_t>(impact.value);
+						break;
+					case SkillFactImpactType::Damage:
+						modifiers.damage += static_cast<int32_t>(impact.value);
+						break;
+
 					default:
 						break;
 				}
 			}
 
 			// Every OTHER EMIMPACTA_* consumer at GLogixExPC.cpp:2327-2349 is
-			// still deferred: DAMAGE and DAMAGE_RATE feed the damage range,
-			// HITRATE/AVOIDRATE feed the hit calculator, DEFENSE and RESIST feed
+			// still deferred: DAMAGE_RATE feeds the damage pipeline, DEFENSE and
+			// RESIST feed
 			// subsystems whose modern boundary is undecided, and the VAR*/RATE*
 			// families feed a recovery loop and maximum recalculation this
 			// milestone has not proven. The six recovery/CP impacts have no case
@@ -276,6 +311,15 @@ namespace Modern::Skills
 						break;
 					case SkillFactImpactType::Ma:
 						modifiers.magicAttack += static_cast<int32_t>(impact.value);
+						break;
+					case SkillFactImpactType::HitRate:
+						modifiers.hit += static_cast<int32_t>(impact.value);
+						break;
+					case SkillFactImpactType::AvoidRate:
+						modifiers.avoid += static_cast<int32_t>(impact.value);
+						break;
+					case SkillFactImpactType::Damage:
+						modifiers.damage += static_cast<int32_t>(impact.value);
 						break;
 					default:
 						break;

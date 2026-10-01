@@ -63,12 +63,31 @@ namespace Modern::Combat
 		// legacy uses via `emAPPLY` for skills and `ISLONGRANGE_ARMS()` for
 		// basic attacks - a `bool isRanged` beside a melee path would have been
 		// a second way to say the same thing.
-		const int32_t attackPower = (input.attackType == AttackType::Ranged)
+const int32_t attackPower = (input.attackType == AttackType::Ranged)
 		                                ? static_cast<int32_t>(input.shootPower)
 		                                : static_cast<int32_t>(input.meleePower);
 
+		// VERTICAL-019: the `EMIMPACTA_DAMAGE` contribution, applied to the range
+		// BEFORE the attack power.
+		//
+		// Legacy order (GLogixExPC.cpp:2329 then :1451/:1463/:1584/:1594, and
+		// :2997-3002 for the basic-attack range):
+		//
+		//   m_gdDAMAGE  ->  + FACT DAMAGE (VAR_PARAM, both ends)
+		//               ->  + weapon item damage
+		//               ->  VAR_PARAM(attack power)
+		//
+		// The weapon's item damage is already folded into the incoming range by
+		// the stat pipeline, and plain addition commutes, so the only ordering
+		// that is observable is the one against the attack power - and that is
+		// preserved exactly. Both use the same saturating operation.
 		Stats::DamageRange damage = input.physicalDamage;
-		damage.low  = ApplyAttackPower(damage.low, attackPower);
+		if (input.factDamage != 0)
+		{
+			damage.low  = ApplyAttackPower(damage.low,  input.factDamage);
+			damage.high = ApplyAttackPower(damage.high, input.factDamage);
+		}
+		damage.low  = ApplyAttackPower(damage.low,  attackPower);
 		damage.high = ApplyAttackPower(damage.high, attackPower);
 
 		uint32_t nDAMAGE_NOW = static_cast<uint32_t>(

@@ -313,15 +313,28 @@ namespace Modern::Stats
 		int32_t shootPower = 0;
 		int32_t magicAttack = 0;
 
+		// VERTICAL-019: `m_nSUM_HIT` / `m_nSUM_AVOID` from the FACT impacts.
+		//
+		// GLogixExPC.cpp:2327-2328
+		//   m_nSUM_HIT   += int(fADDON_VAR);
+		//   m_nSUM_AVOID += int(fADDON_VAR);
+		//
+		// Both are SUM with `int()` truncation - the opposite rule to the damage
+		// reduction specs, which take a maximum. Attacker-side for hit,
+		// defender-side for avoid.
+		int32_t hit = 0;
+		int32_t avoid = 0;
+
 		constexpr bool operator==(const FactContribution& other) const noexcept
 		{
 			return meleePower == other.meleePower && shootPower == other.shootPower &&
-			       magicAttack == other.magicAttack;
+			       magicAttack == other.magicAttack && hit == other.hit && avoid == other.avoid;
 		}
 
 		constexpr bool IsEmpty() const noexcept
 		{
-			return meleePower == 0 && shootPower == 0 && magicAttack == 0;
+			return meleePower == 0 && shootPower == 0 && magicAttack == 0 &&
+			       hit == 0 && avoid == 0;
 		}
 	};
 

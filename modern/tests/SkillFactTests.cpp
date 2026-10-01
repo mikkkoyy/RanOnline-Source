@@ -886,3 +886,125 @@ MODERN_TEST(SkillFactConsumers_ImpactAndSpecCombineOnOneFact)
 	CHECK_EQ(modifiers.magicAttack, 20);
 	CHECK_EQ(modifiers.magicDamageReduce, 0.5f);
 }
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-019: hit / avoid / damage aggregation
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace
+{
+	SkillFact MakeHitAvoidDamageFact(const SkillId& id, float lifetime,
+	                                  SkillFactImpactType impact, float value)
+	{
+		SkillFact fact;
+		fact.skillId           = id;
+		fact.level             = 1;
+		fact.remainingLifetime = lifetime;
+		fact.basicType         = PassiveApplyType::VarHp;
+		fact.basicValue        = 1.0f;
+		fact.impacts[0].type    = impact;
+		fact.impacts[0].value   = value;
+		return fact;
+	}
+}
+
+// All three are SUM - the opposite of the MAX used by the reduction specs. A
+// reader carrying over "buffs take the strongest value" would get all three
+// wrong, so each direction is pinned.
+
+MODERN_TEST(SkillFactV019_NoFactMeansNoHitAvoidDamage)
+{
+	SkillFactContainer container;
+
+	const SkillFactModifiers modifiers = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(modifiers.hit, 0);
+	CHECK_EQ(modifiers.avoid, 0);
+	CHECK_EQ(modifiers.damage, 0);
+}
+
+MODERN_TEST(SkillFactV019_HitRateIsAdditive)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+	                                              SkillFactImpactType::HitRate, 5.0f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+	                                              SkillFactImpactType::HitRate, 7.0f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 3), 10.0f,
+	                                              SkillFactImpactType::HitRate, 3.0f));
+
+	// 5 + 7 + 3 = 15.
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.hit, 15);
+}
+
+MODERN_TEST(SkillFactV019_AvoidRateIsAdditive)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+	                                              SkillFactImpactType::AvoidRate, 9.0f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+	                                              SkillFactImpactType::AvoidRate, 4.0f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.avoid, 13);
+}
+
+MODERN_TEST(SkillFactV019_DamageIsAdditive)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+	                                              SkillFactImpactType::Damage, 10.0f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+	                                              SkillFactImpactType::Damage, 6.0f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.damage, 16);
+}
+
+// `int(fADDON_VAR)` truncates toward zero on every one of them.
+MODERN_TEST(SkillFactV019_TruncationIsTowardZero)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+	                                              SkillFactImpactType::Damage, 7.9f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+	                                              SkillFactImpactType::HitRate, -2.7f));
+
+	const SkillFactModifiers modifiers = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(modifiers.damage, 7);
+	CHECK_EQ(modifiers.hit, -2);
+}
+
+// Legacy allows a signed value: `int()` of a negative float is well defined and
+// nothing clamps it at the accumulator.
+MODERN_TEST(SkillFactV019_NegativeValuesAreCarried)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+	                                              SkillFactImpactType::Damage, -5.0f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+	                                              SkillFactImpactType::AvoidRate, -8.0f));
+
+	const SkillFactModifiers modifiers = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(modifiers.damage, -5);
+	CHECK_EQ(modifiers.avoid, -8);
+}
+
+MODERN_TEST(SkillFactV019_ExpiryRemovesAllThree)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 5.0f,
+	                                              SkillFactImpactType::HitRate, 11.0f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 5.0f,
+	                                              SkillFactImpactType::AvoidRate, 12.0f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 3), 5.0f,
+	                                              SkillFactImpactType::Damage, 13.0f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.hit, 11);
+
+	AdvanceSkillFacts(container, 5.0f);
+	const SkillFactModifiers after = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(after.hit, 0);
+	CHECK_EQ(after.avoid, 0);
+	CHECK_EQ(after.damage, 0);
+}

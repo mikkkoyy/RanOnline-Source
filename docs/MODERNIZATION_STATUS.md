@@ -47,7 +47,8 @@ formula provenance.
 | VERTICAL-015 Skill FACT / buff foundation | [x] | `d05cc2d` |
 | VERTICAL-016 FACT consumer investigation | [x] | `ef4daab` |
 | VERTICAL-017 FACT combat / cast integration | [x] | `c73aba1` |
-| VERTICAL-018 FACT hit/avoid/damage investigation | [x] | this commit |
+| VERTICAL-018 FACT hit/avoid/damage investigation | [x] | `fc02b2a` |
+| VERTICAL-019 FACT hit/avoid/damage integration | [x] | this commit |
 
 ---
 
@@ -356,8 +357,39 @@ on both ends of the range, applied **before** item damage and before the attack
 power, and because `m_gdDAMAGE_SKILL` seeds both the skill range (`:1415`) and the
 basic-attack range (`:2997`), it raises damage on **both** paths.
 
-**Next:** implementing these three against the owners recorded in §7 of the
-investigation. The number is deliberately left open rather than invented.
+**VERTICAL-019 — FACT hit / avoid / damage integration.** Complete. See
+`docs/reference/server/VERTICAL-019_FACT_HIT_AVOID_DAMAGE_INTEGRATION.md`.
+
+The three consumers VERTICAL-018 proved are now connected to the owners it
+identified. No new subsystem: `EMIMPACTA_HITRATE` and `EMIMPACTA_AVOIDRATE` join
+the same additive run as items, passives and codex in `StatCalculationInput`, and
+`EMIMPACTA_DAMAGE` rides the single existing `CombatInput` range that already
+feeds physical, ranged and magic.
+
+All three are **additive** — the opposite of the MAX semantics of the reduction
+specs wired in VERTICAL-017 — and each is truncated with `int()` exactly as
+legacy does.
+
+The substantive correction is the **magic hit-check**. `ServerCharacter::CastSkill`
+was consulting the hit result for every channel, so adding a hit/avoid buff
+would have let a magic skill miss. Legacy cannot do that: `PreStrikeProc` sets
+the target to `EMTARGET_NULL` for `emAPPLY == EMAPPLY_MAGIC`
+(`GLChar.cpp:2402-2405`) and the null target skips `CHECKHIT`. The gate now
+excludes magic, and it is proved behaviourally — a magic cast lands even with a
+hopeless hit against enormous avoid, while a physical cast under the same
+conditions misses.
+
+`HitCalculator.h` was verified and left untouched. Its `>=` comparison is
+correct and is deliberately **not** the same rule as the strict `<` used by
+status probability checks; conflating them would have been a silent regression.
+
+Damage ordering against the attack power is pinned at the `VAR_PARAM` floor,
+where the two orders are actually distinguishable: on range `{1,1}` with a `-1`
+FACT and `+10` power, FACT-first gives 11 and power-first would give 10.
+
+**Next:** the remaining deferred FACT consumers, each still needing its own
+subsystem (resource recovery, damage rate, world targeting). The number is
+deliberately left open rather than invented.
 
 ---
 

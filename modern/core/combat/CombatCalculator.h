@@ -38,6 +38,11 @@ namespace Modern::Combat
 		uint16_t attackerMeleePower = 0;
 		uint16_t attackerShootPower = 0;
 		uint16_t attackerMagicPower = 0;   // VERTICAL-013: m_wSUM_MA
+
+		// VERTICAL-019: the aggregated `EMIMPACTA_DAMAGE` contribution, applied to
+		// both ends of the damage range before the attack power. One field for
+		// every channel, matching legacy's single `m_gdDAMAGE_SKILL`.
+		int32_t factDamage = 0;
 		Stats::DamageRange attackerPhysicalDamage;
 		uint32_t attackerLevel = 1;
 		uint32_t attackerMaxHP = 0;
@@ -181,6 +186,7 @@ namespace Modern::Combat
 		{
 			MagicDamageInput magicInput;
 			magicInput.magicAttack     = input.attackerMagicPower;
+					magicInput.factDamage       = input.factDamage;
 			magicInput.skillRange      = input.attackerPhysicalDamage;
 			magicInput.skillBasicVar   = input.skillBasicVar;
 			magicInput.damageRate      = input.attackerDamageRate;
@@ -217,6 +223,7 @@ namespace Modern::Combat
 			damageInput.meleePower = input.attackerMeleePower;
 			damageInput.shootPower = input.attackerShootPower;
 			damageInput.attackType = input.attackType;
+				damageInput.factDamage = input.factDamage;
 			damageInput.defense = input.targetDefense;
 			damageInput.defenseBody = input.targetDefenseBody;
 			damageInput.defenseItem = input.targetDefenseItem;

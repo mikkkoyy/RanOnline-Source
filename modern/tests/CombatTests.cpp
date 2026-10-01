@@ -2144,3 +2144,123 @@ MODERN_TEST(Magic_ResistanceRunsBeforeTheRollAndPhysicalResistanceDoesNot)
 	CHECK_EQ(magicRawResisted, 75u);
 	CHECK_LT(magicRawResisted, magicRawNoResist);
 }
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-019: FACT damage applied to the range, before the attack power
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace
+{
+	// A physical input with a pinned range and no crit/crush, so the only
+	// things that can move `rawDamage` are the FACT value and the power.
+	PhysicalDamageInput MakeFactDamageInput(int32_t factDamage)
+	{
+		PhysicalDamageInput input = MakeBasicDamageInput();
+		input.physicalDamage = { 100, 120 };
+		input.meleePower     = 10;
+		input.shootPower     = 10;
+		input.factDamage     = factDamage;
+		input.damageRoll     = 0.0f;
+		input.criticalRoll   = 1.0f;
+		input.crushingRoll   = 1.0f;
+		input.defense        = 0;
+		input.defenseBody    = 0;
+		input.defenseItem    = 0;
+		return input;
+	}
+}
+
+// No FACT: only the attack power reaches the range.
+MODERN_TEST(FactDamage_NoContributionLeavesTheRangeAtPowerOnly)
+{
+	const DamageResult result = CalculatePhysicalDamage(MakeFactDamageInput(0));
+
+	// 100 + 10 = 110.
+	CHECK_EQ(result.rawDamage, 110u);
+}
+
+// The FACT value is added to the RANGE, so it shifts the low end as well - which
+// is what a "roll then add" implementation would get wrong.
+MODERN_TEST(FactDamage_AppliesToBothEndsNotTheRolledValue)
+{
+	const DamageResult result = CalculatePhysicalDamage(MakeFactDamageInput(25));
+
+	// {100,120} +25 -> {125,145}, then +10 power -> {135,155}. The minimum roll
+	// is 135: the FACT moved the RANGE, so both ends carry it.
+	CHECK_EQ(result.rawDamage, 135u);
+
+	// And the maximum end moved by the same amount.
+	PhysicalDamageInput top = MakeFactDamageInput(25);
+	top.damageRoll = 1.0f;
+	CHECK_EQ(CalculatePhysicalDamage(top).rawDamage, 155u);
+}
+
+// Ordering against the attack power. Legacy applies the FACT before the power
+// (GLogixExPC.cpp:2329 then :1451), and because both use the saturating add the
+// order is observable exactly at the VAR_PARAM floor of 1.
+MODERN_TEST(FactDamage_IsAppliedBeforeTheAttackPower)
+{
+	// Range {1,1}: the -1 FACT floors the end at 1 and it STAYS there, then the
+	// +10 power lifts it to 11. Applying the power first would give {11,11}
+	// then -1 -> {10,10}.
+	PhysicalDamageInput input = MakeFactDamageInput(-1);
+	input.physicalDamage = { 1, 1 };
+
+	const DamageResult result = CalculatePhysicalDamage(input);
+
+	CHECK_EQ(result.rawDamage, 11u);
+}
+
+MODERN_TEST(FactDamage_VarParamFloorIsOne)
+{
+	// A large negative floors the range end at 1 rather than wrapping.
+	PhysicalDamageInput input = MakeFactDamageInput(-500);
+
+	const DamageResult result = CalculatePhysicalDamage(input);
+
+	// 1 (floor) + 10 (power) = 11.
+	CHECK_EQ(result.rawDamage, 11u);
+}
+
+MODERN_TEST(FactDamage_SameValueAppliesToRangedAsToMelee)
+{
+	PhysicalDamageInput ranged = MakeFactDamageInput(25);
+	ranged.attackType = AttackType::Ranged;
+	ranged.shootPower = 40;
+
+	const DamageResult result = CalculatePhysicalDamage(ranged);
+
+	// {125,145} then +40 -> 165.
+	CHECK_EQ(result.rawDamage, 165u);
+}
+
+// One source, two channels: magic takes the same field and the same operation.
+MODERN_TEST(FactDamage_MagicPathUsesTheSameContribution)
+{
+	MagicDamageInput magic;
+	magic.magicAttack    = 10;
+	magic.skillRange     = { 100, 120 };
+	magic.factDamage     = 25;
+	magic.damageRoll     = 0.0f;
+	magic.criticalRoll   = 1.0f;
+	magic.crushingRoll   = 1.0f;
+	magic.reflectionRoll = 1.0f;
+	// Required: CriticalBaseRate divides by max HP, which is unguarded.
+	magic.attackerMaxHP     = 1000;
+	magic.attackerCurrentHP = 1000;
+
+	const DamageResult result = CalculateMagicDamage(magic);
+
+	// {125,145} then +10 magic attack -> 135.
+	CHECK_EQ(result.rawDamage, 135u);
+}
+
+MODERN_TEST(FactDamage_ExpiryIsJustTheValueGoingAway)
+{
+	// The same range with and without the contribution; nothing is restored,
+	// the input simply stops carrying the number.
+	const uint32_t withFact = CalculatePhysicalDamage(MakeFactDamageInput(25)).rawDamage;
+	const uint32_t without  = CalculatePhysicalDamage(MakeFactDamageInput(0)).rawDamage;
+
+	CHECK_GT(withFact, without);
+	CHECK_EQ(withFact - without, 25u);
+}

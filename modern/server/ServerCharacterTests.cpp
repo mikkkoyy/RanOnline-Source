@@ -3016,3 +3016,221 @@ MODERN_TEST(ServerSkillFactConsumers_ReductionReachesTheCombatInput)
 	const Skills::SkillFactModifiers seen = target.GetValue().GetFactModifiers();
 	CHECK_EQ(seen.psyDamageReduce, 0.9f);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-019: hit / avoid / damage through the real server path
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace
+{
+	Skills::SkillFact MakeImpactFact(uint16_t main, uint16_t sub, float lifetime,
+	                                 SkillFactImpactType impact, float value)
+	{
+		Skills::SkillFact fact;
+		fact.skillId           = SkillId{ main, sub };
+		fact.level             = 1;
+		fact.remainingLifetime = lifetime;
+		fact.basicType         = PassiveApplyType::VarHp;
+		fact.basicValue        = 1.0f;
+		fact.impacts[0].type    = impact;
+		fact.impacts[0].value   = value;
+		return fact;
+	}
+}
+
+// ── HITRATE / AVOIDRATE through DerivedStats ──────────────────────────
+
+MODERN_TEST(ServerFactV019_HitRateFactRaisesDerivedHit)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	const int32_t before = character.GetValue().BuildSnapshot().GetValue().derived.hit;
+
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(1, 1, 30.0f, SkillFactImpactType::HitRate, 12.0f)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().hit, 12);
+	CHECK_GT(character.GetValue().BuildSnapshot().GetValue().derived.hit, before);
+}
+
+MODERN_TEST(ServerFactV019_TwoHitRateFactsSum)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	const int32_t before = character.GetValue().BuildSnapshot().GetValue().derived.hit;
+
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(1, 1, 30.0f, SkillFactImpactType::HitRate, 5.0f)));
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(1, 2, 30.0f, SkillFactImpactType::HitRate, 7.0f)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	// SUM, not MAX - the opposite of the reduction specs.
+	CHECK_EQ(character.GetValue().GetFactModifiers().hit, 12);
+	CHECK_GT(character.GetValue().BuildSnapshot().GetValue().derived.hit, before);
+}
+
+MODERN_TEST(ServerFactV019_AvoidRateFactRaisesDerivedAvoid)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	const int32_t before = character.GetValue().BuildSnapshot().GetValue().derived.avoid;
+
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(1, 1, 30.0f, SkillFactImpactType::AvoidRate, 9.0f)));
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(1, 2, 30.0f, SkillFactImpactType::AvoidRate, 4.0f)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().avoid, 13);
+	CHECK_GT(character.GetValue().BuildSnapshot().GetValue().derived.avoid, before);
+}
+
+MODERN_TEST(ServerFactV019_ExpiredHitAndAvoidReturnToBaseline)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	const int32_t hitBefore   = character.GetValue().BuildSnapshot().GetValue().derived.hit;
+	const int32_t avoidBefore = character.GetValue().BuildSnapshot().GetValue().derived.avoid;
+
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(1, 1, 5.0f, SkillFactImpactType::HitRate, 12.0f)));
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(1, 2, 5.0f, SkillFactImpactType::AvoidRate, 13.0f)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+	CHECK_GT(character.GetValue().BuildSnapshot().GetValue().derived.hit, hitBefore);
+
+	// Outlive both, then tick again so the rebuilt snapshot is applied.
+	character.GetValue().AdvanceSkillFacts(5.0f);
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().hit, 0);
+	CHECK_EQ(character.GetValue().GetFactModifiers().avoid, 0);
+	CHECK_EQ(character.GetValue().BuildSnapshot().GetValue().derived.hit, hitBefore);
+	CHECK_EQ(character.GetValue().BuildSnapshot().GetValue().derived.avoid, avoidBefore);
+}
+
+// ── DAMAGE through the combat input ───────────────────────────────────
+
+MODERN_TEST(ServerFactV019_DamageFactRaisesSkillDamage)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeConfigurableFactSkill(2));
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+	CHECK(attacker.GetValue().LearnSkill(SkillId{ 1, 2 }).IsOk());
+	CHECK(attacker.GetValue().SetSkillLevel(SkillId{ 1, 2 }, 1).IsOk());
+
+	const uint32_t hpBefore = target.GetValue().BuildSnapshot().GetValue().hp.current;
+
+	const Skills::ActiveSkillResult plain =
+		attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue());
+	CHECK(plain.Succeeded());
+	const uint32_t plainDamage = plain.combat.damageResult.rawDamage;
+
+	// Now the attacker is wearing a damage buff.
+	CHECK(attacker.GetValue().ApplySkillFact(
+		MakeImpactFact(9, 9, 60.0f, SkillFactImpactType::Damage, 20.0f)));
+	attacker.GetValue().AdvanceSkillFacts(0.1f);
+	CHECK_EQ(attacker.GetValue().GetFactModifiers().damage, 20);
+
+	attacker.GetValue().AdvanceSkillCooldowns(600.0f);
+	const Skills::ActiveSkillResult buffed =
+		attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue());
+	CHECK(buffed.Succeeded());
+
+	CHECK_GT(buffed.combat.damageResult.rawDamage, plainDamage);
+	(void)hpBefore;
+}
+
+// ── Magic must not roll for a hit ────────────────────────────────────
+//
+// VERTICAL-018 proved that legacy skips CHECKHIT for EMAPPLY_MAGIC by setting
+// the target to EMTARGET_NULL (GLChar.cpp:2402-2405). A hit/avoid buff must
+// therefore be unable to make a magic skill miss. This exercises the real
+// resolution path, not a field.
+
+MODERN_TEST(ServerFactV019_MagicSkillIgnoresHitAndAvoidBuffs)
+{
+	InMemorySkillDefinitions provider;
+	SkillDefinition magic = MakeConfigurableFactSkill(2);
+	magic.apply = SkillApply::Magic;
+	magic.applyType = PassiveApplyType::Hp;
+	provider.Add(magic);
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+	CHECK(attacker.GetValue().LearnSkill(SkillId{ 1, 2 }).IsOk());
+	CHECK(attacker.GetValue().SetSkillLevel(SkillId{ 1, 2 }, 1).IsOk());
+
+	// Make the attacker's hit hopeless and the target's avoid enormous. If magic
+	// consulted the hit roll at all, this cast could not land.
+	CHECK(attacker.GetValue().ApplySkillFact(
+		MakeImpactFact(8, 1, 600.0f, SkillFactImpactType::HitRate, -9999.0f)));
+	CHECK(target.GetValue().ApplySkillFact(
+		MakeImpactFact(8, 2, 600.0f, SkillFactImpactType::AvoidRate, 9999.0f)));
+	attacker.GetValue().AdvanceSkillFacts(0.1f);
+	target.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_LT(attacker.GetValue().BuildSnapshot().GetValue().derived.hit,
+	         target.GetValue().BuildSnapshot().GetValue().derived.avoid);
+
+	const uint32_t hpBefore = target.GetValue().BuildSnapshot().GetValue().hp.current;
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue());
+
+	CHECK(result.Succeeded());
+	CHECK_EQ(result.attackTypeUsed, Combat::AttackType::Magic);
+	// The hit roll was not consulted: the target still took damage.
+	CHECK_LT(target.GetValue().BuildSnapshot().GetValue().hp.current, hpBefore);
+}
+
+// The complement: a physical skill DOES roll, so the same hopeless hit/avoid
+// setup stops it landing. Without this, the magic case above would prove
+// nothing - it would also pass if the buff simply never worked.
+MODERN_TEST(ServerFactV019_PhysicalSkillStillRollsForHit)
+{
+	InMemorySkillDefinitions provider;
+	SkillDefinition physical = MakeConfigurableFactSkill(2);
+	physical.apply = SkillApply::PhysicalMelee;
+	physical.applyType = PassiveApplyType::Hp;
+	provider.Add(physical);
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+	CHECK(attacker.GetValue().LearnSkill(SkillId{ 1, 2 }).IsOk());
+	CHECK(attacker.GetValue().SetSkillLevel(SkillId{ 1, 2 }, 1).IsOk());
+
+	CHECK(target.GetValue().ApplySkillFact(
+		MakeImpactFact(8, 2, 600.0f, SkillFactImpactType::AvoidRate, 9999.0f)));
+	target.GetValue().AdvanceSkillFacts(0.1f);
+
+	const uint32_t hpBefore = target.GetValue().BuildSnapshot().GetValue().hp.current;
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue());
+
+	CHECK(result.Succeeded());
+	// It missed: the target is untouched, so the avoid buff demonstrably works
+	// and the physical channel demonstrably rolls.
+	CHECK_EQ(target.GetValue().BuildSnapshot().GetValue().hp.current, hpBefore);
+}

@@ -192,6 +192,11 @@ Status ServerCharacter::Recalculate()
 		input.facts.shootPower = m_factModifiers.shootPower;
 		input.facts.magicAttack = m_factModifiers.magicAttack;
 
+		// VERTICAL-019: hit and avoid take the same additive path, in the same
+		// run as items, passives and codex.
+		input.facts.hit   = m_factModifiers.hit;
+		input.facts.avoid = m_factModifiers.avoid;
+
 		const Result<Stats::DerivedStats> result = Stats::Calculate(input);
 		if (result.IsError())
 		{
@@ -780,6 +785,10 @@ namespace Modern::Server
 			target.m_factModifiers.psyDamageReflectionRate > input.targetDamageReflectionRate
 				? target.m_factModifiers.psyDamageReflectionRate
 				: input.targetDamageReflectionRate;
+		// VERTICAL-019: the attacker's `EMIMPACTA_DAMAGE` contribution, applied to
+		// the damage range before the attack power (GLogixExPC.cpp:2329).
+		input.factDamage = m_factModifiers.damage;
+
 		// VERTICAL-010: the SP this attack costs, and the attacker's pool.
 		//
 		// Legacy: GLogixExPC.cpp:3492-3497 (BEGIN_ATTACK)
@@ -960,6 +969,9 @@ namespace Modern::Server
 		// blows land; that is DEFERRED rather than invented.
 		input.targetDisorderMask = target.m_factModifiers.statusImmunityMask;
 
+		// VERTICAL-019: the skill damage range contribution.
+		input.factDamage = m_factModifiers.damage;
+
 		input.hitRoll        = DeterministicRandom();
 		input.damageRoll     = DeterministicRandom();
 		input.criticalRoll   = DeterministicRandom();
@@ -1037,7 +1049,21 @@ namespace Modern::Server
 		(void) targetPool.SyncFrom(target.m_derived);
 		(void) targetPool.SetCurrent(Resources::ResourceKind::Hp, target.m_currentHp);
 
-		if (result.combat.IsHit())
+		// VERTICAL-019, magic hit-check exclusion.
+		//
+		// Legacy does not roll for a hit on a magic skill at all:
+		// `GLChar::PreStrikeProc` sets `sTargetID.dwID = EMTARGET_NULL` when
+		// `emAPPLY == EMAPPLY_MAGIC` (GLChar.cpp:2402-2405), and the null target
+		// skips `CHECKHIT` at :2414, leaving `bhit` true. Basic attacks and
+		// physical/ranged skills do roll (:2378, :2400).
+		//
+		// Without this gate a hit/avoid FACT could make a magic skill miss,
+		// which RAN cannot do. The hit result is still computed - it is simply
+		// not consulted for the magic channel, exactly as legacy leaves it.
+		const bool channelRollsForHit =
+			result.attackTypeUsed != Combat::AttackType::Magic;
+
+		if (!channelRollsForHit || result.combat.IsHit())
 		{
 			(void) targetPool.ApplyDamage(result.combat.damageResult.damage);
 			target.m_currentHp = targetPool.GetCurrent(Resources::ResourceKind::Hp);
@@ -1168,13 +1194,19 @@ namespace Modern::Server
 		// Recalculate() re-reads m_factModifiers, so it has to run only after the
 		// snapshot has been updated - which is why this is not folded into the
 		// assignment above.
+		// VERTICAL-019: hit and avoid are folded into DerivedStats the same way the
+	// powers are, so they belong in the same watch list.
 		if (m_factStatsPowersApplied.meleePower  != m_factModifiers.meleePower ||
 		    m_factStatsPowersApplied.shootPower  != m_factModifiers.shootPower ||
-		    m_factStatsPowersApplied.magicAttack != m_factModifiers.magicAttack)
+		    m_factStatsPowersApplied.magicAttack != m_factModifiers.magicAttack ||
+		    m_factStatsPowersApplied.hit         != m_factModifiers.hit ||
+		    m_factStatsPowersApplied.avoid       != m_factModifiers.avoid)
 		{
 			m_factStatsPowersApplied.meleePower  = m_factModifiers.meleePower;
 			m_factStatsPowersApplied.shootPower  = m_factModifiers.shootPower;
 			m_factStatsPowersApplied.magicAttack = m_factModifiers.magicAttack;
+			m_factStatsPowersApplied.hit         = m_factModifiers.hit;
+			m_factStatsPowersApplied.avoid       = m_factModifiers.avoid;
 			(void) Recalculate();
 		}
 	}

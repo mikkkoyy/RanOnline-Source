@@ -375,6 +375,10 @@ namespace Modern::Skills
 			combat.attackerMeleePower     = input.attacker.meleePower;
 			combat.attackerShootPower     = input.attacker.shootPower;
 			combat.attackerPhysicalDamage = range;
+			// VERTICAL-019: the FACT range contribution reaches every channel
+			// through the single existing combat input, exactly as legacy's one
+			// `m_gdDAMAGE_SKILL` served physical, ranged and magic.
+			combat.factDamage = input.factDamage;
 			combat.attackerLevel          = input.attackerLevel;
 			combat.attackerMaxHP          = input.attacker.maxHp;
 			combat.attackerCurrentHP      = input.currentHp;

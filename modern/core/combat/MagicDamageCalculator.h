@@ -51,6 +51,11 @@ namespace Modern::Combat
 		// NO weapon item damage added (contrast physical at :1448/:1460).
 		Stats::DamageRange skillRange{};
 
+		// VERTICAL-019: the aggregated `EMIMPACTA_DAMAGE` contribution. The same
+		// field and the same operation as the physical path - legacy seeds one
+		// `m_gdDAMAGE_SKILL` for both.
+		int32_t factDamage = 0;
+
 		// ── Target ─────────────────────────────────────────────────────────
 		int32_t targetLevel = 1;
 		int32_t resistElement = 0;          // already clamped by the caller
@@ -88,6 +93,21 @@ namespace Modern::Combat
 		// gdDamage.VAR_PARAM(m_wSUM_MA) - same operation as PA and SA, and
 		// magic does not add the weapon's item damage the way physical does.
 		Stats::DamageRange damage = input.skillRange;
+
+		// VERTICAL-019: the `EMIMPACTA_DAMAGE` contribution, on the range and
+		// BEFORE the magic attack power.
+		//
+		// Legacy magic takes the same `m_gdDAMAGE_SKILL` seed as physical
+		// (GLogixExPC.cpp:1415) and then applies `VAR_PARAM(m_wSUM_MA)`
+		// (:1477), so the ordering is identical to the physical path and the same
+		// single field serves both. One source, two channels - not a separate
+		// magic FACT value.
+		if (input.factDamage != 0)
+		{
+			damage.low  = ApplyAttackPower(damage.low,  input.factDamage);
+			damage.high = ApplyAttackPower(damage.high, input.factDamage);
+		}
+
 		damage.low  = ApplyAttackPower(damage.low,  static_cast<int32_t>(input.magicAttack));
 		damage.high = ApplyAttackPower(damage.high, static_cast<int32_t>(input.magicAttack));
 

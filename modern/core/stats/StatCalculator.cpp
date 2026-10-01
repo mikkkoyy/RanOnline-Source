@@ -349,7 +349,11 @@ meleePower  = VariationClamped(pa, WrapAdd(input.items.meleePower,
 			static_cast<float>(stats.totalStats.dex) * input.classConstants.hitPerDex +
 			static_cast<float>(input.items.hit) +
 			static_cast<float>(input.passives.hit) +
-			static_cast<float>(input.codex.hit));
+			static_cast<float>(input.codex.hit) +
+			// VERTICAL-019: `m_nSUM_HIT = m_nHIT` then `+= int(fADDON_VAR)`
+			// (GLogixExPC.cpp:2198, :2327). Additive with the permanent sources,
+			// and inside the percentage scaling for the same reason as `avoid`.
+			static_cast<float>(input.facts.hit));
 		stats.hit = ToIntTruncating(
 			static_cast<float>(hitRaw) * (100.0f + input.items.hitRatePercent) * 0.01f);
 
@@ -357,7 +361,12 @@ meleePower  = VariationClamped(pa, WrapAdd(input.items.meleePower,
 			static_cast<float>(stats.totalStats.dex) * input.classConstants.avoidPerDex +
 			static_cast<float>(input.items.avoid) +
 			static_cast<float>(input.passives.avoid) +
-			static_cast<float>(input.codex.avoid));
+			static_cast<float>(input.codex.avoid) +
+			// VERTICAL-019: the timed FACT contribution, in the same additive run
+			// as the permanent sources. Legacy `m_nSUM_AVOID = m_nAVOID` then
+			// `+= int(fADDON_VAR)` (GLogixExPC.cpp:2199, :2328), so it belongs
+			// inside the sum and before the percentage scaling.
+			static_cast<float>(input.facts.avoid));
 		stats.avoid = ToIntTruncating(
 			static_cast<float>(avoidRaw) * (100.0f + input.items.avoidRatePercent) * 0.01f);
 

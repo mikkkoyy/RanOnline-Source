@@ -224,6 +224,14 @@ namespace Modern::Skills
 		float factMagicDamageReflection = 0.0f;
 		float factMagicDamageReflectionRate = 0.0f;
 
+		// VERTICAL-019: the aggregated `EMIMPACTA_DAMAGE` contribution, applied to
+		// both ends of the skill damage range before the attack power.
+		//
+		// Legacy adds it to `m_gdDAMAGE_SKILL` (GLogixExPC.cpp:2329), which is
+		// the very range this path seeds its own magnitude into, so it belongs
+		// beside that value rather than inside the calculator.
+		int32_t factDamage = 0;
+
 		// `GLCONST_CHAR::wBASIC_DIS_SP`, from CombatConstants. Named here so a
 		// caller does not have to know that a basic skill's cost has a floor
 		// unrelated to `wUSE_SP`.
