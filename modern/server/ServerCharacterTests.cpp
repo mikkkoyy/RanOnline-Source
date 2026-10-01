@@ -2500,3 +2500,162 @@ MODERN_TEST(ServerStatus_StatusAndCooldownsAreIndependent)
 	CHECK(character.GetValue().GetStatus().Has(StatusEffect::StatusEffectType::Curse));
 	CHECK_EQ(character.GetValue().GetStatus().At(3)->remainingLifetime, 6.0f);
 }
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-015: authoritative skill FACTs on the server
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace
+{
+	SkillDefinition MakeServerFactSkill(uint16_t index)
+	{
+		SkillDefinition def = MakeActiveDamageSkill(index);
+		def.name       = "Aegis" + std::to_string(index);
+		def.createsFact = true;
+		for (uint8_t lvl = 1; lvl <= def.maxLevel; ++lvl)
+		{
+			def.levelData[lvl].life = 10.0f;
+		}
+		def.factSpecs[0].type = SkillFactSpecType::MoveVelo;
+		def.factSpecs[1].type = SkillFactSpecType::ProhibitSkill;
+		return def;
+	}
+
+	Skills::SkillFact MakeServerFact(uint16_t main, uint16_t sub, float lifetime)
+	{
+		Skills::SkillFact fact;
+		fact.skillId                  = SkillId{ main, sub };
+		fact.level                    = 1;
+		fact.remainingLifetime        = lifetime;
+		fact.basicType                = PassiveApplyType::VarHp;
+		fact.basicValue               = 1.0f;
+		fact.specs[0].type             = SkillFactSpecType::MoveVelo;
+		fact.specs[0].var1             = 0.2f;
+		return fact;
+	}
+}
+
+MODERN_TEST(ServerSkillFact_StartsEmpty)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+
+	CHECK(character.IsOk());
+	CHECK_EQ(character.GetValue().GetSkillFacts().ActiveCount(), 0u);
+	// The modifier snapshot is the baseline before any advance.
+	CHECK_EQ(character.GetValue().GetFactModifiers().moveVelocity, 0.0f);
+}
+
+MODERN_TEST(ServerSkillFact_ApplyStoresOnTheTarget)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeServerFactSkill(2));
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+	CHECK(attacker.GetValue().LearnSkill(SkillId{ 1, 2 }).IsOk());
+	CHECK(attacker.GetValue().SetSkillLevel(SkillId{ 1, 2 }, 1).IsOk());
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue());
+
+	CHECK(result.Succeeded());
+	CHECK(result.hasSkillFact);
+
+	// The target owns the pool; the caster has none.
+	CHECK_EQ(target.GetValue().GetSkillFacts().ActiveCount(), 1u);
+	CHECK_EQ(attacker.GetValue().GetSkillFacts().ActiveCount(), 0u);
+	CHECK(target.GetValue().GetSkillFacts().Has(SkillId{ 1, 2 }));
+}
+
+// The full lifecycle the milestone cares about: apply -> tick -> expire -> baseline.
+MODERN_TEST(ServerSkillFact_ApplyTickExpireRestoresBaseline)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	CHECK(character.GetValue().ApplySkillFact(MakeServerFact(1, 1, 10.0f)));
+
+	character.GetValue().AdvanceSkillFacts(2.0f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().moveVelocity, 0.2f);
+	CHECK(character.GetValue().GetSkillFacts().Has(SkillId{ 1, 1 }));
+
+character.GetValue().AdvanceSkillFacts(20.0f);
+	CHECK_EQ(character.GetValue().GetSkillFacts().ActiveCount(), 0u);
+
+	// The expiring tick still carried the modifier - GLogixExPC.cpp:2295 runs
+	// the spec switches after DISABLESKEFF, so the contribution lands one tick
+	// late. The baseline is the NEXT pass; there is no explicit restore anywhere.
+	CHECK_EQ(character.GetValue().GetFactModifiers().moveVelocity, 0.2f);
+
+	character.GetValue().AdvanceSkillFacts(1.0f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().moveVelocity, 0.0f);
+}
+
+// Prohibit-skill is server-authoritative state that the resolver already reads.
+MODERN_TEST(ServerSkillFact_ProhibitSkillAggregatesAndExpires)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	Skills::SkillFact fact = MakeServerFact(1, 1, 5.0f);
+	fact.specs[0].type = SkillFactSpecType::ProhibitSkill;
+	fact.specs[1].type = SkillFactSpecType::MoveVelo;
+	CHECK(character.GetValue().ApplySkillFact(fact));
+
+	character.GetValue().AdvanceSkillFacts(1.0f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().prohibitSkill, true);
+
+	character.GetValue().AdvanceSkillFacts(5.0f);
+	character.GetValue().AdvanceSkillFacts(1.0f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().prohibitSkill, false);
+}
+
+// The immunity mask crosses into the status resolver as a value, not a reference.
+MODERN_TEST(ServerSkillFact_ImmunityMaskReachesTheStatusPath)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	Skills::SkillFact fact = MakeServerFact(1, 1, 10.0f);
+	fact.specs[0].type     = SkillFactSpecType::NonBlow;
+	fact.specs[0].specFlag = 0x02u;   // DIS_STUN
+	CHECK(character.GetValue().ApplySkillFact(fact));
+
+	character.GetValue().AdvanceSkillFacts(1.0f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().statusImmunityMask, 0x02u);
+
+	StatusEffect::StatusApplicationInput input;
+	input.type               = StatusEffect::StatusEffectType::Stun;
+	input.actRate            = 100.0f;
+	input.attackerLevel      = 10;
+	input.targetLevel        = 10;
+	input.randomRoll         = 0.0f;
+	input.targetDisorderMask = character.GetValue().GetFactModifiers().statusImmunityMask;
+
+	const StatusEffect::StatusApplicationResult refused =
+		StatusEffect::ResolveStatusApplication(input);
+	CHECK(!refused.Applied());
+	CHECK_EQ(refused.refusal, StatusEffect::StatusRefusal::TargetImmune);
+}
+
+// Fact lifetime is independent of cooldowns, like status lifetime.
+MODERN_TEST(ServerSkillFact_FactAndCooldownTicksAreIndependent)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+	CHECK(character.GetValue().ApplySkillFact(MakeServerFact(1, 1, 20.0f)));
+
+	character.GetValue().AdvanceSkillCooldowns(1.0f);
+	CHECK_EQ(character.GetValue().GetSkillFacts().ActiveCount(), 1u);
+
+	// Only the FACT advance moves the fact.
+	character.GetValue().AdvanceSkillCooldowns(50.0f);
+	CHECK_EQ(character.GetValue().GetSkillFacts().ActiveCount(), 1u);
+
+	character.GetValue().AdvanceSkillFacts(25.0f);
+	CHECK_EQ(character.GetValue().GetSkillFacts().ActiveCount(), 0u);
+}

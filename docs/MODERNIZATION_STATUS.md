@@ -17,9 +17,9 @@ formula provenance.
 | ---- | ----- |
 | Legacy import | complete |
 | Core foundation | complete |
-| Vertical gameplay slices 001-014 | complete |
+| Vertical gameplay slices 001-015 | complete |
 | Build verification (BUILD-001) | complete |
-| Buff / FACT system, world targeting | not started |
+| Impact/addon modifiers, world targeting | not started |
 
 ---
 
@@ -43,7 +43,8 @@ formula provenance.
 | VERTICAL-011 Active skill combat | [x] | `df9bf4f` |
 | VERTICAL-012 Ranged physical combat | [x] | `7b86e27` |
 | VERTICAL-013 Magic / elemental combat | [x] | `27d0ade` |
-| VERTICAL-014 Status effect foundation | [x] | this commit |
+| VERTICAL-014 Status effect foundation | [x] | `24b5f65` |
+| VERTICAL-015 Skill FACT / buff foundation | [x] | this commit |
 
 ---
 
@@ -210,7 +211,46 @@ Damage-over-time, movement/attack-speed effects, the `SSKILLFACT` buff system
 `EMFOR_MP`/`EMFOR_SP` and networking are all deferred, with reasons in §12 and §14
 of the investigation.
 
-**Next:** the buff/FACT system and world targeting. The number is deliberately
+**VERTICAL-015 — Skill FACT / buff foundation.** Complete. See
+`docs/reference/client/VERTICAL-015_SKILL_FACT_FOUNDATION.md`.
+
+FACT is RAN's other persistent-effect mechanism and is deliberately kept
+separate from VERTICAL-014's status effects: different storage, lifetime, slot
+rules and consumers. It lives in `modern/core/skills/SkillFact*.h` and owns a
+**14-slot** pool.
+
+The central finding is that slot selection (`GLChar::SELECT_SKILLSLOT`,
+`GLChar.cpp:6377-6408`) is a three-rule cascade, and its third rule is the one
+that is easy to miss: with a **full** pool, RAN evicts the buff with the
+**smallest remaining lifetime**. It does not refuse the new buff and does not
+prefer the strongest. Rule 2 (first empty slot) short-circuits inside the same
+loop, so a pool with any free slot never evicts at all.
+
+Three aggregation rules are genuinely counterintuitive and each has a test:
+
+- `EMSPECA_ATTACKVELO` **subtracts** — a positive value makes the attacker
+  *slower*, and RAN enters `-0.1` to get 10% faster.
+- Damage reduction takes a **maximum**, not a sum. Two 0.2 buffs give 0.2.
+- `EMSPECA_NONBLOW` **assigns** the immunity mask rather than OR-ing it, so two
+  immunity buffs do not combine; the last one aggregated wins.
+
+A legacy off-by-one is reproduced: ticking and aggregation are one pass, and
+`DISABLESKEFF` only nulls the skill id, so **a fact still contributes on the tick
+it expires**. Expiry needs no restore step at all — legacy rebuilds every
+accumulator from zero each call.
+
+This milestone also fixed a latent trap in a shared type: `SkillId{}` is a
+*valid* id (only `0xFFFF` is not), so a default-constructed FACT looked occupied
+and an empty pool reported fourteen active facts. `SkillId::Invalid()` now
+expresses legacy's `SNATIVEID(false)` explicitly.
+
+Impacts are stored faithfully but **not aggregated**: every `EMIMPACTA_*` feeds a
+different subsystem (derived stats, hit calculation, resource pools), so wiring
+them here would duplicate an existing authoritative calculation. Deferred with
+reasons in §9 and §12, along with `TAR_BUFF`, world targeting, networking and
+`prohibitSkill` plumbing into `CastSkill`.
+
+**Next:** impact/addon modifiers and world targeting. The number is deliberately
 left open rather than invented.
 
 ---

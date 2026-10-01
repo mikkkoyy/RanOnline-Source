@@ -8,6 +8,7 @@
 
 #include "combat/CombatCalculator.h"
 #include "combat/CombatConstants.h"
+#include "skills/SkillFactTypes.h"
 
 #include <cmath>
 
@@ -474,6 +475,62 @@ namespace Modern::Skills
 
 			result.statusApplication = StatusEffect::ResolveStatusApplication(statusInput);
 			result.hasStatusApplication = true;
+		}
+
+		// VERTICAL-015: build the FACT record this cast produces.
+		//
+		// Mirrors `GLChar::RECEIVE_SKILLFACT` (GLChar.cpp:6519-6613): copy the
+		// basic type/value, every impact and every spec at this level, then
+		// stamp the identity, the level and the lifetime. The `bHOLD` gate is
+		// re-evaluated here so a definition claiming a FACT but carrying nothing
+		// produces no record.
+		if (definition.createsFact)
+		{
+			SkillFact fact;
+			fact.skillId           = definition.id;
+			fact.level             = input.level;
+			fact.remainingLifetime = level.life;   // sSKILL_DATA.fLIFE
+			fact.basicType         = definition.applyType;
+			fact.basicValue        = level.basicVar;
+
+			for (uint8_t i = 0; i < kSkillFactMaxImpacts && i < kMaxSkillImpacts; ++i)
+			{
+				const SkillFactImpactEntry& src = definition.factImpacts[i];
+				if (src.type == SkillFactImpactType::None)
+				{
+					continue;
+				}
+				fact.impacts[i].type  = src.type;
+				fact.impacts[i].value = src.values[input.level];
+			}
+
+			for (uint8_t i = 0; i < kSkillFactMaxSpecs && i < kMaxSkillSpecs; ++i)
+			{
+				const SkillFactSpecEntry& src = definition.factSpecs[i];
+				if (src.type == SkillFactSpecType::None)
+				{
+					continue;
+				}
+				fact.specs[i].type     = src.type;
+				fact.specs[i].var1     = src.var1[input.level];
+				fact.specs[i].var2     = src.var2[input.level];
+				fact.specs[i].specFlag = src.specFlag[input.level];
+				fact.specs[i].nativeId = src.nativeId[input.level];
+			}
+
+			// Legacy stamps the caster from the network message
+			// (`_wCasterCrow`, `_dwCasterID`, GLChar.cpp:6516-6517). There is no
+			// transport here, so the caster comes in on the input and defaults to
+			// unset rather than being invented.
+			fact.casterCrow = input.factCasterCrow;
+			fact.casterId   = input.factCasterId;
+
+			// The `bHOLD` gate.
+			if (FactHoldsAnything(fact))
+			{
+				result.skillFact    = fact;
+				result.hasSkillFact = true;
+			}
 		}
 
 			return result;

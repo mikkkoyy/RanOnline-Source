@@ -17,6 +17,8 @@
 #include "combat/CombatConstants.h"
 #include "skills/ActiveSkill.h"
 #include "skills/SkillDefinition.h"
+#include "skills/SkillFactAggregator.h"
+#include "status/StatusEffectResolver.h"
 
 #include <cmath>
 #include <limits>
@@ -1233,4 +1235,179 @@ MODERN_TEST(StatusSkill_ResolverHoldsNoStatusState)
 	// Both report the same fresh duration - no accumulation, no carry-over.
 	CHECK_EQ(first.statusApplication.state.remainingLifetime,
 	         second.statusApplication.state.remainingLifetime);
+}
+// ── VERTICAL-015: FACT creation from the active-skill path ────────────
+//
+// The resolver produces the record; it never stores it. These cases pin that
+// the payload is built faithfully and that an inert skill produces nothing.
+
+namespace
+{
+	SkillDefinition MakeFactSkill()
+	{
+		SkillDefinition def = MakeDamageSkill();
+		def.name       = "Aegis";
+		def.createsFact = true;
+		for (uint8_t lvl = 1; lvl <= def.maxLevel; ++lvl)
+		{
+			def.levelData[lvl].life = 20.0f + static_cast<float>(lvl);
+		}
+		def.factSpecs[0].type = SkillFactSpecType::NonBlow;
+		for (uint8_t lvl = 1; lvl <= def.maxLevel; ++lvl)
+		{
+			def.factSpecs[0].var1[lvl]     = 0.0f;
+			def.factSpecs[0].var2[lvl]     = 0.5f;
+			def.factSpecs[0].specFlag[lvl] = 0x40u;   // DIS_POISON
+			def.factSpecs[0].nativeId[lvl] = 0x1234u;
+		}
+		def.factImpacts[0].type = SkillFactImpactType::Pa;
+		for (uint8_t lvl = 1; lvl <= def.maxLevel; ++lvl)
+		{
+			def.factImpacts[0].values[lvl] = 7.5f;
+		}
+		return def;
+	}
+}
+
+MODERN_TEST(SkillFactSkill_ProducesAFactRecord)
+{
+	const SkillDefinition definition = MakeFactSkill();
+
+	ActiveSkillInput input = MakeInput(definition, 2);
+	input.factCasterCrow = 5;
+	input.factCasterId   = 777;
+
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(input);
+
+	CHECK(result.Succeeded());
+	CHECK_EQ(result.hasSkillFact, true);
+
+	// Identity, level and lifetime come from the definition and the cast level.
+	CHECK_EQ(result.skillFact.skillId, definition.id);
+	CHECK_EQ(result.skillFact.level, static_cast<uint16_t>(2));
+	CHECK_EQ(result.skillFact.remainingLifetime, 22.0f);
+
+	// The spec is carried through all four legacy fields.
+	CHECK_EQ(result.skillFact.specs[0].type, SkillFactSpecType::NonBlow);
+	CHECK_EQ(result.skillFact.specs[0].var2, 0.5f);
+	CHECK_EQ(result.skillFact.specs[0].specFlag, 0x40u);
+	CHECK_EQ(result.skillFact.specs[0].nativeId, 0x1234u);
+
+	// And the impact.
+	CHECK_EQ(result.skillFact.impacts[0].type, SkillFactImpactType::Pa);
+	CHECK_EQ(result.skillFact.impacts[0].value, 7.5f);
+
+	// Caster identity is taken from the input, never invented.
+	CHECK_EQ(result.skillFact.casterCrow, static_cast<uint16_t>(5));
+	CHECK_EQ(result.skillFact.casterId, 777u);
+}
+
+// A skill that does not declare itself a FACT producer produces no record.
+MODERN_TEST(SkillFactSkill_NonFactSkillReportsNoFact)
+{
+	const SkillDefinition definition = MakeDamageSkill();   // createsFact stays false
+
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(MakeInput(definition, 1));
+
+	CHECK(result.Succeeded());
+	CHECK_EQ(result.hasSkillFact, false);
+}
+
+// The `bHOLD` gate: claiming a FACT while carrying nothing stores nothing.
+//
+// The skill still has to be a legal damaging skill - `basicVar` must stay
+// negative or the resolver refuses the cast before any FACT is considered
+// (ActiveSkill.cpp:257). So the emptiness comes from the payload: `Hp` is not a
+// whitelisted FACT basic type (GLChar.cpp:6521-6538), and there are no impacts
+// or specs.
+MODERN_TEST(SkillFactSkill_ClaimedButEmptyFactIsSuppressed)
+{
+	SkillDefinition definition = MakeDamageSkill();
+	definition.createsFact = true;
+	definition.applyType  = PassiveApplyType::Hp;   // not whitelisted
+	// Negative, so the cast itself is legal.
+	CHECK(definition.levelData[1].basicVar < 0.0f);
+	// No factImpacts, no factSpecs.
+
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(MakeInput(definition, 1));
+
+	CHECK(result.Succeeded());
+	CHECK_EQ(result.hasSkillFact, false);
+}
+
+// The resolver holds no FACT state: two casts produce two identical records and
+// nothing accumulates.
+MODERN_TEST(SkillFactSkill_ResolverHoldsNoFactState)
+{
+	const SkillDefinition definition = MakeFactSkill();
+
+	const ActiveSkillResult first  = ActiveSkillResolver::Resolve(MakeInput(definition, 1));
+	const ActiveSkillResult second = ActiveSkillResolver::Resolve(MakeInput(definition, 1));
+
+	CHECK(first.hasSkillFact);
+	CHECK(second.hasSkillFact);
+	CHECK_EQ(first.skillFact.remainingLifetime, second.skillFact.remainingLifetime);
+}
+
+// ── The V014 hand-off: FACT immunity feeds the status resolver ─────────
+//
+// FACT aggregation produces the immunity mask, and StatusEffectResolver
+// consumes it. The domains stay separate: the mask crosses as a value.
+
+MODERN_TEST(SkillFact_NonBlowMaskRefusesTheMatchingStatusOnly)
+{
+	Skills::SkillFactContainer container;
+
+	Skills::SkillFact immune;
+	immune.skillId                  = SkillId{ 5, 1 };
+	immune.remainingLifetime        = 30.0f;
+	immune.basicType                = PassiveApplyType::VarHp;
+	immune.basicValue               = 1.0f;
+	immune.specs[0].type            = SkillFactSpecType::NonBlow;
+	immune.specs[0].specFlag        = static_cast<uint32_t>(StatusEffect::DisorderPoison);
+	(void) container.Apply(immune);
+
+	const Skills::SkillFactModifiers modifiers =
+		Skills::AdvanceSkillFacts(container, 1.0f).modifiers;
+	CHECK_EQ(modifiers.statusImmunityMask, static_cast<uint32_t>(StatusEffect::DisorderPoison));
+
+	// Poison is refused...
+	StatusEffect::StatusApplicationInput poison;
+	poison.type                = StatusEffect::StatusEffectType::Poison;
+	poison.actRate             = 100.0f;
+	poison.attackerLevel       = 10;
+	poison.targetLevel         = 10;
+	poison.randomRoll          = 0.0f;
+	poison.targetDisorderMask  = modifiers.statusImmunityMask;
+
+	const StatusEffect::StatusApplicationResult refused =
+		StatusEffect::ResolveStatusApplication(poison);
+	CHECK(!refused.Applied());
+	CHECK_EQ(refused.refusal, StatusEffect::StatusRefusal::TargetImmune);
+
+	// ...but an unrelated status is not blocked.
+	StatusEffect::StatusApplicationInput stun = poison;
+	stun.type = StatusEffect::StatusEffectType::Stun;
+	CHECK(StatusEffect::ResolveStatusApplication(stun).Applied());
+}
+
+MODERN_TEST(SkillFact_ExpiredNonBlowStopsBlocking)
+{
+	Skills::SkillFactContainer container;
+
+	Skills::SkillFact immune;
+	immune.skillId           = SkillId{ 5, 1 };
+	immune.remainingLifetime = 5.0f;
+	immune.basicType         = PassiveApplyType::VarHp;
+	immune.basicValue        = 1.0f;
+	immune.specs[0].type     = SkillFactSpecType::NonBlow;
+	immune.specs[0].specFlag = static_cast<uint32_t>(StatusEffect::DisorderPoison);
+	(void) container.Apply(immune);
+
+	CHECK_EQ(Skills::AdvanceSkillFacts(container, 1.0f).modifiers.statusImmunityMask,
+	         static_cast<uint32_t>(StatusEffect::DisorderPoison));
+
+	// Expire it, then let a further tick clear the snapshot.
+	Skills::AdvanceSkillFacts(container, 5.0f);
+	CHECK_EQ(Skills::AdvanceSkillFacts(container, 1.0f).modifiers.statusImmunityMask, 0u);
 }

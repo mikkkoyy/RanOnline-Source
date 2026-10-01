@@ -961,6 +961,13 @@ namespace Modern::Server
 			(void) target.ApplyStatus(result.statusApplication.state);
 		}
 
+		// VERTICAL-015: the same two-step for a FACT. The resolver built the
+		// record; the target owns the pool and stores it.
+		if (result.hasSkillFact)
+		{
+			(void) target.ApplySkillFact(result.skillFact);
+		}
+
 		// ---- 5. Apply the damage, and any reflection, to the same pools ----
 		//
 		// The combat half of the result was produced by the same pipeline
@@ -1069,5 +1076,22 @@ namespace Modern::Server
 	uint32_t ServerCharacter::CureStatus(StatusEffect::StatusDisorder mask) noexcept
 	{
 		return m_status.Cure(mask);
+	}
+
+	// VERTICAL-015: FACT wrappers, delegating to the core container. As with the
+	// status wrappers, no rule is reimplemented on the server.
+
+	bool ServerCharacter::ApplySkillFact(const Skills::SkillFact& fact) noexcept
+	{
+		return m_skillFacts.Apply(fact);
+	}
+
+	Skills::SkillFactModifiers ServerCharacter::AdvanceSkillFacts(float elapsedSeconds) noexcept
+	{
+		const Skills::SkillFactAdvanceResult advanced =
+			Skills::AdvanceSkillFacts(m_skillFacts, elapsedSeconds);
+
+		m_factModifiers = advanced.modifiers;
+		return m_factModifiers;
 	}
 }

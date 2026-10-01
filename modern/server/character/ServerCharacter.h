@@ -47,6 +47,7 @@
 #include "stats/Contributions.h"
 #include "stats/DerivedStats.h"
 #include "status/StatusEffectContainer.h"
+#include "skills/SkillFactAggregator.h"
 #include "types/Result.h"
 
 #include <cstdint>
@@ -374,6 +375,37 @@ size_t GetContributingCodexCount() const noexcept { return m_contributingCodex; 
 			return m_status;
 		}
 
+		// ── VERTICAL-015: authoritative skill FACTs ────────────────────────
+		//
+		// Same shape as the status wrappers above: thin delegations to the core
+		// container, which owns every rule. The server owns the pool and advances
+		// it; nothing else may.
+
+		// Stores a FACT the resolver produced, in the slot its skill maps to.
+		// Plain assignment, so re-casting refreshes an existing record and a full
+		// pool evicts the nearest-to-expiry entry. Legacy
+		// `GLChar::SELECT_SKILLSLOT` (GLChar.cpp:6377) plus
+		// `m_sSKILLFACT[dwSELECT] = sSKILLEF` (:6612).
+		bool ApplySkillFact(const Skills::SkillFact& fact) noexcept;
+
+		// The single-pass advance + aggregate, mirroring
+		// GLogixExPC.cpp:2276-2410. It both ticks lifetimes and rebuilds the
+		// modifier snapshot from scratch, which is how expiry restores the base
+		// values in legacy - there is no separate restore step.
+		Skills::SkillFactModifiers AdvanceSkillFacts(float elapsedSeconds) noexcept;
+
+		// The modifiers as of the last advance. Zero-valued before the first
+		// tick, which is also what a character with no FACTs reports.
+		const Skills::SkillFactModifiers& GetFactModifiers() const noexcept
+		{
+			return m_factModifiers;
+		}
+
+		const Skills::SkillFactContainer& GetSkillFacts() const noexcept
+		{
+			return m_skillFacts;
+		}
+
 	private:
 		ServerCharacter() = default;
 
@@ -402,6 +434,11 @@ size_t GetContributingCodexCount() const noexcept { return m_contributingCodex; 
 		// VERTICAL-014: the authoritative status slots. Legacy
 		// `SSTATEBLOW m_sSTATEBLOWS[EMBLOW_MULTI]` (GLCharClient.h:106).
 		StatusEffect::StatusEffectContainer m_status;
+
+		// VERTICAL-015: the authoritative FACT pool and its last aggregated
+		// modifier snapshot.
+		Skills::SkillFactContainer m_skillFacts;
+		Skills::SkillFactModifiers m_factModifiers{};
 
 		// VERTICAL-004: codex state and its contribution.
 		CodexState                     m_codex;

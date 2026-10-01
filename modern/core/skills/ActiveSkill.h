@@ -28,6 +28,7 @@
 #include "skills/SkillDefinition.h"
 #include "stats/DerivedStats.h"
 #include "status/StatusEffectResolver.h"
+#include "skills/SkillFactTypes.h"
 
 #include <cstdint>
 
@@ -189,6 +190,14 @@ namespace Modern::Skills
 		int32_t targetBlowResist = 0;        // resistance to the blow's element
 		float weatherBlowPower = 1.0f;       // GLOGICEX::WEATHER_BLOW_POW
 
+		// VERTICAL-015: caster identity for the FACT record.
+		//
+		// Legacy reads it off the network message (`_wCasterCrow`,
+		// `_dwCasterID`, GLChar.cpp:6516-6517). Nothing here invents it: a
+		// default of 0 means "not supplied", not "self".
+		uint16_t factCasterCrow = 0;
+		uint32_t factCasterId   = 0;
+
 		// VERTICAL-013: the magic halves of the target's DAMAGE_SPEC, plus the
 		// target's per-school damage decrease. Magic reads these instead of the
 		// psy values (GLogixExPC.cpp:1482-1484, :1546); they are separate fields
@@ -289,6 +298,15 @@ namespace Modern::Skills
 		// as an absence.
 		bool hasStatusApplication = false;
 		StatusEffect::StatusApplicationResult statusApplication{};
+
+		// VERTICAL-015: the FACT record this cast produces.
+		//
+		// Like the status result, this is DATA for the server to store, not
+		// persistent state. `ActiveSkillResolver` has no FACT container; the
+		// server owns the pool and calls `Apply`. That mirrors legacy, where
+		// SkillProc decides and RECEIVE_SKILLFACT stores on the target.
+		bool hasSkillFact = false;
+		SkillFact skillFact{};
 
 		constexpr bool Succeeded() const noexcept { return failure == ActiveSkillFailure::None; }
 		constexpr bool IsLowSp() const noexcept { return lowSp == LowSpState::Low; }

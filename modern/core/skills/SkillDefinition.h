@@ -47,6 +47,18 @@ namespace Modern
 			return classIndex != 0xFFFF && skillIndex != 0xFFFF;
 		}
 
+		// The "no skill" marker.
+		//
+		// Legacy `SNATIVEID(false)` is `{0xFFFF, 0xFFFF}` (GLDefine.h:129-136
+		// with `ID_NULL = 0xFFFF`), and it is what an empty slot holds. Note
+		// that `{0,0}` is a VALID skill id, so a default-constructed SkillId is
+		// not a null - which matters anywhere a container uses the id to decide
+		// whether a slot is occupied, as the FACT pool does (GLChar.cpp:6395).
+		static constexpr SkillId Invalid() noexcept
+		{
+			return SkillId{ 0xFFFF, 0xFFFF };
+		}
+
 		constexpr bool operator==(const SkillId& other) const noexcept
 		{
 			return classIndex == other.classIndex && skillIndex == other.skillIndex;
@@ -308,6 +320,103 @@ namespace Modern
 		ArmWeapon = 9, // EMELEMENT_ARM
 	};
 
+	// VERTICAL-015: FACT impact types. Mirrors EMIMPACT_ADDON
+	// (GLCharDefine.h:968-993). Values are the legacy values.
+	//
+	// The runtime record and its aggregation live in skills/SkillFactTypes.h;
+	// the enums are declared here because a SkillDefinition has to carry them
+	// and SkillFactTypes.h depends on this header.
+	enum class SkillFactImpactType : uint8_t
+	{
+		None          = 0,    // EMIMPACTA_NONE
+		HitRate       = 1,    // EMIMPACTA_HITRATE
+		AvoidRate     = 2,    // EMIMPACTA_AVOIDRATE
+		Damage        = 3,    // EMIMPACTA_DAMAGE
+		Defense       = 4,    // EMIMPACTA_DEFENSE
+		VarHp         = 5,    // EMIMPACTA_VARHP
+		VarMp         = 6,    // EMIMPACTA_VARMP
+		VarSp         = 7,    // EMIMPACTA_VARSP
+		VarAp         = 8,    // EMIMPACTA_VARAP
+		DamageRate    = 9,    // EMIMPACTA_DAMAGE_RATE
+		DefenseRate   = 10,   // EMIMPACTA_DEFENSE_RATE
+		Pa            = 11,   // EMIMPACTA_PA
+		Sa            = 12,   // EMIMPACTA_SA
+		Ma            = 13,   // EMIMPACTA_MA
+		HpRate        = 14,   // EMIMPACTA_HP_RATE
+		MpRate        = 15,   // EMIMPACTA_MP_RATE
+		SpRate        = 16,   // EMIMPACTA_SP_RATE
+		Resist        = 17,   // EMIMPACTA_RESIST
+		ChangeStats   = 18,   // EMIMPACTA_CHANGESTATS
+		HpRecoveryVar = 19,   // EMIMPACTA_HP_RECOVERY_VAR
+		MpRecoveryVar = 20,   // EMIMPACTA_MP_RECOVERY_VAR
+		SpRecoveryVar = 21,   // EMIMPACTA_SP_RECOVERY_VAR
+		CpRecoveryVar = 22,   // EMIMPACTA_CP_RECOVERY_VAR
+		CpAutoVar     = 23,   // EMIMPACTA_CP_AUTO_VAR
+	};
+
+	// VERTICAL-015: FACT spec types. Mirrors EMSPEC_ADDON (GLCharDefine.h).
+	//
+	// `ProhibitPotion`/`ProhibitSkill` carry provisional values: legacy's enum
+	// runs past the block inspected here, so these two are ordered rather than
+	// transcribed. The aggregation treats them as flags, so the numbering has no
+	// behavioural effect - but it is recorded rather than passed off as verified.
+	enum class SkillFactSpecType : uint8_t
+	{
+		None                  = 0,    // EMSPECA_NULL
+		PushPull              = 1,    // EMSPECA_PUSHPULL
+		RefDamage             = 2,    // EMSPECA_REFDAMAGE
+		Rebirth               = 3,    // EMSPECA_REBIRTH
+		HpGather              = 4,    // EMSPECA_HP_GATHER
+		MpGather              = 5,    // EMSPECA_MP_GATHER
+		SpGather              = 6,    // EMSPECA_SP_GATHER
+		HpDiv                 = 7,    // EMSPECA_HP_DIV
+		MpDiv                 = 8,    // EMSPECA_MP_DIV
+		SpDiv                 = 9,    // EMSPECA_SP_DIV
+		NonBlow               = 10,   // EMSPECA_NONBLOW         - immunity mask
+		RecBlow               = 11,   // EMSPECA_RECBLOW
+		Pierce                = 12,   // EMSPECA_PIERCE
+		TarRange              = 13,   // EMSPECA_TARRANGE
+		MoveVelo              = 14,   // EMSPECA_MOVEVELO        - additive
+		Onward                = 15,   // EMSPECA_ONWARD
+		Invisible             = 16,   // EMSPECA_INVISIBLE
+		Recvisible            = 17,   // EMSPECA_RECVISIBLE
+		AttackVelo            = 18,   // EMSPECA_ATTACKVELO       - SIGN-INVERTED
+		SkillDelay            = 19,   // EMSPECA_SKILLDELAY
+		CrushingBlow          = 20,   // EMSPECA_CRUSHING_BLOW
+		PsyDamageReduce       = 21,   // EMSPECA_PSY_DAMAGE_REDUCE     - max
+		MagicDamageReduce     = 22,   // EMSPECA_MAGIC_DAMAGE_REDUCE   - max
+		PsyDamageReflection   = 23,   // EMSPECA_PSY_DAMAGE_REFLECTION - max pair
+		MagicDamageReflection = 24,   // EMSPECA_MAGIC_DAMAGE_REFLECTION
+		DefenseSkillActive    = 25,   // EMSPECA_DEFENSE_SKILL_ACTIVE
+		ProhibitPotion        = 30,   // EMSPECA_PROHIBIT_POTION (value not verified)
+		ProhibitSkill         = 31,   // EMSPECA_PROHIBIT_SKILL  (value not verified)
+	};
+
+	// VERTICAL-015: a per-level FACT impact. Legacy keeps the impact type on the
+	// skill and the VALUE per level: `sImpacts[n].fADDON_VAR[wlevel]`
+	// (GLChar.cpp:6547).
+	struct SkillFactImpactEntry
+	{
+		SkillFactImpactType type = SkillFactImpactType::None;
+		std::array<float, kMaxSkillLevel + 1> values{};
+	};
+
+	// VERTICAL-015: a per-level FACT spec.
+	//
+	// The existing passive `SkillSpec` above carries only `values[]`, which is
+	// enough for a passive contribution but not for a runtime FACT: the
+	// reduction and reflection specs pair an amount with a rate, and NONBLOW
+	// carries a bitmask in dwFLAG. Legacy stores four fields per spec
+	// (GLChar.cpp:6582-6586), so this does too.
+	struct SkillFactSpecEntry
+	{
+		SkillFactSpecType type = SkillFactSpecType::None;
+		std::array<float,    kMaxSkillLevel + 1> var1{};
+		std::array<float,    kMaxSkillLevel + 1> var2{};
+		std::array<uint32_t, kMaxSkillLevel + 1> specFlag{};
+		std::array<uint32_t, kMaxSkillLevel + 1> nativeId{};
+	};
+
 	// VERTICAL-011: which entity the skill resolves against. Mirrors
 	// SKILL::EMIMPACT_TAR (GLCharDefine.h:859-868).
 	enum class SkillTargetKind : uint8_t
@@ -367,6 +476,21 @@ namespace Modern
 		// It is per-skill rather than per-level in legacy; the per-level numbers
 		// are `SkillLevelData::blowRate` / `blowVar1` / `blowVar2` / `life`.
 		StatusEffect::StatusEffectType stateBlow = StatusEffect::StatusEffectType::None;
+
+		// VERTICAL-015: whether this skill creates a persistent FACT.
+		//
+		// Legacy does not store a "this is a buff" flag. `RECEIVE_SKILLFACT`
+		// infers it: if the skill yields a whitelisted basic type, any impact or
+		// any spec, `bHOLD` becomes true and a FACT is created (GLChar.cpp:6605).
+		// `createsFact` is the modern equivalent - set by whoever loads the
+		// definition, and re-checked against the payload at cast time so a
+		// definition that claims a FACT but carries nothing stores nothing.
+		bool createsFact = false;
+
+		// The FACT payload. Copied per level into the runtime record exactly as
+		// legacy copies them at GLChar.cpp:6541-6600.
+		std::array<SkillFactImpactEntry, kMaxSkillImpacts> factImpacts{};
+		std::array<SkillFactSpecEntry,   kMaxSkillSpecs>   factSpecs{};
 
 		// The basic apply type and its per-level values.
 		PassiveApplyType applyType = PassiveApplyType::Hp;

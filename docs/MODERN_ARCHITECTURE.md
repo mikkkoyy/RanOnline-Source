@@ -4081,3 +4081,73 @@ matches RAN - with the ceiling exposed as
 `ServerCharacter` owns the container and stores the verdict on the target.
 
 See `docs/reference/client/VERTICAL-014_STATUS_EFFECT_FOUNDATION.md`.
+
+---
+
+# VERTICAL-015: Skill FACT / Buff Foundation
+
+FACT is not a status effect. VERTICAL-014's `Modern::StatusEffect` models
+`EMSTATE_BLOW` - short ailments in four shared slots. FACT models `SSKILLFACT` -
+timed enhancements in fourteen slots, keyed by skill. Separate domains, separate
+rules.
+
+## Slot selection is a cascade, not a scan
+
+`GLChar::SELECT_SKILLSLOT` (`GLChar.cpp:6377-6408`):
+
+```cpp
+for (i < 14)
+    if ( m_sSKILLFACT[i].sNATIVEID == skill_id )  return i;      // refresh in place
+fAGE = FLT_MAX;
+for (i < 14) {
+    if ( m_sSKILLFACT[i].sNATIVEID == SNATIVEID(false) )  return i;   // first empty
+    if ( m_sSKILLFACT[i].fAGE < fAGE ) { fAGE = ...; dwSELECT = i; } // min remaining
+}
+```
+
+1. Same skill reuses its own slot - re-casting refreshes, never stacks.
+2. First empty slot wins, short-circuiting inside the same loop.
+3. Only when the pool is **full**: evict the smallest remaining lifetime. Not
+   strongest-wins, and the new buff is never refused.
+
+## Aggregation is rebuilt from zero every tick
+
+Legacy resets its accumulators at the top of the function and recomputes them
+from the live pool on every call (`GLogixExPC.cpp:2255-2410`). There is therefore
+**no restore step**: an expired buff simply stops being counted. That is why
+`AdvanceSkillFacts` returns a fresh snapshot rather than mutating one.
+
+Three rules that read backwards, all reproduced and tested:
+
+| Spec | Legacy | Effect |
+| --- | --- | --- |
+| `ATTACKVELO` | `-= fSPECVAR1` | positive value makes the attacker **slower** |
+| `*_DAMAGE_REDUCE` | `if (cur < v) cur = v` | **maximum**, not a sum |
+| `NONBLOW` | `= dwSPECFLAG` | **assignment**, masks do not combine |
+
+## An expiring buff still contributes once
+
+Ticking and aggregation are the same loop. `fAGE` is decremented and
+`DISABLESKEFF` runs at `:2292-2295`, but the spec switches below still execute,
+because the loop already passed its `continue` guard and `DISABLESKEFF` only
+nulls the skill id. A fact gets a one-tick grace period on its way out.
+
+## Shared-type trap
+
+`SkillId{}` is `{0,0}`, which is a **valid** skill id - only `0xFFFF` is not. A
+default-constructed FACT therefore looked occupied. `SkillId::Invalid()` was
+added to express legacy's `SNATIVEID(false)` (`{0xFFFF,0xFFFF}`).
+
+## Layout
+
+| File | Responsibility |
+| --- | --- |
+| `skills/SkillFactTypes.h` | Runtime record, 14-slot constant, the EMFOR whitelist |
+| `skills/SkillFactContainer.h` | The slots and the three-rule selection |
+| `skills/SkillFactAggregator.h` | Single-pass advance + aggregation |
+
+Impacts are stored but not aggregated - each `EMIMPACTA_*` feeds a different
+subsystem, and duplicating those calculations would break the single-authority
+rule the derived-stat layer depends on.
+
+See `docs/reference/client/VERTICAL-015_SKILL_FACT_FOUNDATION.md`.

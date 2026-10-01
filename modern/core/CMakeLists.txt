@@ -28,6 +28,9 @@ set(MODERN_SOURCES
     skills/SkillDefinitionProvider.cpp
     skills/PassiveContributionAggregator.cpp
     skills/ActiveSkill.cpp
+    skills/SkillFactTypes.h
+    skills/SkillFactContainer.h
+    skills/SkillFactAggregator.h
     stats/StatCalculator.cpp
     types/Result.cpp
     resources/ResourceState.cpp
