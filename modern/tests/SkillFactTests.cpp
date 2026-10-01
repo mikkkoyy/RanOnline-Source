@@ -1237,3 +1237,88 @@ MODERN_TEST(SkillFactV022_FractionalRecoveryRateIsNotTruncated)
 
 	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.hpRecoveryRate, 0.000125f);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VERTICAL-023: the five unconnected addon impacts are unreferenced in legacy
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The enum values exist in `EMIMPACT_ADDON` (`GLCharDefine.h:996-1000`) and in
+// the modern mirror, but legacy has **no accumulation switch case** for any of
+// them. All six runtime accumulation switches were enumerated in full:
+//
+//   GLogixExPC.cpp:1008  (passive)     cases 1-11
+//   GLogixExPC.cpp:2325  (skill FACT)  cases 1-17
+//   GLogixExPC.cpp:2752  (item FACT)   cases 1-17
+//   GLogixExPC.cpp:2874  (system buff) cases 1-17
+//   GLSummon.cpp:668     (summon)      cases 1-10
+//   GLogicExNPC.cpp:501  (NPC)         cases 1-10
+//
+// None reaches 18, and none reaches 19-23. There is no `default:` arm doing
+// generic dispatch either - each switch simply ends.
+//
+// These tests pin the *modern* consequence, which is that such an impact is
+// silently dropped rather than mis-mapped. That is a real behaviour: if a
+// future milestone wires one of these values up, this test must be the thing
+// that fails, because it means the deferral record was wrong.
+
+MODERN_TEST(SkillFactV023_RecoveryVarImpactsContributeNothing)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::HpRecoveryVar, 0.5f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+		SkillFactImpactType::MpRecoveryVar, 0.5f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 3), 10.0f,
+		SkillFactImpactType::SpRecoveryVar, 0.5f));
+
+	const SkillFactModifiers m = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	// Legacy has no case for these values, so no accumulator moves. Notably NOT
+	// hpRecoveryRate: `HP_RECOVERY_VAR` ("HP recovery amount +-") is a different
+	// enum from `VARHP` (a rate), and modern must not conflate them.
+	CHECK_EQ(m.hpRecoveryRate, 0.0f);
+	CHECK_EQ(m.mpRecoveryRate, 0.0f);
+	CHECK_EQ(m.spRecoveryRate, 0.0f);
+}
+
+MODERN_TEST(SkillFactV023_CpImpactsContributeNothing)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::CpRecoveryVar, 500.0f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+		SkillFactImpactType::CpAutoVar, 1.0f));
+
+	const SkillFactModifiers m = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	// There is no combat-point resource in modern and none is warranted: no
+	// legacy impact reaches `m_sCombatPoint`. Every accumulator must therefore
+	// be unchanged, including the maximum-rate axis, so `CP_RECOVERY_VAR` cannot
+	// silently become an SP-rate.
+	CHECK_EQ(m.hpRate, 0.0f);
+	CHECK_EQ(m.mpRate, 0.0f);
+	CHECK_EQ(m.spRate, 0.0f);
+	CHECK_EQ(m.hpRecoveryRate, 0.0f);
+	// `SkillFactModifiers` has no flat-recovery member at all, and that is
+	// deliberate rather than an omission: no `EMIMPACTA_*` value reaches legacy's
+	// `fInc_HP` (the flat term of `:3020`), so there is nothing to carry. This
+	// test therefore cannot assert a flat field - the compiler refusing to is the
+	// stronger statement.
+}
+
+// The read-only aggregator must agree with the advancing one. If it dropped or
+// invented a case for these values it would report a different total for the
+// same pool, and which one a caller saw would depend on its call path.
+MODERN_TEST(SkillFactV023_BothAggregatorsAgreeOnUnreferencedImpacts)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::HpRecoveryVar, 0.5f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+		SkillFactImpactType::CpRecoveryVar, 500.0f));
+
+	const SkillFactModifiers ticked = AggregateSkillFacts(container);
+
+	CHECK_EQ(ticked.hpRecoveryRate, 0.0f);
+	CHECK_EQ(ticked.mpRate, 0.0f);
+}

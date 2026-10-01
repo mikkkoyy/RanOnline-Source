@@ -17,9 +17,9 @@ formula provenance.
 | ---- | ----- |
 | Legacy import | complete |
 | Core foundation | complete |
-| Vertical gameplay slices 001-022 | complete |
+| Vertical gameplay slices 001-023 | complete |
 | Build verification (BUILD-001) | complete |
-| Impact/addon modifiers, world targeting | partial — combat and resource FACT axes through VERTICAL-022; velocity, status, range and world targeting still deferred |
+| Impact/addon modifiers, world targeting | partial — combat and resource FACT axes through VERTICAL-022; enum 19-23 proven unreferenced in VERTICAL-023; velocity, status, range and world targeting still deferred |
 
 ---
 
@@ -51,7 +51,8 @@ formula provenance.
 | VERTICAL-019 FACT hit/avoid/damage integration | [x] | `e56b770` |
 | VERTICAL-020 FACT defense/resist integration | [x] | `855f5d7` |
 | VERTICAL-021 FACT defense-rate axis | [x] | `7f3550d` |
-| VERTICAL-022 Recovery / HP-MP-SP-AP FACT | [x] | see `docs/reference/server/VERTICAL-022_RECOVERY_FACT_INVESTIGATION.md` |
+| VERTICAL-022 Recovery / HP-MP-SP-AP FACT | [x] | `96c330a` |
+| VERTICAL-023 Recovery VAR / CP consumer investigation | [x] complete — investigated, no proven runtime consumers | see `docs/reference/server/VERTICAL-023_RECOVERY_VAR_CP_INVESTIGATION.md` |
 
 ---
 
@@ -480,15 +481,59 @@ upgrading its mismatch report to name each disagreeing field is how one genuine
 distinction was found. Debug and Release both 0 errors / 0 warnings, CTest 14/14,
 core 494, server 111.
 
-**Next:** the remaining deferred FACT impacts. `EMIMPACTA_HP_RECOVERY_VAR` and
-its `MP`/`SP`/`CP` siblings (enum 19-23) are **not found** in any legacy
-accumulation switch, so they have no proven consumer and are deferred on that
-ground rather than on subsystem grounds. Recovery deferred with subsystems: pet,
-land effect, item FACT, system buff. Also open: velocity, potion, invisibility,
-pierce, range, stun, continuous damage, curse, immunity, stigma, enhancement,
-`DEFENSE_SKILL_ACTIVE`, `REFDAMAGE`, `TALK_TO_NPC`, `DAMAGE_LOOP`, `TAR_BUFF`,
-`CHANGESTATS`, and the world/entity, networking, movement and client-presentation
-layers. The count is deliberately left open rather than invented.
+**VERTICAL-023 - Recovery VAR / CP impact consumer investigation.** Complete,
+investigation-only. See
+`docs/reference/server/VERTICAL-023_RECOVERY_VAR_CP_INVESTIGATION.md`.
+
+The five impacts VERTICAL-022 could not connect (`EMIMPACTA_HP_RECOVERY_VAR` /
+`MP` / `SP` / `CP_RECOVERY_VAR` / `CP_AUTO_VAR`, enum 19-23) are **specified but
+never implemented**. Each has exactly seven occurrences: one enum, one display
+label, one scale entry, and five tooltip/UI switches. **Zero** occur in any
+accumulation file.
+
+All six runtime accumulation switches were enumerated with their complete case
+lists - `GLogixExPC.cpp:1008` (passive, 1-11), `:2325` / `:2752` / `:2874`
+(skill FACT, item FACT, system buff, 1-17), `GLSummon.cpp:668` and
+`GLogicExNPC.cpp:501` (summon, NPC, 1-10). None reaches 18, let alone 19-23,
+and none has a `default:` arm doing generic dispatch.
+
+"Grep found no case" is not sufficient, so the indirect paths were closed too:
+`SSKILLFACT::GetIMPACTVAR` and `IsImpact` (`GLFactData.h:93-109`) have **no
+callers in the tree**; `SAPPLY::IsImpact` is declared and never called; and
+every `ISHAVE_BUFF` call site passes an `EMSPEC_ADDON` or `SNATIVEID`, so the
+`EMIMPACT_ADDON` overload at `GLogixExPC.cpp:4979` is dead. A numeric search for
+19-23 in the three accumulation files returned nothing.
+
+The tooltip cases are the strongest evidence of *intent* - each formats a label
+like "for 30s, HP recovery +5" for a buff the engine cannot apply, and the
+editors let an author select these values from a combo (`EditorSkill`), so the
+authoring side was built and the consumer never was.
+
+**`m_sCombatPoint` is real and fully implemented, and is not connected to enum
+22.** Earned only via `ReceiveCP` (crow-kill `m_wBonusCP`, PK-kill
+`wCombatPoint_PK = 200`), spent on skills, restored by an `ITEM_DRUG_CP` item,
+wiped on death - with **no timed regeneration and no buff-based CP path at all**.
+`EMSPECA_CP_INC_VALUE = 90` is the same story: tooltip only, no accumulation
+case. So no CP subsystem was created, per the evidence. (The separate
+account currency `m_dwCombatPoints`, the "60AP" of the fandom wiki, is a
+different resource and equally unconnected.)
+
+`CP_AUTO` remains uninterpreted: there is no timer, no auto-use hook and no
+`fElap`-driven CP amount anywhere, so the name is not evidence of a subsystem.
+
+All five DEFERRED as **unreferenced**, which is a different category from the
+missing-subsystem deferrals: if a consumer is ever uncovered these become
+implementable, whereas a missing subsystem would have to be built first.
+Four tests pin the negative result - if a future milestone legitimately
+implements one of these, they are what should fail.
+
+**Next:** the remaining deferred FACT impacts. Recovery deferred with subsystems:
+pet, land effect, item FACT, system buff. Also open: velocity, potion,
+invisibility, pierce, range, stun, continuous damage, curse, immunity, stigma,
+enhancement, `DEFENSE_SKILL_ACTIVE`, `REFDAMAGE`, `TALK_TO_NPC`,
+`DAMAGE_LOOP`, `TAR_BUFF`, `CHANGESTATS`, and the world/entity, networking,
+movement and client-presentation layers. The count is deliberately left open
+rather than invented.
 
 ---
 

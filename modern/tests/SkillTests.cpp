@@ -194,6 +194,17 @@ MODERN_TEST(SkillDefinition_LegacyEnumConversionsRoundTrip)
 	CHECK(LegacyImpactTypeToModern(18) == PassiveImpactType::None);
 	CHECK(LegacyImpactTypeToModern(-1) == PassiveImpactType::None);
 
+	// VERTICAL-023: 19-23 (`*_RECOVERY_VAR`, `CP_RECOVERY_VAR`, `CP_AUTO_VAR`)
+	// have NO legacy accumulation switch case anywhere, so they map to nothing.
+	// Mapping them to `VarHp` or a rate would be inventing behaviour: legacy
+	// never applies them, so a value authored against them in a skill file has
+	// no effect in RAN either.
+	CHECK(LegacyImpactTypeToModern(19) == PassiveImpactType::None);
+	CHECK(LegacyImpactTypeToModern(20) == PassiveImpactType::None);
+	CHECK(LegacyImpactTypeToModern(21) == PassiveImpactType::None);
+	CHECK(LegacyImpactTypeToModern(22) == PassiveImpactType::None);
+	CHECK(LegacyImpactTypeToModern(23) == PassiveImpactType::None);
+
 	// No spec in the legacy table feeds the stat pipeline.
 	CHECK(LegacySpecTypeToModern(0) == PassiveSpecType::None);
 	CHECK(LegacySpecTypeToModern(3) == PassiveSpecType::None);
