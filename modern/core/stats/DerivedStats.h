@@ -108,17 +108,17 @@ namespace Modern::Stats
 		// m_nDEFENSE_BODY: defence before equipment, passive and codex.
 		int32_t defenseBody = 0;
 
-// m_nDEFENSE (== m_nDEFENSE_SKILL): the final defence.
-	int32_t defense = 0;
+		// m_nDEFENSE (== m_nDEFENSE_SKILL): the final defence.
+		int32_t defense = 0;
 
-	// VERTICAL-021: `m_fDefenseRate`, the multiplier already applied to
-	// `defense`. Kept for inspection and for the stat oracle; combat reads the
-	// resolved `defense`, not this.
-	//
-	// A multiplier around 1.0, NOT a percentage: legacy seeds
-	// `m_fDefenseRate = 1.0f + ...` (GLogixExPC.cpp:2220), so 1.0f means
-	// "unchanged". Sources are added raw.
-	float defenseRate = 1.0f;
+		// VERTICAL-021: `m_fDefenseRate`, the multiplier already applied to
+		// `defense`. Kept for inspection and for the stat oracle; combat reads the
+		// resolved `defense`, not this.
+		//
+		// A multiplier around 1.0, NOT a percentage: legacy seeds
+		// `m_fDefenseRate = 1.0f + ...` (GLogixExPC.cpp:2220), so 1.0f means
+		// "unchanged". Sources are added raw.
+		float defenseRate = 1.0f;
 
 		// m_gdDAMAGE_PHYSIC: the physical attack range, with the attack power
 		// added and RAN's floor of 1 applied.

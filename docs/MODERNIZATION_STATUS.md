@@ -17,9 +17,9 @@ formula provenance.
 | ---- | ----- |
 | Legacy import | complete |
 | Core foundation | complete |
-| Vertical gameplay slices 001-015 | complete |
+| Vertical gameplay slices 001-021 | complete |
 | Build verification (BUILD-001) | complete |
-| Impact/addon modifiers, world targeting | not started |
+| Impact/addon modifiers, world targeting | partial — combat FACT axes through VERTICAL-021; recovery, velocity, status, range and world targeting still deferred |
 
 ---
 
@@ -49,7 +49,8 @@ formula provenance.
 | VERTICAL-017 FACT combat / cast integration | [x] | `c73aba1` |
 | VERTICAL-018 FACT hit/avoid/damage investigation | [x] | `fc02b2a` |
 | VERTICAL-019 FACT hit/avoid/damage integration | [x] | `e56b770` |
-| VERTICAL-020 FACT defense/resist integration | [x] | this commit |
+| VERTICAL-020 FACT defense/resist integration | [x] | `855f5d7` |
+| VERTICAL-021 FACT defense-rate axis | [x] | see `docs/reference/server/VERTICAL-021_DEFENSE_RATE_INVESTIGATION.md` |
 
 ---
 
@@ -149,7 +150,7 @@ multi-config generator; without it every test reports `***Not Run` with
 
 ---
 
-## Next task
+## Recent milestones (VERTICAL-013 → VERTICAL-021)
 
 **VERTICAL-013 — Magic / elemental combat.** Complete. See
 `docs/reference/client/VERTICAL-013_MAGIC_ELEMENTAL_INVESTIGATION.md`.
@@ -423,8 +424,39 @@ fold, which raised a negative intermediate that the later codex term was meant t
 offset. Legacy floors each element once, at `m_sSUMRESIST_SKILL.LIMIT()` (`:2979`),
 after every contribution. The clamp was moved and the reason recorded.
 
-**Next:** the remaining deferred FACT consumers, each still needing its own
-subsystem. The number is deliberately left open rather than invented.
+**VERTICAL-021 - Defence-rate axis.** Complete. See
+`docs/reference/server/VERTICAL-021_DEFENSE_RATE_INVESTIGATION.md` and
+`docs/reference/server/VERTICAL-021_DEFENSE_RATE_IMPLEMENTATION.md`.
+
+VERTICAL-020 deferred `EMIMPACTA_DEFENSE_RATE` on a misreading of the clamp. The
+consumer is `GameCharacterCalculations::ApplyDefenseRate`
+(`GLogixExPC.cpp:2975`), and its guard is `result < 0`, **not** `<= 0` - so a zero
+defence **stays** zero. The minimum of 1 belongs to the final defence
+transformation, not to the rate, and is unreachable from a zero base at any rate.
+That dissolves the blocker: the VERTICAL-006/009 no-buff baseline does not move,
+pinned by `DefenseRate_NoBuffBaselineIsUnchanged`.
+
+`m_fDefenseRate` is a **multiplier around 1.0, not a percentage** - it is seeded
+`1.0f + m_sSUM_PASSIVE.m_fDEFENSE_RATE` (`:2220`), so `1.0f` means unchanged. Both
+the permanent passive rate (`:1046`) and the timed FACT rate (`:2341`) fold into
+one multiplier, which is applied once to the already-summed flat defence
+*including* the FACT flat bonus: base 50 + FACT 10 at rate 1.5 is 90, not 85.
+
+Equipment and codex were verified **not** to be rate contributors - `m_sSUMITEM`
+has no `fDEFENSE_RATE` and `m_dwDefenseIncrease` folds flat at `:376`. That is
+what makes the modern axis complete: the four remaining legacy sources (pet, land
+effect, item FACT, system buff) are deferred with subsystems that do not exist.
+13 tests; Debug and Release both 0 errors / 0 warnings, CTest 14/14, core 474,
+server 107.
+
+**Next:** the remaining deferred FACT impacts. The largest identifiable group is
+the resource/recovery axis (`EMIMPACTA_VARHP/VARMP/VARSP/VARAP`,
+`HP_RATE/MP_RATE/SP_RATE`), which still needs its legacy accumulator traced
+before anything is written. Also open: velocity, potion, invisibility, pierce,
+range, stun, continuous damage, curse, immunity, stigma, enhancement,
+`DEFENSE_SKILL_ACTIVE`, `REFDAMAGE`, `TALK_TO_NPC`, `DAMAGE_LOOP`, `TAR_BUFF`,
+and the world/entity, networking, movement and client-presentation layers. The
+count is deliberately left open rather than invented.
 
 ---
 

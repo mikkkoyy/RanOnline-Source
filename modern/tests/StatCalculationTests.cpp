@@ -925,6 +925,10 @@ MODERN_TEST(DefenseRate_ZeroDefenceStaysZeroEvenWithAPositiveRate)
 {
 	// The clamp is `result < 0`, not `<= 0`, so 0 * 1.5 is 0 and survives.
 	CHECK_EQ(DefenseOf(MakeDefenseInput(0, 0, 0, 0.0f, 0.5f)), 0);
+	// A negative rate cannot drive zero negative either: 0 * -0.5 is 0, which is
+	// not < 0, so the clamp never fires and the level-1 zero case is reachable
+	// from either sign of the rate.
+	CHECK_EQ(DefenseOf(MakeDefenseInput(0, 0, 0, 0.0f, -0.5f)), 0);
 }
 
 // ORDERING: the rate multiplies the ALREADY-SUMMED defence including the FACT
@@ -938,14 +942,14 @@ MODERN_TEST(DefenseRate_RateAppliesAfterFlatBonusesIncludingTheFact)
 
 MODERN_TEST(DefenseRate_TruncationIsTowardZero)
 {
-// The rate field is the INCREMENT added to 1.0, not the multiplier itself,
+	// The rate field is the INCREMENT added to 1.0, not the multiplier itself,
 	// so this is a 1.333 multiplier: int(50 * 1.333) = int(66.65) = 66.
 	CHECK_EQ(DefenseOf(MakeDefenseInput(50, 0, 0, 0.0f, 0.333f)), 66);
 }
 
 MODERN_TEST(DefenseRate_NegativeResultBecomesOne)
 {
-// 10 * (1 - 1.5) = -5, which is < 0, so it becomes 1.
+	// 10 * (1 - 1.5) = -5, which is < 0, so it becomes 1.
 	CHECK_EQ(DefenseOf(MakeDefenseInput(10, 0, 0, 0.0f, -1.5f)), 1);
 	// ...but a result of exactly 0 is NOT below zero and stays 0:
 	// 10 * (1 - 1.0) = 0.

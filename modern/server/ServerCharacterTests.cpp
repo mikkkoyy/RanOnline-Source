@@ -3411,7 +3411,7 @@ MODERN_TEST(ServerFactV021_DefenseRateFactReachesDerivedStatsAndExpires)
 		CHECK_EQ(during.defense, 0);
 	}
 
-// Expiry must restore the baseline exactly. As in the core FACT tests, the
+	// Expiry must restore the baseline exactly. As in the core FACT tests, the
 	// advance that crosses the boundary still reports the live fact, so the state
 	// is read on the following tick.
 	character.GetValue().AdvanceSkillFacts(61.0f);
