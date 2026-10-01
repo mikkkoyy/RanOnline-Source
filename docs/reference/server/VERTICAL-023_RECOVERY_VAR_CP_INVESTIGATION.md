@@ -300,9 +300,8 @@ failure is the signal that the deferral record needs updating.
 
 ## 16. GitHub
 
-Commit `d0f3c96f6cf14d2f8e5a5b1b6e0c4a2d8f9e1c73`, pushed to `origin/main`,
-verified equal to local `HEAD` with a clean working tree. Recorded in the status
-document once pushed; see `docs/MODERNIZATION_STATUS.md`.
+Commit `c1912ca`, pushed to `origin/main`, verified equal to local `HEAD` with a
+clean working tree. Recorded in `docs/MODERNIZATION_STATUS.md`.
 
 ## 17. Are Enums 19-23 Alive?
 
