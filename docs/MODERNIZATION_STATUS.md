@@ -45,7 +45,8 @@ formula provenance.
 | VERTICAL-013 Magic / elemental combat | [x] | `27d0ade` |
 | VERTICAL-014 Status effect foundation | [x] | `24b5f65` |
 | VERTICAL-015 Skill FACT / buff foundation | [x] | `d05cc2d` |
-| VERTICAL-016 FACT consumer investigation | [x] | this commit |
+| VERTICAL-016 FACT consumer investigation | [x] | `ef4daab` |
+| VERTICAL-017 FACT combat / cast integration | [x] | this commit |
 
 ---
 
@@ -291,8 +292,43 @@ that reset before wiring those four fields.
 could not be read. `PROHIBIT_POTION` is read only by inventory and storage
 paths, and `TAR_BUFF` needs an entity registry. All DEFERRED.
 
-**Next:** FACT combat/skill consumer wiring. The number is deliberately left open
-rather than invented.
+**VERTICAL-017 — FACT combat / cast integration.** Complete. See
+`docs/reference/server/VERTICAL-017_FACT_COMBAT_CAST_INTEGRATION.md`.
+
+Five VERTICAL-016-proven consumers are now connected to systems that already
+existed. No new calculation system, no new FACT domain, and no deferred item.
+
+**`m_sDamageSpec` — RESET PROVEN.** The blocker VERTICAL-016 flagged is resolved:
+`GLogixExPC.cpp:2224` resets it and `:2228` seeds it from the passive total, in
+the same per-tick block (`:2210-2241`) that resets every other accumulator. The
+unified pattern is *reset to default, seed from passives, then accumulate FACTs*,
+so the structure is rebuilt rather than patched. VERTICAL-016 had simply started
+reading at `:2255`, above the reset. No accumulation leak, and no save/restore
+mechanism was needed.
+
+Implemented:
+
+- **Damage reduction and reflection** into the four `CombatInput` pairs VERTICAL-013
+  already owned. MAX, not sum, applied at the two existing boundaries
+  (`ServerCharacter::Attack` and `ActiveSkillResolver`). The calculators were not
+  touched.
+- **`Stats::FactContribution`**, a fourth stat source beside items, passives and
+  codex. Deliberately *not* folded into `PassiveContribution`: legacy keeps
+  `nSUM_MA` separate and adds it only at the point of use (`:2970-2972`), and
+  merging them would let a timed buff survive expiry.
+- **`PROHIBIT_SKILL`** into `CastSkill`. The resolver already owned the refusal;
+  only the server-side input was missing, so no second check was added. A test
+  proves no SP/MP/HP is spent and no cooldown starts.
+- **`NONBLOW`** immunity mask into `CastSkill`, crossing as a value. FACT and
+  `StatusEffect` remain separate domains.
+
+Two of the three previously-invisible hand-offs now work in a real cast; the third
+(PA/SA/MA) needed the derived-stat snapshot to be refreshed when a power impact
+moves, which legacy gets for free by reading its accumulators live.
+
+**Next:** the remaining deferred FACT consumers, each needing its own subsystem
+(resource recovery, hit/avoid, damage range, world targeting). The number is
+deliberately left open rather than invented.
 
 ---
 

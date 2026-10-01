@@ -62,9 +62,14 @@ namespace Modern::Stats
 		// the class and level terms.
 		BaseStats allocatedStats;
 
-		ItemContribution     items;
-		PassiveContribution  passives;
-		CodexContribution    codex;
+ItemContribution     items;
+	PassiveContribution  passives;
+	CodexContribution    codex;
+
+	// VERTICAL-017: the timed FACT contribution. Separate from the three above
+	// for the reasons in `FactContribution`, and because a buff must stop
+	// contributing the moment its last owning FACT expires.
+	FactContribution     facts;
 
 		// fCONFT_POINT_RATE: the configuration point rate applied to every
 		// resource maximum. RAN's callers supply it; a value of 1.0f is "no

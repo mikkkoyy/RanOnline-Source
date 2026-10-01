@@ -406,6 +406,11 @@ size_t GetContributingCodexCount() const noexcept { return m_contributingCodex; 
 			return m_skillFacts;
 		}
 
+		// VERTICAL-017: recalculates the derived stats when the aggregated FACT
+		// attack powers have moved, so a buff that expires stops contributing
+		// without anything having to be manually restored.
+		void RefreshFactStatsIfPowersChanged() noexcept;
+
 	private:
 		ServerCharacter() = default;
 
@@ -439,6 +444,10 @@ size_t GetContributingCodexCount() const noexcept { return m_contributingCodex; 
 		// modifier snapshot.
 		Skills::SkillFactContainer m_skillFacts;
 		Skills::SkillFactModifiers m_factModifiers{};
+
+		// The FACT power values currently folded into `m_derived`, so a
+		// recalculation runs when - and only when - a power impact moves.
+		Stats::FactContribution m_factStatsPowersApplied{};
 
 		// VERTICAL-004: codex state and its contribution.
 		CodexState                     m_codex;

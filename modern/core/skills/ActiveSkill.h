@@ -210,6 +210,20 @@ namespace Modern::Skills
 		float targetMagicDamageReflectionRate = 0.0f;
 		float targetDamageDecrease = 0.0f;
 
+		// VERTICAL-017: the physical half of the same pair, plus the FACT
+		// contributions themselves.
+		//
+		// The target's own `DAMAGE_SPEC` values arrive on `target.damageReduce` /
+		// `damageReflection` / `damageReflectionRate`. These four extra fields
+		// carry what the target's active skill FACTs contribute, separately, so
+		// the two sources stay visible and can be combined the way legacy does.
+		float factDamageReduce = 0.0f;
+		float factDamageReflection = 0.0f;
+		float factDamageReflectionRate = 0.0f;
+		float factMagicDamageReduce = 0.0f;
+		float factMagicDamageReflection = 0.0f;
+		float factMagicDamageReflectionRate = 0.0f;
+
 		// `GLCONST_CHAR::wBASIC_DIS_SP`, from CombatConstants. Named here so a
 		// caller does not have to know that a basic skill's cost has a floor
 		// unrelated to `wUSE_SP`.

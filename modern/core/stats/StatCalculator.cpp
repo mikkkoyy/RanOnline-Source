@@ -196,15 +196,18 @@ namespace Modern::Stats
 				static_cast<float>(stats.spi) * cc.magicPerSpi +
 				static_cast<float>(stats.intel) * cc.magicPerIntel);
 
-			meleePower  = VariationClamped(pa, WrapAdd(input.items.meleePower,
-			                                          WrapAdd(input.passives.meleePower,
-			                                                  static_cast<int32_t>(input.codex.meleePower))));
-			shootPower  = VariationClamped(sa, WrapAdd(input.items.shootPower,
-			                                          WrapAdd(input.passives.shootPower,
-			                                                  static_cast<int32_t>(input.codex.shootPower))));
-			magicAttack = VariationClamped(ma, WrapAdd(input.items.magicAttack,
-			                                          WrapAdd(input.passives.magicAttack,
-			                                                  static_cast<int32_t>(input.codex.magicAttack))));
+meleePower  = VariationClamped(pa, WrapAdd(input.items.meleePower,
+		                                          WrapAdd(input.passives.meleePower,
+		                                                  WrapAdd(static_cast<int32_t>(input.codex.meleePower),
+		                                                         input.facts.meleePower))));
+		shootPower  = VariationClamped(sa, WrapAdd(input.items.shootPower,
+		                                          WrapAdd(input.passives.shootPower,
+		                                                  WrapAdd(static_cast<int32_t>(input.codex.shootPower),
+		                                                         input.facts.shootPower))));
+		magicAttack = VariationClamped(ma, WrapAdd(input.items.magicAttack,
+		                                          WrapAdd(input.passives.magicAttack,
+		                                                  WrapAdd(static_cast<int32_t>(input.codex.magicAttack),
+		                                                         input.facts.magicAttack))));
 		}
 
 		// One resource maximum. GLogixExPC.cpp:342-355 for HP; MP and SP are the

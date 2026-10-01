@@ -620,3 +620,269 @@ MODERN_TEST(SkillFact_AggregationIsDeterministic)
 	CHECK_EQ(first.moveVelocity, second.moveVelocity);
 	CHECK_EQ(first.moveVelocity, 0.0f + 0.1f + 0.2f + 0.3f);
 }
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-017: proven FACT consumers
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace
+{
+	// A FACT carrying one impact and one spec.
+	SkillFact MakeImpactFact(const SkillId& id, float lifetime,
+	                         SkillFactImpactType impact, float impactValue,
+	                         SkillFactSpecType spec, float specVar1, float specVar2 = 0.0f)
+	{
+		SkillFact fact;
+		fact.skillId                  = id;
+		fact.level                    = 1;
+		fact.remainingLifetime        = lifetime;
+		fact.basicType                = PassiveApplyType::VarHp;
+		fact.basicValue               = 1.0f;
+		fact.impacts[0].type          = impact;
+		fact.impacts[0].value         = impactValue;
+		fact.specs[0].type            = spec;
+		fact.specs[0].var1            = specVar1;
+		fact.specs[0].var2            = specVar2;
+		return fact;
+	}
+}
+
+// ── PA / SA / MA ──────────────────────────────────────────────────────
+//
+// GLogixExPC.cpp:2343-2345 - `nSUM_PA += int(fADDON_VAR)`. SUM with int()
+// truncation, so unlike the damage reductions two buffs DO add up.
+
+MODERN_TEST(SkillFactConsumers_NoFactMeansNoPowerBonus)
+{
+	SkillFactContainer container;
+
+	const SkillFactModifiers modifiers = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(modifiers.meleePower, 0);
+	CHECK_EQ(modifiers.shootPower, 0);
+	CHECK_EQ(modifiers.magicAttack, 0);
+}
+
+MODERN_TEST(SkillFactConsumers_OnePowerFactContributes)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 1), 10.0f,
+	                                      SkillFactImpactType::Pa, 7.0f,
+	                                      SkillFactSpecType::None, 0.0f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.meleePower, 7);
+}
+
+MODERN_TEST(SkillFactConsumers_PowersSumAcrossFacts)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 1), 10.0f,
+	                                      SkillFactImpactType::Pa, 7.0f,
+	                                      SkillFactSpecType::None, 0.0f));
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 2), 10.0f,
+	                                      SkillFactImpactType::Pa, 5.0f,
+	                                      SkillFactSpecType::None, 0.0f));
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 3), 10.0f,
+	                                      SkillFactImpactType::Ma, 11.0f,
+	                                      SkillFactSpecType::None, 0.0f));
+
+	const SkillFactModifiers modifiers = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	// SUM, so 7 + 5 - not the strongest one.
+	CHECK_EQ(modifiers.meleePower, 12);
+	CHECK_EQ(modifiers.magicAttack, 11);
+}
+
+// Legacy truncates with `int(...)`, so a fractional impact loses its fraction
+// on the way into the accumulator.
+MODERN_TEST(SkillFactConsumers_PowerImpactIsIntTruncated)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 1), 10.0f,
+	                                      SkillFactImpactType::Sa, 7.9f,
+	                                      SkillFactSpecType::None, 0.0f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.shootPower, 7);
+}
+
+// ── Damage reduction ──────────────────────────────────────────────────
+//
+// MAX, not SUM. Legacy `if ( m_sDamageSpec.m_fPsyDamageReduce < v ) m_... = v;`
+// (GLogixExPC.cpp:2380-2381). The example the milestone asks about: 0.10 + 0.20
+// must be 0.20, not 0.30.
+
+MODERN_TEST(SkillFactConsumers_NoFactMeansNoReduction)
+{
+	SkillFactContainer container;
+
+	const SkillFactModifiers modifiers = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(modifiers.psyDamageReduce, 0.0f);
+	CHECK_EQ(modifiers.magicDamageReduce, 0.0f);
+}
+
+MODERN_TEST(SkillFactConsumers_OneReductionFact)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 1), 10.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::PsyDamageReduce, 0.2f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.psyDamageReduce, 0.2f);
+}
+
+MODERN_TEST(SkillFactConsumers_TwoReductionsTakeTheStrongestNotTheSum)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 1), 10.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::PsyDamageReduce, 0.10f));
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 2), 10.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::PsyDamageReduce, 0.20f));
+
+	// 0.10 + 0.20 must be 0.20.
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.psyDamageReduce, 0.20f);
+}
+
+MODERN_TEST(SkillFactConsumers_WeakerSecondReductionDoesNotLowerTheValue)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 1), 10.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::PsyDamageReduce, 0.5f));
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 2), 10.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::PsyDamageReduce, 0.1f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.psyDamageReduce, 0.5f);
+}
+
+MODERN_TEST(SkillFactConsumers_MagicReductionIsIndependentOfPhysical)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 1), 10.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::PsyDamageReduce, 0.3f));
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 2), 10.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::MagicDamageReduce, 0.8f));
+
+	const SkillFactModifiers modifiers = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(modifiers.psyDamageReduce, 0.3f);
+	CHECK_EQ(modifiers.magicDamageReduce, 0.8f);
+}
+
+MODERN_TEST(SkillFactConsumers_ExpiredReductionReturnsToBaseline)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 1), 5.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::PsyDamageReduce, 0.4f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.psyDamageReduce, 0.4f);
+
+	AdvanceSkillFacts(container, 5.0f);
+	// The rebuild is from zero, so there is nothing to restore.
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.psyDamageReduce, 0.0f);
+}
+
+// ── Reflection ────────────────────────────────────────────────────────
+//
+// MAX on the amount, and the rate is taken from that SAME spec
+// (GLogixExPC.cpp:2390-2394). Amount and rate are never mixed.
+
+MODERN_TEST(SkillFactConsumers_ReflectionTakesAmountAndRateFromOneSpec)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 1), 10.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::PsyDamageReflection, 0.3f, 0.9f));
+
+	const SkillFactModifiers modifiers = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(modifiers.psyDamageReflection, 0.3f);
+	CHECK_EQ(modifiers.psyDamageReflectionRate, 0.9f);
+}
+
+MODERN_TEST(SkillFactConsumers_StrongerReflectionSupersedesThePair)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 1), 10.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::PsyDamageReflection, 0.2f, 0.10f));
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 2), 10.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::PsyDamageReflection, 0.6f, 0.80f));
+
+	const SkillFactModifiers modifiers = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(modifiers.psyDamageReflection, 0.6f);
+	// The rate comes from the winning spec, NOT from whichever was seen last.
+	CHECK_EQ(modifiers.psyDamageReflectionRate, 0.80f);
+}
+
+MODERN_TEST(SkillFactConsumers_WeakerReflectionDoesNotOverwriteThePair)
+{
+	SkillFactContainer container;
+	// The stronger fact is applied second, so slot order alone would pick it if
+	// the rule were "last wins" rather than "strongest wins".
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 1), 10.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::PsyDamageReflection, 0.9f, 0.90f));
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 2), 10.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::PsyDamageReflection, 0.1f, 0.10f));
+
+	const SkillFactModifiers modifiers = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(modifiers.psyDamageReflection, 0.9f);
+	CHECK_EQ(modifiers.psyDamageReflectionRate, 0.90f);
+}
+
+MODERN_TEST(SkillFactConsumers_MagicReflectionIsIndependentOfPhysical)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 1), 10.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::PsyDamageReflection, 0.3f, 0.3f));
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 2), 10.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::MagicDamageReflection, 0.7f, 0.7f));
+
+	const SkillFactModifiers modifiers = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(modifiers.psyDamageReflection, 0.3f);
+	CHECK_EQ(modifiers.magicDamageReflection, 0.7f);
+}
+
+MODERN_TEST(SkillFactConsumers_ExpiredReflectionReturnsToBaseline)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 1), 5.0f,
+	                                      SkillFactImpactType::None, 0.0f,
+	                                      SkillFactSpecType::MagicDamageReflection, 0.5f, 0.5f));
+
+	AdvanceSkillFacts(container, 1.0f);
+
+	AdvanceSkillFacts(container, 5.0f);
+	const SkillFactModifiers after = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(after.magicDamageReflection, 0.0f);
+	CHECK_EQ(after.magicDamageReflectionRate, 0.0f);
+}
+
+// ── Power impacts and reduction coexist on one fact ───────────────────
+
+MODERN_TEST(SkillFactConsumers_ImpactAndSpecCombineOnOneFact)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeImpactFact(FactSkill(1, 1), 10.0f,
+	                                      SkillFactImpactType::Ma, 20.0f,
+	                                      SkillFactSpecType::MagicDamageReduce, 0.5f));
+
+	const SkillFactModifiers modifiers = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(modifiers.magicAttack, 20);
+	CHECK_EQ(modifiers.magicDamageReduce, 0.5f);
+}

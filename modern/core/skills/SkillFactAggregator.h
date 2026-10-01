@@ -71,6 +71,19 @@ namespace Modern::Skills
 		float psyDamageReflectionRate  = 0.0f;
 		float magicDamageReflection      = 0.0f;
 		float magicDamageReflectionRate  = 0.0f;
+
+		// VERTICAL-017: attack-power impacts.
+		//
+		// GLogixExPC.cpp:2343-2345, SUM with `int()` truncation. Kept as signed
+		// accumulators because legacy's `nSUM_*` are `int` and the final sum is
+		// folded into a 16-bit power by `VariationClamped` in the stat layer,
+		// which is where the wrap/clamp behaviour lives.
+		//
+		// These are NOT the same thing as any passive, item or base
+		// contribution - see the struct comment above.
+		int32_t meleePower = 0;
+		int32_t shootPower = 0;
+		int32_t magicAttack = 0;
 	};
 
 	struct SkillFactAdvanceResult
@@ -114,17 +127,48 @@ namespace Modern::Skills
 				++expired;
 			}
 
-			// Impacts are deliberately NOT aggregated here.
+			// ── Impacts ───────────────────────────────────────────────────────
 			//
-			// Every EMIMPACTA_* consumer at GLogixExPC.cpp:2327-2349 feeds a
-			// different subsystem: PA/SA/MA into the derived-stat attack powers,
-			// DAMAGE into the skill damage range, HITRATE/AVOIDRATE into the hit
-			// calculator, the VAR* family into resource pools, and the RATE
-			// family into resource maxima. Wiring any of them here would either
-			// duplicate an existing authoritative calculation or require
-			// subsystems this milestone does not have. All of them are DEFERRED
-			// with reasons in the investigation, and the values are preserved in
-			// the record so a later slice needs no re-derivation.
+			// VERTICAL-017: PA/SA/MA are aggregated now, because the consumer is
+			// PROVEN and an authoritative owner exists.
+			//
+			// GLogixExPC.cpp:2343-2345:
+			//   case EMIMPACTA_PA:  nSUM_PA += int(fADDON_VAR);  break;
+			//   case EMIMPACTA_SA:  nSUM_SA += int(fADDON_VAR);  break;
+			//   case EMIMPACTA_MA:  nSUM_MA += int(fADDON_VAR);  break;
+			//
+			// SUM, and `int()`-truncated, so two facts add rather than compete.
+			// Legacy sums these into a variable that is separate from
+			// `m_sSUM_PASSIVE.m_nMA` and only adds them at the point of use
+			// (:2970-2972), which is why they must stay in their own
+			// contribution rather than being merged into a passive one.
+			for (const SkillFactImpact& impact : fact.impacts)
+			{
+				switch (impact.type)
+				{
+					case SkillFactImpactType::Pa:
+						modifiers.meleePower += static_cast<int32_t>(impact.value);
+						break;
+					case SkillFactImpactType::Sa:
+						modifiers.shootPower += static_cast<int32_t>(impact.value);
+						break;
+					case SkillFactImpactType::Ma:
+						modifiers.magicAttack += static_cast<int32_t>(impact.value);
+						break;
+					default:
+						break;
+				}
+			}
+
+			// Every OTHER EMIMPACTA_* consumer at GLogixExPC.cpp:2327-2349 is
+			// still deferred: DAMAGE and DAMAGE_RATE feed the damage range,
+			// HITRATE/AVOIDRATE feed the hit calculator, DEFENSE and RESIST feed
+			// subsystems whose modern boundary is undecided, and the VAR*/RATE*
+			// families feed a recovery loop and maximum recalculation this
+			// milestone has not proven. The six recovery/CP impacts have no case
+			// in the switch at all. Values are preserved in the record so a later
+			// slice needs no re-derivation. See the VERTICAL-016 and
+			// VERTICAL-017 investigations.
 
 			// ── Specs (GLogixExPC.cpp:2353-2408) ───────────────────────────
 			for (const SkillFactSpec& spec : fact.specs)
@@ -218,6 +262,24 @@ namespace Modern::Skills
 			if (slot == nullptr || !slot->Occupied())
 			{
 				continue;
+			}
+
+			for (const SkillFactImpact& impact : slot->impacts)
+			{
+				switch (impact.type)
+				{
+					case SkillFactImpactType::Pa:
+						modifiers.meleePower += static_cast<int32_t>(impact.value);
+						break;
+					case SkillFactImpactType::Sa:
+						modifiers.shootPower += static_cast<int32_t>(impact.value);
+						break;
+					case SkillFactImpactType::Ma:
+						modifiers.magicAttack += static_cast<int32_t>(impact.value);
+						break;
+					default:
+						break;
+				}
 			}
 
 			for (const SkillFactSpec& spec : slot->specs)

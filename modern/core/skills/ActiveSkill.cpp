@@ -14,6 +14,16 @@
 
 namespace Modern::Skills
 {
+	// VERTICAL-017: the two damage-protection sources compete rather than add.
+	//
+	// Legacy seeds `m_sDamageSpec` from the passive total and then max-accumulates
+	// the FACT specs into it (GLogixExPC.cpp:2228, :2380-2401), so the larger of
+	// the two values is what survives. Applied to the amount and the rate alike,
+	// because legacy reads them as one pair from one spec.
+	static float Stronger(float current, float candidate) noexcept
+	{
+		return (candidate > current) ? candidate : current;
+	}
 	// VERTICAL-013: `SRESIST::GetElement(emELMT)` (GLogixExPC.cpp:1515).
 	//
 	// `Stats::Resistances` carries only the five elements RAN actually models
@@ -432,6 +442,31 @@ namespace Modern::Skills
 			combat.targetMagicDamageReflection     = input.targetMagicDamageReflection;
 			combat.targetMagicDamageReflectionRate = input.targetMagicDamageReflectionRate;
 			combat.targetDamageDecrease     = input.targetDamageDecrease;
+
+			// VERTICAL-017: the target's FACT contributions, combined with its own
+			// DAMAGE_SPEC values by MAXIMUM, not by sum.
+			//
+			// GLogixExPC.cpp:2224-2228 rebuilds `m_sDamageSpec` every tick from
+			// the passive total, then :2380-2401 max-accumulate the FACT specs
+			// into it. Two buffs therefore do not stack - the strongest one wins,
+			// and an expired buff simply stops contributing because the whole
+			// structure is rebuilt rather than restored.
+			//
+			// MAX is reproduced here so the reduction and the reflection stay
+			// consistent with each other; taking the larger independently would
+			// pair a weak amount with a strong rate from a different fact.
+			combat.targetDamageReduce =
+				Stronger(combat.targetDamageReduce, input.factDamageReduce);
+			combat.targetDamageReflection =
+				Stronger(combat.targetDamageReflection, input.factDamageReflection);
+			combat.targetDamageReflectionRate =
+				Stronger(combat.targetDamageReflectionRate, input.factDamageReflectionRate);
+			combat.targetMagicDamageReduce =
+				Stronger(combat.targetMagicDamageReduce, input.factMagicDamageReduce);
+			combat.targetMagicDamageReflection =
+				Stronger(combat.targetMagicDamageReflection, input.factMagicDamageReflection);
+			combat.targetMagicDamageReflectionRate =
+				Stronger(combat.targetMagicDamageReflectionRate, input.factMagicDamageReflectionRate);
 
 			// VERTICAL-010's rule, applied to the caster's own pool.
 			combat.attackerRequiredSP = result.requiredSP;

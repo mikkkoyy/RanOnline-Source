@@ -312,18 +312,23 @@ combat calculators are untouched.
 
 ### ⚠ A caveat the next vertical must resolve first
 
-The reduction and reflection specs **max-accumulate into a member struct**,
-`m_sDamageSpec`, and no reset of those fields appears in the reset block
-(`:2255-2281`) that clears `m_bProhibitSkill`, `m_fSKILL_MOVE` and the rest.
+**RESOLVED IN VERTICAL-017 — RESET PROVEN.** The reset exists; VERTICAL-016 simply
+missed it by starting its read at `:2255`.
 
-The move/attack-velocity/prohibit flags demonstrably *are* rebuilt from zero each
-tick. Whether `m_sDamageSpec` is likewise reset somewhere outside this function
-was **NOT PROVEN** in this milestone. If it is not, the practical effect is that
-once a reduction FACT is applied the value never drops again for that character.
+```
+legacy/Lib_Client/G-Logic/GLogixExPC.cpp:2224   m_sDamageSpec.RESET();
+legacy/Lib_Client/G-Logic/GLogixExPC.cpp:2228   m_sDamageSpec = m_sSUM_PASSIVE.m_sDamageSpec;
+```
 
-This is recorded as an open question, not as a bug. **The next vertical must
-prove the reset before wiring these four fields**, otherwise it will reproduce an
-accumulation that may not exist in RAN.
+The full per-tick reset block is `:2210-2241`, and it follows the same uniform
+pattern as every other accumulator: **reset to default, seed from the passive
+total, then max-accumulate the FACT specs.** `m_fSKILL_MOVE` (`:2210`),
+`m_dwHOLDBLOW` (`:2217`), `m_fDamageRate` (`:2219`), `m_fATTVELO` (`:2234`) and
+`m_fSKILLDELAY` (`:2236`) are all reset in the same block.
+
+So there is no leak, and the `m_sSUM_PASSIVE.m_sDamageSpec` seed is what proves
+the intent: the structure is *rebuilt from active sources every tick*, not
+patched. VERTICAL-017 implements it the same way.
 
 ## 11. Resource Impacts
 
@@ -557,8 +562,8 @@ semantics are unambiguous.
 | 3 | **`PA`/`SA`/`MA` → `FactContribution`** | `:2343-2345`; legacy sums it separately from passives at `:2970-2972` | new fourth `StatCalculationInput` contribution → `DerivedStats` | Additive, order-independent, rebuilt from zero on expiry. Requires a *new input field*, not a new stat system |
 | 4 | **NONBLOW mask → `CastSkill`** | `:2357` → `:3376-3379`; already proven end-to-end in V015 unit tests | `ServerCharacter::AdvanceSkillFacts` → `ActiveSkillInput::targetDisorderMask` | The consumer already exists on both sides; only the server-side assignment is missing |
 
-Item 2 should not land before the `m_sDamageSpec` reset question (§10) is
-resolved.
+Item 2 landed in VERTICAL-017, after the `m_sDamageSpec` reset question (§10)
+was resolved.
 
 ## 18. PARTIAL
 

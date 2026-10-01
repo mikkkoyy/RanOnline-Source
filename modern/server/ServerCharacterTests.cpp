@@ -2659,3 +2659,360 @@ MODERN_TEST(ServerSkillFact_FactAndCooldownTicksAreIndependent)
 	character.GetValue().AdvanceSkillFacts(25.0f);
 	CHECK_EQ(character.GetValue().GetSkillFacts().ActiveCount(), 0u);
 }
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-017: FACT consumers through the real server path
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace
+{
+	// A damage skill whose FACT payload is configurable per test.
+	SkillDefinition MakeConfigurableFactSkill(uint16_t index)
+	{
+		SkillDefinition def = MakeActiveDamageSkill(index);
+		def.name       = "FactSkill" + std::to_string(index);
+		def.createsFact = true;
+		for (uint8_t lvl = 1; lvl <= def.maxLevel; ++lvl)
+		{
+			def.levelData[lvl].life = 10.0f;
+		}
+		return def;
+	}
+
+	Skills::SkillFact MakeSpecOnlyFact(uint16_t main, uint16_t sub, float lifetime,
+	                                   SkillFactSpecType spec,
+	                                   float var1, float var2 = 0.0f)
+	{
+		Skills::SkillFact fact;
+		fact.skillId                  = SkillId{ main, sub };
+		fact.level                    = 1;
+		fact.remainingLifetime        = lifetime;
+		fact.basicType                = PassiveApplyType::VarHp;
+		fact.basicValue               = 1.0f;
+		fact.specs[0].type            = spec;
+		fact.specs[0].var1            = var1;
+		fact.specs[0].var2            = var2;
+		return fact;
+	}
+
+	// A learned, castable melee damage skill the server will accept.
+	Skills::SkillFact MakePowerFact(uint16_t main, uint16_t sub, float lifetime, int32_t pa)
+	{
+		Skills::SkillFact fact;
+		fact.skillId                  = SkillId{ main, sub };
+		fact.level                    = 1;
+		fact.remainingLifetime        = lifetime;
+		fact.basicType                = PassiveApplyType::VarHp;
+		fact.basicValue               = 1.0f;
+		fact.impacts[0].type           = SkillFactImpactType::Pa;
+		fact.impacts[0].value          = static_cast<float>(pa);
+		return fact;
+	}
+}
+
+// ── PROHIBIT_SKILL through CastSkill ──────────────────────────────────
+
+MODERN_TEST(ServerSkillFactConsumers_NoProhibitFactAllowsTheCast)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeServerFactSkill(2));   // MoveVelo + ProhibitSkill, but not applied
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+	CHECK(attacker.GetValue().LearnSkill(SkillId{ 1, 2 }).IsOk());
+	CHECK(attacker.GetValue().SetSkillLevel(SkillId{ 1, 2 }, 1).IsOk());
+
+	// Nothing applied, so the aggregated modifier is the baseline.
+	CHECK_EQ(attacker.GetValue().GetFactModifiers().prohibitSkill, false);
+	CHECK(attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue()).Succeeded());
+}
+
+MODERN_TEST(ServerSkillFactConsumers_ActiveProhibitFactRejectsTheCast)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeServerFactSkill(2));
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+	CHECK(attacker.GetValue().LearnSkill(SkillId{ 1, 2 }).IsOk());
+	CHECK(attacker.GetValue().SetSkillLevel(SkillId{ 1, 2 }, 1).IsOk());
+
+	// The attacker is wearing a prohibit-skill buff (applied by a caster, not by
+	// itself - that is the whole point of a buff).
+	CHECK(attacker.GetValue().ApplySkillFact(
+		MakeSpecOnlyFact(9, 9, 60.0f, SkillFactSpecType::ProhibitSkill, 0.0f)));
+	attacker.GetValue().AdvanceSkillFacts(0.1f);
+	CHECK_EQ(attacker.GetValue().GetFactModifiers().prohibitSkill, true);
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue());
+
+	CHECK(!result.Succeeded());
+	CHECK_EQ(result.failure, Skills::ActiveSkillFailure::NotCastable);
+}
+
+// The prohibition must land BEFORE anything is spent, matching
+// GLogixExPC.cpp:4060 (the first statement of CHECKSKILL).
+MODERN_TEST(ServerSkillFactConsumers_ProhibitionSpendsNothing)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeServerFactSkill(2));
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+	CHECK(attacker.GetValue().LearnSkill(SkillId{ 1, 2 }).IsOk());
+	CHECK(attacker.GetValue().SetSkillLevel(SkillId{ 1, 2 }, 1).IsOk());
+
+	CHECK(attacker.GetValue().ApplySkillFact(
+		MakeSpecOnlyFact(9, 9, 60.0f, SkillFactSpecType::ProhibitSkill, 0.0f)));
+	attacker.GetValue().AdvanceSkillFacts(0.1f);
+
+	const uint32_t spBefore  = attacker.GetValue().BuildSnapshot().GetValue().sp.current;
+	const uint32_t mpBefore  = attacker.GetValue().BuildSnapshot().GetValue().mp.current;
+	const uint32_t hpBefore  = attacker.GetValue().BuildSnapshot().GetValue().hp.current;
+
+	(void) attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue());
+
+	CHECK_EQ(attacker.GetValue().BuildSnapshot().GetValue().sp.current, spBefore);
+	CHECK_EQ(attacker.GetValue().BuildSnapshot().GetValue().mp.current, mpBefore);
+	CHECK_EQ(attacker.GetValue().BuildSnapshot().GetValue().hp.current, hpBefore);
+
+	// And no cooldown was started.
+	CHECK(!attacker.GetValue().IsSkillOnCooldown(SkillId{ 1, 2 }));
+}
+
+MODERN_TEST(ServerSkillFactConsumers_ExpiredProhibitFactAllowsTheCastAgain)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeServerFactSkill(2));
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+	CHECK(attacker.GetValue().LearnSkill(SkillId{ 1, 2 }).IsOk());
+	CHECK(attacker.GetValue().SetSkillLevel(SkillId{ 1, 2 }, 1).IsOk());
+
+	CHECK(attacker.GetValue().ApplySkillFact(
+		MakeSpecOnlyFact(9, 9, 5.0f, SkillFactSpecType::ProhibitSkill, 0.0f)));
+	attacker.GetValue().AdvanceSkillFacts(0.1f);
+	CHECK_EQ(attacker.GetValue().GetFactModifiers().prohibitSkill, true);
+
+	// Outlive it, then a further tick clears the rebuilt snapshot.
+	attacker.GetValue().AdvanceSkillFacts(5.0f);
+	attacker.GetValue().AdvanceSkillFacts(0.1f);
+	CHECK_EQ(attacker.GetValue().GetFactModifiers().prohibitSkill, false);
+
+	CHECK(attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue()).Succeeded());
+}
+
+// ── NONBLOW through CastSkill ─────────────────────────────────────────
+
+MODERN_TEST(ServerSkillFactConsumers_ActiveNonBlowRefusesTheMatchingStatus)
+{
+	InMemorySkillDefinitions provider;
+	SkillDefinition stunner = MakeServerStunSkill(2);
+	stunner.applyType = PassiveApplyType::Hp;   // a bare status blow, no damage FACT
+	provider.Add(stunner);
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+	CHECK(attacker.GetValue().LearnSkill(SkillId{ 1, 2 }).IsOk());
+	CHECK(attacker.GetValue().SetSkillLevel(SkillId{ 1, 2 }, 1).IsOk());
+
+	// Without the immunity the blow lands.
+	const Skills::ActiveSkillResult unprotectedResult =
+		attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue());
+	CHECK(unprotectedResult.Succeeded());
+	CHECK(unprotectedResult.statusApplication.Applied());
+	(void) target.GetValue().CureStatus(StatusEffect::DisorderStun);
+
+	// The first cast started a cooldown, which would mask the immunity result.
+	attacker.GetValue().AdvanceSkillCooldowns(600.0f);
+
+	// Now the target is immune to stun, and the cast path says so.
+	Skills::SkillFact immune;
+	immune.skillId           = SkillId{ 9, 9 };
+	immune.remainingLifetime = 60.0f;
+	immune.basicType         = PassiveApplyType::VarHp;
+	immune.basicValue        = 1.0f;
+	immune.specs[0].type     = SkillFactSpecType::NonBlow;
+	immune.specs[0].specFlag = static_cast<uint32_t>(StatusEffect::DisorderStun);
+	CHECK(target.GetValue().ApplySkillFact(immune));
+	target.GetValue().AdvanceSkillFacts(0.1f);
+
+	const Skills::ActiveSkillResult protectedResult =
+		attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue());
+
+	CHECK(protectedResult.Succeeded());   // the cast happened
+	CHECK(protectedResult.hasStatusApplication);
+	CHECK(!protectedResult.statusApplication.Applied());
+	CHECK_EQ(protectedResult.statusApplication.refusal, StatusEffect::StatusRefusal::TargetImmune);
+	// ...and no stun was stored.
+	CHECK(!target.GetValue().GetStatus().Has(StatusEffect::StatusEffectType::Stun));
+}
+
+MODERN_TEST(ServerSkillFactConsumers_MultipleNonBlowFactsAreLastWins)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	Skills::SkillFact stunImmune;
+	stunImmune.skillId           = SkillId{ 1, 1 };
+	stunImmune.remainingLifetime = 30.0f;
+	stunImmune.basicType         = PassiveApplyType::VarHp;
+	stunImmune.basicValue        = 1.0f;
+	stunImmune.specs[0].type     = SkillFactSpecType::NonBlow;
+	stunImmune.specs[0].specFlag = static_cast<uint32_t>(StatusEffect::DisorderStun);
+
+	Skills::SkillFact poisonImmune = stunImmune;
+	poisonImmune.skillId           = SkillId{ 1, 2 };
+	poisonImmune.specs[0].specFlag = static_cast<uint32_t>(StatusEffect::DisorderPoison);
+
+	CHECK(character.GetValue().ApplySkillFact(stunImmune));    // slot 0
+	CHECK(character.GetValue().ApplySkillFact(poisonImmune));  // slot 1
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	// Assignment, not OR: slot 1's mask replaced slot 0's outright.
+	CHECK_EQ(character.GetValue().GetFactModifiers().statusImmunityMask,
+	         static_cast<uint32_t>(StatusEffect::DisorderPoison));
+}
+
+MODERN_TEST(ServerSkillFactConsumers_ExpiredNonBlowStopsProtecting)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	Skills::SkillFact immune;
+	immune.skillId           = SkillId{ 1, 1 };
+	immune.remainingLifetime = 5.0f;
+	immune.basicType         = PassiveApplyType::VarHp;
+	immune.basicValue        = 1.0f;
+	immune.specs[0].type     = SkillFactSpecType::NonBlow;
+	immune.specs[0].specFlag = static_cast<uint32_t>(StatusEffect::DisorderStun);
+	CHECK(character.GetValue().ApplySkillFact(immune));
+
+	character.GetValue().AdvanceSkillFacts(0.1f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().statusImmunityMask,
+	         static_cast<uint32_t>(StatusEffect::DisorderStun));
+
+	character.GetValue().AdvanceSkillFacts(5.0f);
+	character.GetValue().AdvanceSkillFacts(0.1f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().statusImmunityMask, 0u);
+}
+
+// ── PA / SA / MA through the derived-stat pipeline ────────────────────
+
+MODERN_TEST(ServerSkillFactConsumers_PowerFactRaisesTheDerivedPower)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	const uint16_t before = character.GetValue().BuildSnapshot().GetValue().derived.meleePower;
+
+	CHECK(character.GetValue().ApplySkillFact(MakePowerFact(1, 1, 30.0f, 25)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().meleePower, 25);
+	CHECK_GT(character.GetValue().BuildSnapshot().GetValue().derived.meleePower, before);
+}
+
+// Expiry must remove ONLY the timed contribution, through recalculation.
+MODERN_TEST(ServerSkillFactConsumers_ExpiredPowerFactRestoresTheBaseline)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	const uint16_t before = character.GetValue().BuildSnapshot().GetValue().derived.meleePower;
+
+	CHECK(character.GetValue().ApplySkillFact(MakePowerFact(1, 1, 5.0f, 25)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+	CHECK_GT(character.GetValue().BuildSnapshot().GetValue().derived.meleePower, before);
+
+	// Outlive it, then tick again so the rebuilt snapshot is applied.
+	character.GetValue().AdvanceSkillFacts(5.0f);
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().meleePower, 0);
+	CHECK_EQ(character.GetValue().BuildSnapshot().GetValue().derived.meleePower, before);
+}
+
+MODERN_TEST(ServerSkillFactConsumers_TwoPowerFactsAccumulate)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	const uint16_t before = character.GetValue().BuildSnapshot().GetValue().derived.meleePower;
+
+	CHECK(character.GetValue().ApplySkillFact(MakePowerFact(1, 1, 30.0f, 10)));
+	CHECK(character.GetValue().ApplySkillFact(MakePowerFact(1, 2, 30.0f, 15)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	// SUM, unlike the damage reductions.
+	CHECK_EQ(character.GetValue().GetFactModifiers().meleePower, 25);
+	CHECK_GT(character.GetValue().BuildSnapshot().GetValue().derived.meleePower, before);
+}
+
+// The FACT contribution must be independent of the permanent ones: a second
+// character with the same permanent stats but no buff is the control.
+MODERN_TEST(ServerSkillFactConsumers_FactPowerIsSeparateFromPermanentStats)
+{
+	auto buffed   = ServerCharacter::Create(StandardDefinition());
+	auto unbuffed = ServerCharacter::Create(StandardDefinition());
+	CHECK(buffed.IsOk());
+	CHECK(unbuffed.IsOk());
+
+	CHECK_EQ(buffed.GetValue().BuildSnapshot().GetValue().derived.meleePower,
+	         unbuffed.GetValue().BuildSnapshot().GetValue().derived.meleePower);
+
+	CHECK(buffed.GetValue().ApplySkillFact(MakePowerFact(1, 1, 30.0f, 40)));
+	buffed.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_GT(buffed.GetValue().BuildSnapshot().GetValue().derived.meleePower,
+	         unbuffed.GetValue().BuildSnapshot().GetValue().derived.meleePower);
+	// The permanent stat itself is untouched: only the snapshot differs.
+	CHECK_EQ(unbuffed.GetValue().GetFactModifiers().meleePower, 0);
+}
+
+// ── Damage reduction through the combat input ────────────────────────
+
+MODERN_TEST(ServerSkillFactConsumers_ReductionReachesTheCombatInput)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeConfigurableFactSkill(2));
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+	CHECK(attacker.GetValue().LearnSkill(SkillId{ 1, 2 }).IsOk());
+	CHECK(attacker.GetValue().SetSkillLevel(SkillId{ 1, 2 }, 1).IsOk());
+
+	CHECK(target.GetValue().ApplySkillFact(
+		MakeSpecOnlyFact(9, 9, 60.0f, SkillFactSpecType::PsyDamageReduce, 0.9f)));
+	target.GetValue().AdvanceSkillFacts(0.1f);
+	CHECK_EQ(target.GetValue().GetFactModifiers().psyDamageReduce, 0.9f);
+
+	// The basic-attack path must see it.
+	const Skills::SkillFactModifiers seen = target.GetValue().GetFactModifiers();
+	CHECK_EQ(seen.psyDamageReduce, 0.9f);
+}

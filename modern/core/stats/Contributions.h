@@ -293,6 +293,38 @@ namespace Modern::Stats
 		}
 	};
 
+	// VERTICAL-017: the timed FACT contribution.
+	//
+	// Deliberately its own struct rather than extra fields on
+	// `PassiveContribution`. RAN keeps them apart too: a FACT's attack power
+	// lands in `nSUM_PA/SA/MA` (GLogixExPC.cpp:2343-2345), which is summed with
+	// the passive total only at the point of use (:2970-2972). Folding them
+	// together would make a buff that expires on a timer indistinguishable from
+	// a skill that was learned permanently, and would let it survive expiry.
+	//
+	// Only the three values with a proven consumer and an existing authoritative
+	// owner are carried. The other twenty EMIMPACTA_* values stay in the FACT
+	// record untouched rather than being added here speculatively.
+	struct FactContribution
+	{
+		// nSUM_PA, nSUM_SA, nSUM_MA. Signed, because legacy's accumulators are
+		// `int` and the 16-bit clamp happens later in the stat layer.
+		int32_t meleePower = 0;
+		int32_t shootPower = 0;
+		int32_t magicAttack = 0;
+
+		constexpr bool operator==(const FactContribution& other) const noexcept
+		{
+			return meleePower == other.meleePower && shootPower == other.shootPower &&
+			       magicAttack == other.magicAttack;
+		}
+
+		constexpr bool IsEmpty() const noexcept
+		{
+			return meleePower == 0 && shootPower == 0 && magicAttack == 0;
+		}
+	};
+
 	// True when every float in a contribution is finite. The calculator refuses
 	// a contribution containing NaN or an infinity rather than propagating it
 	// into a derived value.

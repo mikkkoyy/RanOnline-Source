@@ -181,6 +181,17 @@ Status ServerCharacter::Recalculate()
 		input.codex           = m_codexContribution;
 		input.confPointRate   = m_definition.confPointRate;
 
+		// VERTICAL-017: the timed FACT contribution, fed from the same rebuilt
+		// modifier snapshot the combat path uses, so both consumers of a FACT
+		// always agree.
+		//
+		// It is a fourth source beside items, passives and codex rather than an
+		// addition to any of them, matching legacy, which sums `nSUM_MA` with
+		// `m_sSUM_PASSIVE.m_nMA` only at the point of use (:2970-2972).
+		input.facts.meleePower = m_factModifiers.meleePower;
+		input.facts.shootPower = m_factModifiers.shootPower;
+		input.facts.magicAttack = m_factModifiers.magicAttack;
+
 		const Result<Stats::DerivedStats> result = Stats::Calculate(input);
 		if (result.IsError())
 		{
@@ -744,6 +755,31 @@ namespace Modern::Server
 		input.targetDamageReflection = target.m_derived.damageReflection;
 		input.targetDamageReflectionRate = target.m_derived.damageReflectionRate;
 		input.targetResistElement = 0; // Not yet modeled (elemental combat)
+
+		// VERTICAL-017: the target's FACT damage protection, combined with its own
+		// DAMAGE_SPEC values by MAXIMUM.
+		//
+		// Legacy rebuilds `m_sDamageSpec` every tick and max-accumulates the FACT
+		// reduction/reflection specs into it (GLogixExPC.cpp:2224-2228, then
+		// :2380-2401). So the strongest source wins rather than the two adding,
+		// and an expired buff stops contributing because the structure is rebuilt
+		// instead of restored.
+		//
+		// The physical pair is wired here. The magic pair has no consumer on this
+		// path because `Attack` is a physical basic attack; magic reads it through
+		// the skill path instead.
+		input.targetDamageReduce =
+			target.m_factModifiers.psyDamageReduce > input.targetDamageReduce
+				? target.m_factModifiers.psyDamageReduce
+				: input.targetDamageReduce;
+		input.targetDamageReflection =
+			target.m_factModifiers.psyDamageReflection > input.targetDamageReflection
+				? target.m_factModifiers.psyDamageReflection
+				: input.targetDamageReflection;
+		input.targetDamageReflectionRate =
+			target.m_factModifiers.psyDamageReflectionRate > input.targetDamageReflectionRate
+				? target.m_factModifiers.psyDamageReflectionRate
+				: input.targetDamageReflectionRate;
 		// VERTICAL-010: the SP this attack costs, and the attacker's pool.
 		//
 		// Legacy: GLogixExPC.cpp:3492-3497 (BEGIN_ATTACK)
@@ -900,6 +936,29 @@ namespace Modern::Server
 		input.basicAttackSP = Combat::CombatConstants().basicDisSP;
 
 		input.onCooldown = IsSkillOnCooldown(id);
+
+		// VERTICAL-017, tasks 4 and 5: two FACT-driven inputs that the resolver
+		// already understands but that nothing was feeding.
+		//
+		// PROHIBIT_SKILL. Legacy checks this in CHECKSKILL at GLogixExPC.cpp:4060,
+		// the FIRST statement of the function, before the learned check (:4077)
+		// and before the cooldown check (:4082) - and therefore before any SP is
+		// spent. `m_factModifiers` is rebuilt from the live FACT pool by
+		// `AdvanceSkillFacts`, so it is zero for a character with no buffs and
+		// returns to `false` on its own once the FACT expires. There is no
+		// second prohibition check here: `ActiveSkillResolver` owns the decision
+		// and already refuses with `NotCastable`.
+		input.skillProhibited = m_factModifiers.prohibitSkill;
+
+		// NONBLOW. The target's immunity mask, aggregated from its FACTs, handed
+		// to the status resolver as a plain value. The two domains stay separate:
+		// this is a number crossing a boundary, not shared storage. Legacy applies
+		// the mask at GLChar.cpp:3376-3379, gating the probability call entirely.
+		//
+		// The status random roll is left at its default here. Supplying it needs a
+		// deterministic per-cast source, and guessing one would change which
+		// blows land; that is DEFERRED rather than invented.
+		input.targetDisorderMask = target.m_factModifiers.statusImmunityMask;
 
 		input.hitRoll        = DeterministicRandom();
 		input.damageRoll     = DeterministicRandom();
@@ -1083,7 +1142,15 @@ namespace Modern::Server
 
 	bool ServerCharacter::ApplySkillFact(const Skills::SkillFact& fact) noexcept
 	{
-		return m_skillFacts.Apply(fact);
+		const bool applied = m_skillFacts.Apply(fact);
+		if (applied)
+		{
+			// A new FACT may carry an attack-power impact, and the derived stats
+			// are a cached snapshot. Refresh when - and only when - one of the
+			// power values actually moved, so the cost is not paid on every buff.
+			RefreshFactStatsIfPowersChanged();
+		}
+		return applied;
 	}
 
 	Skills::SkillFactModifiers ServerCharacter::AdvanceSkillFacts(float elapsedSeconds) noexcept
@@ -1092,6 +1159,23 @@ namespace Modern::Server
 			Skills::AdvanceSkillFacts(m_skillFacts, elapsedSeconds);
 
 		m_factModifiers = advanced.modifiers;
+		RefreshFactStatsIfPowersChanged();
 		return m_factModifiers;
+	}
+
+	void ServerCharacter::RefreshFactStatsIfPowersChanged() noexcept
+	{
+		// Recalculate() re-reads m_factModifiers, so it has to run only after the
+		// snapshot has been updated - which is why this is not folded into the
+		// assignment above.
+		if (m_factStatsPowersApplied.meleePower  != m_factModifiers.meleePower ||
+		    m_factStatsPowersApplied.shootPower  != m_factModifiers.shootPower ||
+		    m_factStatsPowersApplied.magicAttack != m_factModifiers.magicAttack)
+		{
+			m_factStatsPowersApplied.meleePower  = m_factModifiers.meleePower;
+			m_factStatsPowersApplied.shootPower  = m_factModifiers.shootPower;
+			m_factStatsPowersApplied.magicAttack = m_factModifiers.magicAttack;
+			(void) Recalculate();
+		}
 	}
 }
