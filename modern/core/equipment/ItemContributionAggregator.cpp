@@ -6,6 +6,9 @@
 
 #include "equipment/ItemContributionAggregator.h"
 
+#include <array>
+#include <cstddef>
+
 namespace Modern
 {
 	Result<ItemContributionResult> ItemContributionAggregator::Aggregate(
@@ -15,8 +18,17 @@ namespace Modern
 
 		// Slot order, so the accumulation order is a property of the container
 		// rather than of a caller's iteration.
-		for (const EquipmentEntry& entry : equipment.GetSlots())
+		//
+		// VERTICAL-010: indexed rather than ranged-for, because the required-SP
+		// term has to know which slot it came from. SUM_ITEM reads wReqSP from
+		// the two hand slots only (GLogixExPC.cpp:430-434) and ignores every
+		// other worn item, so this cannot be a plain sum over all slots.
+		const std::array<EquipmentEntry, kEquipmentSlotCount>& slots = equipment.GetSlots();
+		for (size_t index = 0; index < slots.size(); ++index)
 		{
+			const EquipmentEntry& entry = slots[index];
+			const EquipmentSlot slot = static_cast<EquipmentSlot>(index);
+
 			if (!entry.HasItem())
 			{
 				continue;
@@ -107,6 +119,24 @@ namespace Modern
 		result.contribution.damageReduce += block.damageReduce;
 		result.contribution.damageReflection += block.damageReflection;
 		result.contribution.damageReflectionRate += block.damageReflectionRate;
+
+		// VERTICAL-010: required SP, from the hand slots only.
+		//
+		// Legacy: GLogixExPC.cpp:430-434
+		//     SITEM* pRHAND = GET_SLOT_ITEMDATA ( emRHand );
+		//     SITEM* pLHAND = GET_SLOT_ITEMDATA ( emLHand );
+		//     if ( pRHAND )  m_wSUM_DisSP += pRHAND->sSuitOp.wReqSP;
+		//     if ( pLHAND )  m_wSUM_DisSP += pLHAND->sSuitOp.wReqSP;
+		//
+		// The two guards are the whole rule: a worn head, upper, accessory or
+		// any other slot contributes nothing here even if its definition
+		// carries a wReqSP. The 16-bit wrap is legacy's too, and matches how
+		// the six base stats are summed just above.
+		if (slot == EquipmentSlot::RightHand || slot == EquipmentSlot::LeftHand)
+		{
+			result.contribution.requiredSP = static_cast<uint16_t>(
+				result.contribution.requiredSP + block.requiredSP);
+		}
 	}
 
 		return result;

@@ -494,3 +494,240 @@ MODERN_TEST(Aggregator_DeterministicSlotOrder)
 	CHECK(a.contribution == b.contribution);
 	CHECK_EQ(a.contributingSlots, static_cast<size_t>(2));
 }
+
+// ---------------------------------------------------------------------------
+// VERTICAL-010: required SP aggregation
+//
+// Legacy: GLogixExPC.cpp:430-434
+//     SITEM* pRHAND = GET_SLOT_ITEMDATA ( emRHand );
+//     SITEM* pLHAND = GET_SLOT_ITEMDATA ( emLHand );
+//     if ( pRHAND )  m_wSUM_DisSP += pRHAND->sSuitOp.wReqSP;
+//     if ( pLHAND )  m_wSUM_DisSP += pLHAND->sSuitOp.wReqSP;
+//
+// The two guards are the rule. Every test here is about which slots are read,
+// because summing all 21 would be wrong and would not reproduce RAN.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+	// A definition whose only non-zero stat is the required-SP cost. That is
+	// the case that fails if `IsZero()` forgets the new field: the aggregator
+	// would skip it as a non-contributor before ever reading the slot.
+	ItemDefinition MakeRequiredSPWeapon(uint32_t id, uint16_t requiredSP)
+	{
+		ItemStatBlock stats;
+		stats.requiredSP = requiredSP;
+		return MakeWeapon(id, stats);
+	}
+}
+
+MODERN_TEST(RequiredSP_NoHandsContributesZero)
+{
+	InMemoryItemDefinitions provider;
+	provider.Add(MakeRequiredSPWeapon(9501, 20));
+	provider.Add(MakeRequiredSPWeapon(9502, 10));
+
+	EquipmentState equipment;
+
+	const auto result = ItemContributionAggregator::Aggregate(equipment, provider);
+
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().error, ContributionError::None);
+	CHECK_EQ(result.GetValue().contribution.requiredSP, static_cast<uint16_t>(0));
+}
+
+MODERN_TEST(RequiredSP_RightHandOnly)
+{
+	InMemoryItemDefinitions provider;
+	provider.Add(MakeRequiredSPWeapon(9501, 20));
+	provider.Add(MakeRequiredSPWeapon(9502, 10));
+
+	EquipmentState equipment;
+	equipment.Equip(EquipmentSlot::RightHand, MakeInstance(9501, 1));
+
+	const auto result = ItemContributionAggregator::Aggregate(equipment, provider);
+
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.requiredSP, static_cast<uint16_t>(20));
+}
+
+MODERN_TEST(RequiredSP_LeftHandOnly)
+{
+	InMemoryItemDefinitions provider;
+	provider.Add(MakeRequiredSPWeapon(9501, 20));
+	provider.Add(MakeRequiredSPWeapon(9502, 10));
+
+	EquipmentState equipment;
+	equipment.Equip(EquipmentSlot::LeftHand, MakeInstance(9502, 1));
+
+	const auto result = ItemContributionAggregator::Aggregate(equipment, provider);
+
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.requiredSP, static_cast<uint16_t>(10));
+}
+
+MODERN_TEST(RequiredSP_BothHandsSum)
+{
+	InMemoryItemDefinitions provider;
+	provider.Add(MakeRequiredSPWeapon(9501, 20));
+	provider.Add(MakeRequiredSPWeapon(9502, 10));
+
+	EquipmentState equipment;
+	equipment.Equip(EquipmentSlot::RightHand, MakeInstance(9501, 1));
+	equipment.Equip(EquipmentSlot::LeftHand,  MakeInstance(9502, 2));
+
+	const auto result = ItemContributionAggregator::Aggregate(equipment, provider);
+
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.requiredSP, static_cast<uint16_t>(30));
+}
+
+// The point of the two hand guards: every other worn slot must be ignored even
+// when its definition carries a required-SP cost.
+MODERN_TEST(RequiredSP_NonHandSlotsDoNotContribute)
+{
+	InMemoryItemDefinitions provider;
+
+	// One definition, equipped in slots that are not hands. Because
+	// `MakeRequiredSPWeapon` yields a single id, the same cost is carried by
+	// every slot here.
+	provider.Add(MakeRequiredSPWeapon(9501, 25));
+
+	EquipmentState equipment;
+	equipment.Equip(EquipmentSlot::Headgear, MakeInstance(9501, 1));
+	equipment.Equip(EquipmentSlot::Upper,    MakeInstance(9501, 2));
+	equipment.Equip(EquipmentSlot::Lower,    MakeInstance(9501, 3));
+	equipment.Equip(EquipmentSlot::Hand,     MakeInstance(9501, 4));
+	equipment.Equip(EquipmentSlot::Foot,     MakeInstance(9501, 5));
+	equipment.Equip(EquipmentSlot::Neck,     MakeInstance(9501, 6));
+	equipment.Equip(EquipmentSlot::Wrist,    MakeInstance(9501, 7));
+	equipment.Equip(EquipmentSlot::Ornament, MakeInstance(9501, 8));
+	equipment.Equip(EquipmentSlot::Misc,     MakeInstance(9501, 9));
+
+	const auto result = ItemContributionAggregator::Aggregate(equipment, provider);
+
+	CHECK(result.IsOk());
+	// The items are still worn and still counted as contributing slots, they
+	// simply carry nothing into the required-SP total.
+	CHECK_EQ(result.GetValue().contribution.requiredSP, static_cast<uint16_t>(0));
+	CHECK_EQ(result.GetValue().contributingSlots, static_cast<size_t>(9));
+}
+
+MODERN_TEST(RequiredSP_HandPlusOtherSlotsStillOnlyHands)
+{
+	InMemoryItemDefinitions provider;
+	provider.Add(MakeRequiredSPWeapon(9501, 20));
+	provider.Add(MakeRequiredSPWeapon(9502, 30));
+
+	EquipmentState equipment;
+	equipment.Equip(EquipmentSlot::RightHand, MakeInstance(9501, 1));
+	equipment.Equip(EquipmentSlot::Upper,      MakeInstance(9502, 2));
+
+	const auto result = ItemContributionAggregator::Aggregate(equipment, provider);
+
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.requiredSP, static_cast<uint16_t>(20));
+}
+
+// A required-SP-only weapon still aggregates its cost. If `IsZero()` ignored
+// the field this would read 0, because the aggregator skips a block it
+// considers empty before it reaches the hand-slot test.
+MODERN_TEST(RequiredSP_OnlyStatStillAggregates)
+{
+	InMemoryItemDefinitions provider;
+
+	ItemStatBlock stats;
+	stats.requiredSP = 7;
+	// Nothing else set.
+	provider.Add(MakeWeapon(9503, stats));
+
+	EquipmentState equipment;
+	equipment.Equip(EquipmentSlot::RightHand, MakeInstance(9503, 1));
+
+	const auto result = ItemContributionAggregator::Aggregate(equipment, provider);
+
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.requiredSP, static_cast<uint16_t>(7));
+	CHECK_EQ(result.GetValue().contributingSlots, static_cast<size_t>(1));
+}
+
+// A required-SP cost is a property of equipment. A consumable in a hand slot
+// is skipped exactly as any other non-equipment item is.
+MODERN_TEST(RequiredSP_NonEquipmentSlotIgnored)
+{
+	InMemoryItemDefinitions provider;
+
+	ItemDefinition potion;
+	potion.id = Id(9504);
+	potion.kind = ItemKind::Consumable;
+	potion.name = "Potion";
+	potion.maxStack = 10;
+	potion.stats.requiredSP = 40;
+	provider.Add(potion);
+
+	EquipmentState equipment;
+	equipment.Equip(EquipmentSlot::RightHand, MakeInstance(9504, 1));
+
+	const auto result = ItemContributionAggregator::Aggregate(equipment, provider);
+
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.requiredSP, static_cast<uint16_t>(0));
+}
+
+// 16-bit wrap, because legacy sums into a WORD and so does this. 60000 + 60000
+// is 120000, which is 4464 past the wrap.
+MODERN_TEST(RequiredSP_SumsWithWordWrap)
+{
+	InMemoryItemDefinitions provider;
+	provider.Add(MakeRequiredSPWeapon(9505, 60000));
+	provider.Add(MakeRequiredSPWeapon(9506, 60000));
+
+	EquipmentState equipment;
+	equipment.Equip(EquipmentSlot::RightHand, MakeInstance(9505, 1));
+	equipment.Equip(EquipmentSlot::LeftHand,  MakeInstance(9506, 2));
+
+	const auto result = ItemContributionAggregator::Aggregate(equipment, provider);
+
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.requiredSP, static_cast<uint16_t>(120000 - 65536));
+}
+
+MODERN_TEST(RequiredSP_UnequipRemovesCost)
+{
+	InMemoryItemDefinitions provider;
+	provider.Add(MakeRequiredSPWeapon(9501, 20));
+	provider.Add(MakeRequiredSPWeapon(9502, 10));
+
+	EquipmentState equipment;
+	equipment.Equip(EquipmentSlot::RightHand, MakeInstance(9501, 1));
+	equipment.Equip(EquipmentSlot::LeftHand,  MakeInstance(9502, 2));
+
+	const auto both = ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK_EQ(both.GetValue().contribution.requiredSP, static_cast<uint16_t>(30));
+
+	equipment.Unequip(EquipmentSlot::RightHand);
+
+	const auto remaining = ItemContributionAggregator::Aggregate(equipment, provider);
+	CHECK_EQ(remaining.GetValue().contribution.requiredSP, static_cast<uint16_t>(10));
+}
+
+// Required SP and the ordinary stat sum are independent: the hand guard applies
+// only to the required-SP term.
+MODERN_TEST(RequiredSP_DoesNotDisturbOtherStats)
+{
+	InMemoryItemDefinitions provider;
+
+	ItemStatBlock stats;
+	stats.requiredSP = 20;
+	stats.hp = 50;
+	provider.Add(MakeWeapon(9507, stats));
+
+	EquipmentState equipment;
+	equipment.Equip(EquipmentSlot::RightHand, MakeInstance(9507, 1));
+
+	const auto result = ItemContributionAggregator::Aggregate(equipment, provider);
+
+	CHECK(result.IsOk());
+	CHECK_EQ(result.GetValue().contribution.requiredSP, static_cast<uint16_t>(20));
+	CHECK_EQ(result.GetValue().contribution.hp, 50);
+}

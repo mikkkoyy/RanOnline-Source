@@ -3567,3 +3567,128 @@ This is the only behaviour in VERTICAL-009 that is not source-verified.
 | Ranged combat | PARTIAL | Reflection suppressed; no `m_wSUM_SA` split |
 | Elemental resistance | DEFERRED | Physical resistance only; magic out of scope |
 | Magic combat | DEFERRED | Not part of the physical milestone |
+---
+
+# VERTICAL-010: Required-SP / Item Integration
+
+VERTICAL-009 made the low-SP comparison correct but could only feed it a
+constant, because the required-SP value had nowhere to live. This milestone
+adds the equipment half of that value and corrects which character's SP decides
+low SP.
+
+Full derivation: `docs/reference/client/VERTICAL-010_REQUIRED_SP_INVESTIGATION.md`.
+
+## The item field
+
+Legacy carries the cost on the item's suit data, `ITEM::SSUIT::wReqSP`, a
+`WORD` defaulting to 0 (`legacy/Lib_Client/G-Logic/GLItemSuit.h:466`, `:487`).
+It is static definition data, read through `SITEM::sSuitOp`.
+
+`SUM_ITEM` sums it from the two hand slots only
+(`legacy/Lib_Client/G-Logic/GLogixExPC.cpp:430-434`):
+
+```cpp
+m_wSUM_DisSP = m_wACCEPTP;
+SITEM* pRHAND = GET_SLOT_ITEMDATA ( emRHand );
+SITEM* pLHAND = GET_SLOT_ITEMDATA ( emLHand );
+if ( pRHAND )  m_wSUM_DisSP += pRHAND->sSuitOp.wReqSP;
+if ( pLHAND )  m_wSUM_DisSP += pLHAND->sSuitOp.wReqSP;
+```
+
+That maps onto the existing contribution pipeline, so nothing new was invented:
+
+| Legacy | Modern |
+|--------|--------|
+| `ITEM::SSUIT::wReqSP` (`WORD`) | `ItemStatBlock::requiredSP` (`uint16_t`) |
+| the `SUM_ITEM` hand sum | `ItemContribution::requiredSP` |
+| the two hand guards | slot test in `ItemContributionAggregator` |
+| `wBASIC_DIS_SP` | `CombatConstants::basicDisSP` (VERTICAL-009) |
+
+The aggregator sums every other field over all 21 slots, so this one needed an
+explicit slot test; the loop became indexed to know which slot it came from. A
+naive sum over all slots would not reproduce RAN, and
+`RequiredSP_NonHandSlotsDoNotContribute` pins that.
+
+`ItemStatBlock::IsZero()` had to learn the field, because the aggregator skips
+an empty block before reaching the hand test. Without it a weapon whose only
+stat is an SP cost would contribute nothing.
+
+## The low-SP rule, and whose SP
+
+VERTICAL-009 fed its flag from the target's SP pool. Legacy decides low SP on
+the **attacker**. `GLCharMsg.cpp:604-612` is the attacker's own handler:
+
+```cpp
+EMBEGINATTACK_FB emBeginFB = BEGIN_ATTACK(wStrikeNum);
+if ( emBeginFB!=EMBEGINA_OK && emBeginFB!=EMBEGINA_SP )  return E_FAIL;
+BOOL bLowSP = (emBeginFB==EMBEGINA_SP) ? TRUE: FALSE;
+PreStrikeProc ( FALSE, bLowSP );
+```
+
+`BEGIN_ATTACK` (`GLogixExPC.cpp:3492-3497`) reads the attacker's own
+`m_sSP.dwNow` and the result degrades that character's swing. The victim is
+never consulted.
+
+With a real required-SP value the old wiring was unusable: an attacker needing
+31 SP would never be low SP against a target holding 100 SP. `targetLowSP` is
+removed, `CombatInput` gains `attackerCurrentSP`, and `ResolveCombat` evaluates
+
+```cpp
+const bool lowSP = input.attackerCurrentSP < static_cast<uint32_t>(input.attackerRequiredSP);
+```
+
+in the one place the rule now lives. The comparison is strict, so holding
+exactly the required amount is sufficient.
+
+`CombatInput::attackerRequiredSP` is VERTICAL-009's field, unchanged in name and
+role. `ServerCharacter::Attack` fills it with
+`m_items.requiredSP + basicDisSP` and passes its own `m_currentSp`.
+
+## `m_wACCEPTP` is deferred, and the legacy agrees
+
+`m_wACCEPTP` (`GLogicEx.h:401`) is a stat-deficit penalty:
+`CALC_ACCEPTP` (`GLogixExPC.cpp:3443-3461`) adds, per hand item, the shortfall
+against `sBasicOp.sReqStats` and `wReqLevelDW`. The modern item model has no
+field for either, so it is not implemented rather than approximated.
+
+It is also **absent from the low-SP gate**. `GLogixExPC.cpp:3492-3494` rebuilds
+`wDisSP` from `wBASIC_DIS_SP` and the two hands without reading `m_wSUM_DisSP` or
+`m_wACCEPTP`; those are used only by the SP deduction
+(`GLChar.cpp:2431`, `:2506`). Legacy is internally asymmetric here, and since
+this milestone implements the gate and no milestone implements deduction,
+excluding the term is faithful. It belongs with the deduction milestone, in the
+same contribution field.
+
+## Unchanged on purpose
+
+`fLOWSP_HIT_DROP = 0.25` and `fLOWSP_DAMAGE = 0.50` are VERTICAL-009's and are
+not touched; `RequiredSPMatrix_LowSPFormulasUnchanged` pins both. The purpose
+here was the required-SP input.
+
+`wStrikeNum` is not modelled: modern combat resolves a single strike.
+`SITEMCUSTOM::GETREQ_SP()` (`GLItem.cpp:2911-2927`), which folds in the
+`EMR_OPT_DIS_SP` refine option, is not used by `SUM_ITEM` either, so the static
+field is faithful.
+
+## Tests
+
+Core 236 to 259, Server 52 to 58. All 14 CTest suites pass in Debug and
+Release, 0 errors and 0 warnings.
+
+The `MakeSPInput` combat fixture uses `targetDefense = 9` so the pre-halving
+damage is 6 and `6 * 0.5f` is exactly 3. At the usual 10 the value is 5,
+`5 * 0.5f` truncates to 2, and the "is exactly half" assertions would be
+testing integer rounding instead of the rule.
+
+## Limitations
+
+| Behavior | Status | Notes |
+|----------|--------|-------|
+| Equipment required SP | IMPLEMENTED | Hand slots only, `uint16_t`, 16-bit wrap |
+| Low-SP comparison | IMPLEMENTED | Strict `<`, attacker's own pool, resolved in Core |
+| `m_wACCEPTP` | DEFERRED | Needs `sReqStats`/`wReqLevelDW`; also absent from the legacy gate |
+| `EMR_OPT_DIS_SP` refine | DEFERRED | Per-copy stats; `SUM_ITEM` does not use `GETREQ_SP()` |
+| SP consumption | DEFERRED | No system deducts SP yet |
+| Skill `wUSE_SP` | DEFERRED | VERTICAL-011; `requiredSP` is the reusable half |
+| `wStrikeNum` | DEFERRED | Single-strike combat |
+| `ItemStatBlock::IsZero()` vs `*RecoveryFlat` | REPORTED | Pre-existing gap, not a required-SP dependency |

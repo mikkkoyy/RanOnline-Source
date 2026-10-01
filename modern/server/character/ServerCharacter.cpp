@@ -743,16 +743,23 @@ namespace Modern::Server
 		input.targetDamageReflection = target.m_derived.damageReflection;
 		input.targetDamageReflectionRate = target.m_derived.damageReflectionRate;
 		input.targetResistElement = 0; // Not yet modeled (elemental combat)
-		// VERTICAL-009: low-SP detection (current SP < required SP).
+		// VERTICAL-010: the SP this attack costs, and the attacker's pool.
 		//
-		// Legacy: GLogixExPC.cpp:3492-3497, GLChar.cpp:2431-2433
+		// Legacy: GLogixExPC.cpp:3492-3497 (BEGIN_ATTACK)
+		//     WORD wDisSP = GLCONST_CHAR::wBASIC_DIS_SP;
+		//     if ( pRHAND )  wDisSP += pRHAND->sSuitOp.wReqSP;
+		//     if ( pLHAND )  wDisSP += pLHAND->sSuitOp.wReqSP;
+		//     if ( m_sSP.dwNow < (wDisSP*wStrikeNum) )  return EMBEGINA_SP;
 		//
-		// wDisSP = m_wSUM_DisSP + wBASIC_DIS_SP (basic attack).
-		// The equipment SP overhead (m_wSUM_DisSP) is not yet modeled in
-		// the modern equipment system; only the base attack cost is used.
-		const uint16_t requiredSP = Combat::CombatConstants().basicDisSP;
-		input.attackerRequiredSP = requiredSP;
-		input.targetLowSP = (target.m_currentSp < requiredSP);
+		// m_items.requiredSP is the wReqSP sum of the two hand slots, produced
+		// by ItemContributionAggregator, so wBASIC_DIS_SP is the only term added
+		// here. The comparison itself is Combat::ResolveCombat's, which keeps
+		// the rule in core rather than restating it per caller.
+		//
+		// m_wACCEPTP is not added: the legacy gate above does not use it either.
+		input.attackerRequiredSP = static_cast<uint16_t>(
+			m_items.requiredSP + Combat::CombatConstants().basicDisSP);
+		input.attackerCurrentSP = m_currentSp;
 
 		// VERTICAL-009: PK combat flag.
 		//

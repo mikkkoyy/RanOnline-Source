@@ -17,10 +17,10 @@ formula provenance.
 | ---- | ----- |
 | Legacy import | complete |
 | Core foundation | complete |
-| Vertical gameplay slices 001-009 | complete |
+| Vertical gameplay slices 001-010 | complete |
 | Build verification (BUILD-001) | complete |
 | Ranged / magic combat | not started |
-| Required-SP item integration | not started (VERTICAL-010) |
+| Active skill combat | not started (VERTICAL-011) |
 
 ---
 
@@ -39,8 +39,9 @@ formula provenance.
 | VERTICAL-007 Combat equipment + state | [x] | `1dd6716` |
 | VERTICAL-008 Combat events + reflection | [x] | `7ffa8d6` |
 | VERTICAL-009 Build verification + physical combat completion | [x] | `ad99138` |
-| BUILD-001 Tracked build-artifact cleanup | [x] | this commit |
-| VERTICAL-010 Required-SP / item integration | [ ] | — |
+| BUILD-001 Tracked build-artifact cleanup | [x] | `1dd36f9` |
+| VERTICAL-010 Required-SP / item integration | [x] | this commit |
+| VERTICAL-011 Active skill combat | [ ] | — |
 
 ---
 
@@ -142,30 +143,90 @@ multi-config generator; without it every test reports `***Not Run` with
 
 ## Next task
 
-**VERTICAL-010 — Required-SP / item integration.** Not started.
+**VERTICAL-011 — Active skill combat.** Not started.
 
-Dependency chain to implement:
+VERTICAL-010 closed the equipment half of the required-SP calculation and left
+the item model ready for the skill half: a future skill milestone computes
+`skill required SP = ItemContribution::requiredSP + SkillDefinition::useSP`
+(legacy `GLogixExPC.cpp:4254-4258`) with no further change to the item model.
 
-```
-legacy wReqSP  (SITEM::sSuitOp::wReqSP)
-    ↓
-ItemStatBlock / ItemDefinition
-    ↓
-required SP aggregation
-    ↓
-m_wSUM_DisSP equivalent
-    ↓
-actual low-SP determination
-    ↓
-combat
-```
+Still deferred, with reasons in
+`docs/reference/client/VERTICAL-010_REQUIRED_SP_INVESTIGATION.md` §10:
+`m_wACCEPTP` (needs per-item `sReqStats`/`wReqLevelDW`; excluded from the legacy
+low-SP gate as well, so it belongs with SP deduction), the `EMR_OPT_DIS_SP`
+refine option, SP consumption, `wStrikeNum`, and skill `wUSE_SP`.
 
-This closes the last gap in the low-SP mechanic. VERTICAL-009 established the
-correct comparison (`currentSP < requiredSP`, `GLogixExPC.cpp:3497`) and the
-correct damage multiplier (`fLOWSP_DAMAGE`), but only `wBASIC_DIS_SP` is
-currently modelled — `m_wSUM_DisSP` has no field to live in. See
-`docs/reference/client/VERTICAL-009_PHYSICAL_COMBAT_INVESTIGATION.md` §1 and
-`docs/MODERN_ARCHITECTURE.md` (VERTICAL-009 limitations).
-
-VERTICAL-010 must begin with a fresh repository check and fresh legacy
+VERTICAL-011 must begin with a fresh repository check and fresh legacy
 investigation.
+
+---
+
+## VERTICAL-010 — Required-SP / item integration
+
+**State: complete. Verified, not assumed.**
+
+Full derivation: `docs/reference/client/VERTICAL-010_REQUIRED_SP_INVESTIGATION.md`.
+
+### What changed
+
+The required-SP value now has somewhere to live and reaches combat.
+
+| Piece | Where |
+| --- | --- |
+| `ItemStatBlock::requiredSP` (`uint16_t`) | `modern/core/item/ItemDefinition.h` |
+| `ItemStatBlock::IsZero()` learns the field | `modern/core/item/ItemDefinition.cpp` |
+| `ItemContribution::requiredSP` | `modern/core/stats/Contributions.h` |
+| Hand-only accumulation | `modern/core/equipment/ItemContributionAggregator.cpp` |
+| `CombatInput::attackerCurrentSP`, core-side low-SP rule | `modern/core/combat/CombatCalculator.h` |
+| Server supplies the real value | `modern/server/character/ServerCharacter.cpp` |
+
+Legacy `SUM_ITEM` reads `wReqSP` from `emRHand` and `emLHand` only
+(`GLogixExPC.cpp:430-434`), so the aggregator applies the term under a slot
+test rather than summing all 21 slots. The loop became indexed for that reason.
+
+`CombatInput::attackerRequiredSP` is VERTICAL-009's field and keeps its name; it
+now receives `m_items.requiredSP + basicDisSP` instead of the bare constant.
+
+### One correction to VERTICAL-009
+
+VERTICAL-009 fed its low-SP flag from the **target's** SP. Legacy decides this
+on the **attacker**: `GLCharMsg.cpp:604-612` calls `BEGIN_ATTACK`, which reads
+that character's own `m_sSP.dwNow`, and passes the result to that character's
+`PreStrikeProc`. The victim is never consulted.
+
+With a real required-SP value the old wiring could not behave correctly — an
+attacker needing 31 SP would never be low-SP against a target holding 100 SP.
+`targetLowSP` is gone; `ResolveCombat` evaluates
+`attackerCurrentSP < attackerRequiredSP` in one place, and `CombatInput` no
+longer carries a target SP field at all.
+
+The VERTICAL-009 formulas were not touched: `fLOWSP_HIT_DROP = 0.25` and
+`fLOWSP_DAMAGE = 0.50` are pinned by
+`RequiredSPMatrix_LowSPFormulasUnchanged`.
+
+### Verification
+
+| Check | Result |
+| ----- | ------ |
+| Debug build | PASS — 0 errors, 0 warnings |
+| Release build | PASS — 0 errors, 0 warnings |
+| CTest Debug | PASS — 14/14 |
+| CTest Release | PASS — 14/14 |
+| Core tests | 259/259 (was 236), Debug and Release |
+| Server tests | 58/58 (was 52), Debug and Release |
+| Client tests | 12/12 suites, Debug and Release |
+
+`m_wACCEPTP` is deliberately **not** implemented. It is a stat-deficit penalty
+needing per-item `sReqStats` and `wReqLevelDW`, which the modern item model has
+no field for. It is also absent from the legacy low-SP gate
+(`GLogixExPC.cpp:3492-3494` rebuilds `wDisSP` from `wBASIC_DIS_SP` and the two
+hands without reading it), so excluding it is faithful rather than a shortcut.
+It belongs to whichever milestone implements SP deduction.
+
+### Noted, not fixed
+
+`ItemStatBlock::IsZero()` also omits the three `*RecoveryFlat` fields added in
+VERTICAL-005, so an item whose only stats are flat recovery is skipped by the
+aggregator. Same class of bug as the `requiredSP` omission this milestone fixed,
+but not a required-SP dependency, so it is reported rather than changed.
+

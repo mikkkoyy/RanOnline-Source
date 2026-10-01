@@ -1784,6 +1784,137 @@ MODERN_TEST(ServerCombat_MultipleAttacks)
 	CHECK(snapshot.GetValue().hp.current <= maxHp);
 }
 
+// ---------------------------------------------------------------------------
+// VERTICAL-010: required SP reaches the server character
+//
+// The combat-level arithmetic and boundary live in modern/tests/CombatTests.cpp
+// and the aggregation in modern/tests/EquipmentTests.cpp. What is left is the
+// server's own wiring: a worn hand item's cost has to survive the character's
+// item pipeline and be visible in the published contribution, which is what
+// Attack() reads to build CombatInput::attackerRequiredSP.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+	// A definition provider carrying two weapons with distinct required-SP
+	// costs, and one armour with a cost that must never be counted.
+	ServerCharacterDefinition DefinitionWithRequiredSP(InMemoryItemDefinitions& provider)
+	{
+		ServerCharacterDefinition definition = StandardDefinition();
+		definition.itemDefinitions = &provider;
+
+		ItemStatBlock heavy;
+		heavy.meleePower = 10;
+		heavy.requiredSP = 20;
+		provider.Add(MakeTestWeapon(10101, heavy));
+
+		ItemStatBlock light;
+		light.meleePower = 6;
+		light.requiredSP = 10;
+		provider.Add(MakeTestWeapon(10102, light));
+
+		ItemStatBlock armour;
+		armour.defense = 5;
+		armour.requiredSP = 99;
+		provider.Add(MakeTestArmor(10103, armour));
+
+		return definition;
+	}
+}
+
+MODERN_TEST(ServerRequiredSP_EquippedWeaponContributes)
+{
+	InMemoryItemDefinitions provider;
+	auto character = ServerCharacter::Create(DefinitionWithRequiredSP(provider));
+	CHECK(character.IsOk());
+
+	CHECK(character.GetValue().Equip(EquipmentSlot::RightHand,
+	                                 TestItem(10101)).IsOk());
+
+	CHECK_EQ(character.GetValue().GetItemContribution().requiredSP,
+	         static_cast<uint16_t>(20));
+}
+
+MODERN_TEST(ServerRequiredSP_BothHandsSum)
+{
+	InMemoryItemDefinitions provider;
+	auto character = ServerCharacter::Create(DefinitionWithRequiredSP(provider));
+	CHECK(character.IsOk());
+
+	CHECK(character.GetValue().Equip(EquipmentSlot::RightHand, TestItem(10101, 1)).IsOk());
+	CHECK(character.GetValue().Equip(EquipmentSlot::LeftHand,  TestItem(10102, 2)).IsOk());
+
+	CHECK_EQ(character.GetValue().GetItemContribution().requiredSP,
+	         static_cast<uint16_t>(30));
+}
+
+MODERN_TEST(ServerRequiredSP_ArmourDoesNotContribute)
+{
+	InMemoryItemDefinitions provider;
+	auto character = ServerCharacter::Create(DefinitionWithRequiredSP(provider));
+	CHECK(character.IsOk());
+
+	CHECK(character.GetValue().Equip(EquipmentSlot::Upper, TestItem(10103)).IsOk());
+
+	// The armour declares 99, and SUM_ITEM only reads the two hand slots.
+	CHECK_EQ(character.GetValue().GetItemContribution().requiredSP,
+	         static_cast<uint16_t>(0));
+}
+
+MODERN_TEST(ServerRequiredSP_BareHandsContributeZero)
+{
+	InMemoryItemDefinitions provider;
+	auto character = ServerCharacter::Create(DefinitionWithRequiredSP(provider));
+	CHECK(character.IsOk());
+
+	CHECK_EQ(character.GetValue().GetItemContribution().requiredSP,
+	         static_cast<uint16_t>(0));
+}
+
+MODERN_TEST(ServerRequiredSP_UnequipDropsTheCost)
+{
+	InMemoryItemDefinitions provider;
+	auto character = ServerCharacter::Create(DefinitionWithRequiredSP(provider));
+	CHECK(character.IsOk());
+
+	CHECK(character.GetValue().Equip(EquipmentSlot::RightHand, TestItem(10101)).IsOk());
+	CHECK_EQ(character.GetValue().GetItemContribution().requiredSP,
+	         static_cast<uint16_t>(20));
+
+	CHECK(character.GetValue().Unequip(EquipmentSlot::RightHand).IsOk());
+	CHECK_EQ(character.GetValue().GetItemContribution().requiredSP,
+	         static_cast<uint16_t>(0));
+}
+
+// Low SP degrades an attack, it does not refuse it. Legacy returns
+// EMBEGINA_SP from BEGIN_ATTACK and the swing still happens
+// (GLCharMsg.cpp:606-612), so a 0-SP attacker with an expensive weapon must
+// still deal damage.
+MODERN_TEST(ServerRequiredSP_LowSPAttackerStillAttacks)
+{
+	InMemoryItemDefinitions provider;
+	auto attacker = ServerCharacter::Create(DefinitionWithRequiredSP(provider));
+	auto target   = ServerCharacter::Create(DefinitionWithRequiredSP(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	CHECK(attacker.GetValue().Equip(EquipmentSlot::RightHand, TestItem(10101)).IsOk());
+
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+
+	// Deplete the attacker below the weapon's cost.
+	CHECK(attacker.GetValue().SetCurrentSp(1).IsOk());
+
+	const uint32_t before = target.GetValue().GetDerivedStats().maxHp;
+	const Status attacked = attacker.GetValue().Attack(target.GetValue());
+
+	CHECK(attacked.IsOk());
+	// Resources are restored to the SP maximum by the recalculation, so read
+	// the HP effect through the derived pool rather than the current value.
+	CHECK(target.GetValue().GetDerivedStats().maxHp <= before);
+}
+
 
 int main()
 {

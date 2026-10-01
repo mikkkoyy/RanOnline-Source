@@ -150,6 +150,21 @@ namespace Modern
 		float damageReflection = 0.0f;
 		float damageReflectionRate = 0.0f;
 
+		// VERTICAL-010: extra SP this item's wielder must have to act.
+		//
+		// Legacy: ITEM::SSUIT::wReqSP, `WORD` (GLItemSuit.h:466, default 0 at
+		// :487). It is static item-definition data, not runtime state: the live
+		// struct SITEM::sSuitOp carries it, and SUM_ITEM reads it directly
+		// (GLogixExPC.cpp:433-434). Only the two hand slots are summed
+		// (emRHand, emLHand), so the aggregator applies this per slot rather
+		// than folding it into the general stat sum.
+		//
+		// The per-instance refine variant, SITEMCUSTOM::GETREQ_SP()
+		// (GLItem.cpp:2911-2927), adds EMR_OPT_DIS_SP to this value. SUM_ITEM
+		// does not use that accessor, so neither does this field; the refine
+		// modifier belongs to a future per-copy stat system.
+		uint16_t requiredSP = 0;
+
 		// True when the block contributes nothing, which lets the aggregator
 		// skip a definition cheaply without changing the result.
 		bool IsZero() const noexcept;
@@ -180,7 +195,8 @@ namespace Modern
 			       crushingBlow == other.crushingBlow &&
 			       damageReduce == other.damageReduce &&
 			       damageReflection == other.damageReflection &&
-			       damageReflectionRate == other.damageReflectionRate;
+			       damageReflectionRate == other.damageReflectionRate &&
+			       requiredSP == other.requiredSP;
 		}
 	};
 

@@ -58,7 +58,11 @@ namespace
 		input.targetDamageReflection = 0.0f;
 		input.targetDamageReflectionRate = 0.0f;
 		input.targetResistElement = 0;
-		input.targetLowSP = false;
+		// VERTICAL-010: not low SP by default. attackerCurrentSP sits at the
+		// default 0, so the required SP has to be 0 too for the strict `<` to
+		// read as "enough". Cases that want low SP raise the requirement.
+		input.attackerRequiredSP = 0;
+		input.attackerCurrentSP = 0;
 
 		input.hitRoll = kRoll05;
 		input.damageRoll = kRoll05;
@@ -477,7 +481,9 @@ MODERN_TEST(Combat_LowSPWithCritical)
 	input.targetDefense = 10;
 	input.targetDefenseBody = 0;
 	input.targetDefenseItem = 0;
-	input.targetLowSP = true;
+	// VERTICAL-010: low SP is current < required, on the attacker's own pool.
+	input.attackerRequiredSP = 31;
+	input.attackerCurrentSP = 30;
 	input.hitRoll = kRoll05;
 	input.damageRoll = kRoll05;
 	input.criticalRoll = kRoll0;
@@ -1022,6 +1028,238 @@ MODERN_TEST(CombatReflection_AmountZero)
 
 	CHECK_EQ(result.reflectionTriggered, true);
 	CHECK_EQ(result.reflectionDamage, 0u);
+}
+
+// ── VERTICAL-010: required SP and the low-SP rule ──────────────────────
+//
+// The rule under test, from GLogixExPC.cpp:3492-3497:
+//
+//   WORD wDisSP = GLCONST_CHAR::wBASIC_DIS_SP;          // 1
+//   if ( pRHAND )  wDisSP += pRHAND->sSuitOp.wReqSP;
+//   if ( pLHAND )  wDisSP += pLHAND->sSuitOp.wReqSP;
+//   if ( m_sSP.dwNow < (wDisSP*wStrikeNum) )  return EMBEGINA_SP;
+//
+// CombatCalculator resolves the comparison; these cases pin the arithmetic
+// and the boundary. Low SP is a property of the attacker, so these vary
+// `attackerCurrentSP` and leave the target's SP alone.
+
+namespace
+{
+	// The required SP an action costs, given the hand-slot wReqSP sum.
+	//
+	// This mirrors what ServerCharacter::Attack computes from the aggregated
+	// contribution; the aggregation itself is covered in EquipmentTests.cpp.
+	uint16_t BasicRequiredSP(uint16_t handRequiredSP)
+	{
+		return static_cast<uint16_t>(handRequiredSP + CombatConstants().basicDisSP);
+	}
+
+	// A hit-for-certain melee input whose only variable is the SP state, so a
+	// difference in outcome can only come from the low-SP rule.
+	//
+	// `targetDefense` is 9 on purpose. The rolled damage is 15, so this leaves
+	// 6, and 6 halved is exactly 3. With the usual 10 the pre-halving value is
+	// 5, `5 * 0.5f` truncates to 2, and every "is exactly half" assertion below
+	// would fail on rounding rather than on the rule under test.
+	CombatInput MakeSPInput(uint16_t handRequiredSP, uint32_t currentSP)
+	{
+		CombatInput input = MakeBasicInput();
+		input.attackerHit = 99;
+		input.targetAvoid = 1;
+		input.targetDefense = 9;
+		input.targetDefenseBody = 0;
+		input.targetDefenseItem = 0;
+		input.attackerRequiredSP = BasicRequiredSP(handRequiredSP);
+		input.attackerCurrentSP = currentSP;
+		input.hitRoll = kRoll05;
+		input.damageRoll = kRoll05;
+		input.criticalRoll = kRoll1;
+		input.crushingRoll = kRoll1;
+		return input;
+	}
+}
+
+// Test 1: no hand requirements, so only the base cost remains.
+MODERN_TEST(RequiredSPMatrix_NoHandsRequiredSPIsOne)
+{
+	CHECK_EQ(BasicRequiredSP(0), static_cast<uint16_t>(1));
+}
+
+// Test 2: right hand only.
+MODERN_TEST(RequiredSPMatrix_RightHandOnly)
+{
+	CHECK_EQ(BasicRequiredSP(20), static_cast<uint16_t>(21));
+}
+
+// Test 3: left hand only.
+MODERN_TEST(RequiredSPMatrix_LeftHandOnly)
+{
+	CHECK_EQ(BasicRequiredSP(10), static_cast<uint16_t>(11));
+}
+
+// Test 4: both hands, the worked example from the milestone brief.
+MODERN_TEST(RequiredSPMatrix_BothHands)
+{
+	CHECK_EQ(BasicRequiredSP(20 + 10), static_cast<uint16_t>(31));
+}
+
+// Test 5: exactly the required amount is enough. The comparison is strict.
+MODERN_TEST(RequiredSPMatrix_ExactBoundaryIsNotLowSP)
+{
+	CombatInput input = MakeSPInput(30, 31);
+
+	CHECK_EQ(input.attackerRequiredSP, static_cast<uint16_t>(31));
+
+	// Observable consequence: low SP multiplies damage by 0.5, so a
+	// non-low-SP swing must not be halved.
+	CombatResult result = Combat::ResolveCombat(input);
+
+	CHECK_EQ(result.IsHit(), true);
+	CombatInput notLow = input;
+	notLow.attackerCurrentSP = 100;
+	CHECK_EQ(Combat::ResolveCombat(notLow).damageResult.damage, result.damageResult.damage);
+}
+
+// Test 6: one below the requirement is low SP, and halves the damage.
+MODERN_TEST(RequiredSPMatrix_OneBelowBoundaryIsLowSP)
+{
+	CombatInput low  = MakeSPInput(30, 30);
+	CombatInput full = MakeSPInput(30, 31);
+
+	CHECK_EQ(low.attackerRequiredSP, static_cast<uint16_t>(31));
+
+	const CombatResult lowResult  = Combat::ResolveCombat(low);
+	const CombatResult fullResult = Combat::ResolveCombat(full);
+
+	CHECK_EQ(lowResult.IsHit(), true);
+	CHECK_EQ(fullResult.IsHit(), true);
+	// fLOWSP_DAMAGE = 0.50
+	CHECK_EQ(lowResult.damageResult.damage, static_cast<uint32_t>(fullResult.damageResult.damage / 2));
+}
+
+// Test 7: comfortably above the requirement is not low SP.
+MODERN_TEST(RequiredSPMatrix_HighSPIsNotLowSP)
+{
+	CombatInput low  = MakeSPInput(30, 30);
+	CombatInput high = MakeSPInput(30, 500);
+
+	const CombatResult lowResult  = Combat::ResolveCombat(low);
+	const CombatResult highResult = Combat::ResolveCombat(high);
+
+	CHECK_EQ(highResult.damageResult.damage, lowResult.damageResult.damage * 2);
+}
+
+// Test 8: no SP at all is low SP whenever anything is required.
+MODERN_TEST(RequiredSPMatrix_ZeroSPIsLowSP)
+{
+	CombatInput empty = MakeSPInput(30, 0);
+	CombatInput full  = MakeSPInput(30, 31);
+
+	const CombatResult emptyResult = Combat::ResolveCombat(empty);
+	const CombatResult fullResult  = Combat::ResolveCombat(full);
+
+	CHECK_EQ(empty.attackerRequiredSP, static_cast<uint16_t>(31));
+	CHECK_EQ(emptyResult.damageResult.damage, static_cast<uint32_t>(fullResult.damageResult.damage / 2));
+}
+
+// A requirement of zero can never be exceeded, so an empty attacker is not
+// low SP. This is why the default `attackerRequiredSP` is 0 rather than
+// `basicDisSP`: it keeps a default-constructed input meaning "no constraint".
+MODERN_TEST(RequiredSPMatrix_ZeroRequirementIsNeverLowSP)
+{
+	CombatInput input = MakeSPInput(0, 0);
+	input.attackerRequiredSP = 0;
+	input.attackerCurrentSP = 0;
+
+	CombatInput reference = MakeSPInput(0, 100);
+	reference.attackerRequiredSP = 0;
+
+	CHECK_EQ(Combat::ResolveCombat(input).damageResult.damage,
+	         Combat::ResolveCombat(reference).damageResult.damage);
+}
+
+// The pool belongs to the attacker. A target with no SP must not make the
+// attacker's swing low-SP, and an attacker with no SP must regardless of the
+// target's pool.
+// The pool belongs to the attacker.
+//
+// Legacy decides this before the swing, on the character doing the attacking:
+// GLCharMsg.cpp:604-612 calls BEGIN_ATTACK (GLogixExPC.cpp:3492-3497), which
+// reads that character's own m_sSP.dwNow, and passes the resulting bLowSP to
+// that character's PreStrikeProc. The victim is never consulted.
+//
+// `CombatInput` has no target SP field at all, which is the structural form of
+// that rule: there is nothing on the input for a victim's SP to be read from.
+MODERN_TEST(RequiredSPMatrix_LowSPFollowsTheAttackerNotTheTarget)
+{
+	CombatInput attackerEmpty = MakeSPInput(30, 0);
+	CombatInput attackerFull  = MakeSPInput(30, 31);
+
+	CHECK_EQ(Combat::ResolveCombat(attackerEmpty).damageResult.damage,
+	         static_cast<uint32_t>(Combat::ResolveCombat(attackerFull).damageResult.damage / 2));
+
+	// Holding the attacker exactly at the requirement is not low SP, whatever
+	// the target's HP pool happens to be.
+	CombatInput atRequirement = MakeSPInput(30, 31);
+	atRequirement.targetCurrentHP = 0;
+	CHECK_EQ(Combat::ResolveCombat(atRequirement).damageResult.damage,
+	         Combat::ResolveCombat(attackerFull).damageResult.damage);
+}
+
+// Test 9 / VERTICAL-009 regression: the low-SP damage multiplier is still
+// exactly fLOWSP_DAMAGE = 0.50, and the hit-rate drop is still
+// fLOWSP_HIT_DROP = 0.25. VERTICAL-010 changed the *input*, not these.
+MODERN_TEST(RequiredSPMatrix_LowSPFormulasUnchanged)
+{
+	CHECK_EQ(CombatConstants().lowSPDamage, 0.50f);
+	CHECK_EQ(CombatConstants().lowSPHitDrop, 0.25f);
+
+	CombatInput low  = MakeSPInput(0, 0);
+	CombatInput full = MakeSPInput(0, 1);
+	low.attackerRequiredSP = 1;
+	full.attackerRequiredSP = 1;
+
+	CHECK_EQ(Combat::ResolveCombat(low).damageResult.damage,
+	         static_cast<uint32_t>(Combat::ResolveCombat(full).damageResult.damage / 2));
+
+	// Hit rate, via the hit path directly.
+	HitInput normal;
+	normal.attackerHit = 50;
+	normal.targetAvoid = 10;
+	normal.brightnessFB = GameBrightFB::Aver;
+	normal.lowSP = false;
+	normal.hitRoll = 0.5f;
+
+	HitInput depleted = normal;
+	depleted.lowSP = true;
+
+	CHECK_EQ(CalculateHit(depleted).hitRate,
+	         static_cast<uint32_t>(CalculateHit(normal).hitRate * 0.75f));
+}
+
+// The equipment contribution has to actually change the outcome, otherwise a
+// regression that dropped the hand term entirely would still pass the
+// boundary cases above.
+MODERN_TEST(RequiredSPMatrix_EquipmentTermChangesTheOutcome)
+{
+	// Unarmed: required 1, so 1 SP is enough.
+	CombatInput unarmed = MakeSPInput(0, 1);
+	unarmed.attackerRequiredSP = BasicRequiredSP(0);
+
+	// Armed with a heavy weapon: required 31, so the same 1 SP is not enough.
+	CombatInput armed = MakeSPInput(30, 1);
+	armed.attackerRequiredSP = BasicRequiredSP(30);
+
+	CombatInput armedFunded = MakeSPInput(30, 31);
+	armedFunded.attackerRequiredSP = BasicRequiredSP(30);
+
+	CHECK_EQ(unarmed.attackerRequiredSP, static_cast<uint16_t>(1));
+	CHECK_EQ(armed.attackerRequiredSP, static_cast<uint16_t>(31));
+
+	CHECK_EQ(Combat::ResolveCombat(unarmed).damageResult.damage,
+	         Combat::ResolveCombat(armedFunded).damageResult.damage);
+	CHECK_EQ(Combat::ResolveCombat(armed).damageResult.damage,
+	         static_cast<uint32_t>(Combat::ResolveCombat(armedFunded).damageResult.damage / 2));
 }
 
 MODERN_TEST(CombatReflection_LevelScaling)

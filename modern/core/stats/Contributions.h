@@ -151,6 +151,25 @@ namespace Modern::Stats
 		float damageReflection = 0.0f;
 		float damageReflectionRate = 0.0f;
 
+		// VERTICAL-010: the equipment part of the required SP, the modern
+		// equivalent of legacy m_wSUM_DisSP's wReqSP terms.
+		//
+		// Legacy: GLogixExPC.cpp:428-434
+		//     m_wSUM_DisSP = m_wACCEPTP;
+		//     if ( pRHAND )  m_wSUM_DisSP += pRHAND->sSuitOp.wReqSP;
+		//     if ( pLHAND )  m_wSUM_DisSP += pLHAND->sSuitOp.wReqSP;
+		//
+		// Only the two hand slots contribute, so the aggregator fills this
+		// selectively rather than summing every equipped item. `WORD`
+		// arithmetic in legacy wraps at 16 bits and so does this, matching the
+		// six base stats summed alongside it.
+		//
+		// m_wACCEPTP is deliberately absent: it is a stat-deficit penalty
+		// computed from per-item requirement fields the modern item model does
+		// not carry, and the legacy low-SP gate does not use it either. See
+		// docs/reference/client/VERTICAL-010_REQUIRED_SP_INVESTIGATION.md.
+		uint16_t requiredSP = 0;
+
 		constexpr bool operator==(const ItemContribution& other) const noexcept
 		{
 			return stats == other.stats && hp == other.hp && mp == other.mp && sp == other.sp &&
@@ -170,7 +189,8 @@ namespace Modern::Stats
 			       crushingBlow == other.crushingBlow &&
 			       damageReduce == other.damageReduce &&
 			       damageReflection == other.damageReflection &&
-			       damageReflectionRate == other.damageReflectionRate;
+			       damageReflectionRate == other.damageReflectionRate &&
+			       requiredSP == other.requiredSP;
 		}
 	};
 

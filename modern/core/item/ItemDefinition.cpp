@@ -31,7 +31,11 @@ namespace Modern
 		       resistElectric == 0 && resistPoison == 0 && resistSpirit == 0 &&
 		       criticalRate == 0.0f && crushingBlow == 0.0f &&
 		       damageReduce == 0.0f && damageReflection == 0.0f &&
-		       damageReflectionRate == 0.0f;
+		       damageReflectionRate == 0.0f &&
+		       // VERTICAL-010: without this, a hand item whose only stat is a
+		       // required-SP cost would be treated as contributing nothing and
+		       // skipped by the aggregator before the hand slots are read.
+		       requiredSP == 0;
 	}
 
 	bool ItemStatBlock::IsFinite() const noexcept
