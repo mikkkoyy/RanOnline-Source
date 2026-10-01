@@ -34,6 +34,13 @@ namespace Modern::Combat
 
 		// Physical resistance scaling (SOURCE-VERIFIED from GLogicData.cpp)
 		float resistPhysicG = 0.5f;        // fRESIST_PHYSIC_G
+		float maxResistReduction = 0.8f;   // resistance reduction cap (hardcoded in CALCDAMAGE_20060328)
+
+		// PK damage modifier (SOURCE-VERIFIED from GLogicData.cpp)
+		float pkPointDecPhy = 0.5f;         // fPK_POINT_DEC_PHY (50% reduction in PK)
+
+		// Base attack SP cost (SOURCE-VERIFIED from GLogicData.cpp)
+		uint16_t basicDisSP = 1;            // wBASIC_DIS_SP
 
 		// Critical hit (SOURCE-VERIFIED from GLogicData.cpp)
 		uint32_t criticalDamage = 120;     // dwCRITICAL_DAMAGE (120%)
@@ -53,7 +60,7 @@ namespace Modern::Combat
 		uint32_t basicHitRate = 100;
 
 		// Maximum resistance cap (SOURCE-VERIFIED from GLogicData.cpp)
-		float maxResist = 0.8f;            // fMAX_RESIST = 0.8f
+		float maxResist = 99.0f;           // fMAX_RESIST (raw resistance value cap)
 
 		// Damage reduction/decay (SOURCE-VERIFIED from GLogicData.cpp / GLogixExPC.cpp)
 		float damageDecRate = 40000.0f;    // fDAMAGE_DEC_RATE

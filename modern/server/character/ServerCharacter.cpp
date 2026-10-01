@@ -2,13 +2,18 @@
 
 #include "character/ServerCharacter.h"
 
+#include "combat/CombatCalculator.h"
+#include "combat/CombatTypes.h"
+#include "combat/CombatConstants.h"
 #include "equipment/ItemContributionAggregator.h"
 #include "progression/CodexContributionAggregator.h"
+#include "resources/ResourceState.h"
 #include "skills/PassiveContributionAggregator.h"
 #include "stats/StatCalculator.h"
 
 #include <algorithm>
 #include <cmath>
+#include <random>
 #include <utility>
 
 namespace Modern::Server
@@ -651,6 +656,7 @@ Status ServerCharacter::Equip(EquipmentSlot slot, const ItemInstance& item)
 
 		return Gameplay::CharacterSnapshot::Create(std::move(snapshot));
 	}
+}
 
 // VERTICAL-006: Basic Physical Combat Resolution
 //
@@ -674,13 +680,6 @@ Status ServerCharacter::Equip(EquipmentSlot slot, const ItemInstance& item)
 // Low-SP detection: legacy uses bLowSP = (float(m_sSP.dwNow) < float(m_wSUM_DisSP))
 // (GLCharacter.cpp:3446). Without a skill system, we use SP == 0 as a proxy.
 // This is documented as LIMITED.
-
-#include "combat/CombatCalculator.h"
-#include "combat/CombatTypes.h"
-#include "combat/CombatConstants.h"
-#include "resources/ResourceState.h"
-
-#include <random>
 
 namespace Modern::Server
 {
@@ -744,8 +743,25 @@ namespace Modern::Server
 		input.targetDamageReflection = target.m_derived.damageReflection;
 		input.targetDamageReflectionRate = target.m_derived.damageReflectionRate;
 		input.targetResistElement = 0; // Not yet modeled (elemental combat)
-		// VERTICAL-007: low-SP detection (SP == 0 proxy, see note above)
-		input.targetLowSP = (target.m_currentSp == 0);
+		// VERTICAL-009: low-SP detection (current SP < required SP).
+		//
+		// Legacy: GLogixExPC.cpp:3492-3497, GLChar.cpp:2431-2433
+		//
+		// wDisSP = m_wSUM_DisSP + wBASIC_DIS_SP (basic attack).
+		// The equipment SP overhead (m_wSUM_DisSP) is not yet modeled in
+		// the modern equipment system; only the base attack cost is used.
+		const uint16_t requiredSP = Combat::CombatConstants().basicDisSP;
+		input.attackerRequiredSP = requiredSP;
+		input.targetLowSP = (target.m_currentSp < requiredSP);
+
+		// VERTICAL-009: PK combat flag.
+		//
+		// Legacy: GLChar.cpp:1995 (IsReActionable), GLCharacter.cpp:2306 (IsPK_TAR)
+		//
+		// PK state detection (safe zones, party checks, PK maps) is a server
+		// concern and is not yet modeled. The combat calculator applies the
+		// PK damage modifier when this flag is true.
+		input.isPK = false;
 
 		input.attackerMaxHP = m_derived.maxHp;
 		input.attackerCurrentHP = m_currentHp;
@@ -753,7 +769,7 @@ namespace Modern::Server
 		input.targetMaxHP = target.m_derived.maxHp;
 		input.targetCurrentHP = target.m_currentHp;
 
-		input.brightnessFB = GameCharacterCalculations::GameBrightFB::Aver;
+		input.brightnessFB = Modern::Engine::GameBrightFB::Aver;
 		input.weatherElementPower = 1.0f;
 
 		// Deterministic random values for testing

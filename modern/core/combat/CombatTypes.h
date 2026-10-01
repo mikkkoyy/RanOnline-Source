@@ -103,6 +103,8 @@ namespace Modern::Combat
 		int32_t resistElement = 0;          // target's element resistance
 		bool lowSP = false;                 // target in low SP state
 		float stateDamageMultiplier = 1.0f; // fSTATE_DAMAGE
+		uint16_t requiredSP = 0;            // SP required to perform the attack
+		bool isPK = false;                  // PK (player-vs-player) combat
 
 		// Attacker
 		uint32_t attackerLevel = 1;         // attacker's level

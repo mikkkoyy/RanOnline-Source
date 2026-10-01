@@ -1,3 +1,5 @@
+#pragma once
+
 // VERTICAL-006: complete combat resolution pipeline.
 //
 // Legacy provenance: GLogixExPC.cpp:1291 CHECKHIT, GLogixExPC.cpp:1363 CALCDAMAGE_20060328
@@ -6,8 +8,10 @@
 // Brightness/environment is not yet modeled in modern Core.
 // Documented as DEFERRED: see Section 11 of VERTICAL-006 specification.
 //
-// targetLowSP detection uses currentSP == 0 as a proxy for "low SP"));
-// Documented as LIMITED: verify against legacy behavior if needed.
+// VERTICAL-009: targetLowSP is now the legacy comparison,
+// `currentSP < requiredSP` (GLogixExPC.cpp:3497), not the `currentSP == 0`
+// proxy VERTICAL-006 used. The required-SP value is carried by
+// CombatInput::attackerRequiredSP; only wBASIC_DIS_SP is modelled so far.
 
 #include "CombatTypes.h"
 #include "CombatConstants.h"
@@ -48,7 +52,9 @@ namespace Modern::Combat
 		float targetDamageReflection = 0.0f;
 		float targetDamageReflectionRate = 0.0f;
 		int32_t targetResistElement = 0;
-		bool targetLowSP = false; // Low SP proxy: current SP == 0
+		bool targetLowSP = false; // Low SP: current SP < required SP
+		uint16_t attackerRequiredSP = 0; // SP required to perform the attack
+		bool isPK = false; // PK (player-vs-player) combat
 
 		// Environmental
 		// Brightness/environment modifier is DEFERRED — modern Core does not
@@ -72,13 +78,16 @@ namespace Modern::Combat
 	//   - Brightness/environment modifier: assumed Aver (modern Core does not
 	//     model world brightness). Caller should supply resolved modifier if
 	//     available. See CombatInput::brightnessFB.
-	//   - targetLowSP: uses currentSP == 0 as proxy. Verify against legacy if
-	//     needed. See Section 12 of VERTICAL-006 specification.
-	//   - targetDamageReduce, targetDamageReflection, targetResistElement:
-	//     not yet modeled; passed as zero. See Sections 17-18.
-	//   - attackerCriticalBonus, attackerCrushingBonus: not yet modeled; zero.
+	//   - attackerRequiredSP: only wBASIC_DIS_SP is modelled; the legacy
+	//     equipment term m_wSUM_DisSP has no field on ItemStatBlock yet.
+	//     VERTICAL-009.
+	//   - isPK: the modifier is applied when true, but PK state detection
+	//     (safe zones, parties, PK maps) is server/world state. VERTICAL-009.
+	//   - targetStateDamage: 1.0f unless the caller supplies it.
+	//   - attackerCriticalBonus, attackerCrushingBonus: supplied by the server
+	//     from equipment/passive contributions.
 	//   - weatherElementPower: assumed 1.0f.
-	CombatResult ResolveCombat(const CombatInput& input, const CombatConstants& constants = CombatConstants())
+	inline CombatResult ResolveCombat(const CombatInput& input, const CombatConstants& constants = CombatConstants())
 	{
 		CombatResult result;
 
@@ -118,6 +127,8 @@ namespace Modern::Combat
 		damageInput.resistElement = input.targetResistElement;
 		damageInput.lowSP = input.targetLowSP;
 		damageInput.stateDamageMultiplier = input.targetStateDamage;
+		damageInput.requiredSP = input.attackerRequiredSP;
+		damageInput.isPK = input.isPK;
 		damageInput.attackerLevel = input.attackerLevel;
 		damageInput.attackerMaxHP = input.attackerMaxHP;
 		damageInput.attackerCurrentHP = input.attackerCurrentHP;
@@ -127,9 +138,9 @@ namespace Modern::Combat
 		damageInput.targetMaxHP = input.targetMaxHP;
 		damageInput.resistElement = input.targetResistElement;
 		damageInput.weatherElementPower = 1.0f;
-		damageInput.damageRoll = 0.5f;
-		damageInput.criticalRoll = 0.5f;
-		damageInput.crushingRoll = 0.5f;
+		damageInput.damageRoll = input.damageRoll;
+		damageInput.criticalRoll = input.criticalRoll;
+		damageInput.crushingRoll = input.crushingRoll;
 		damageInput.reflectionRoll = input.reflectionRoll;
 
 		// 3. Calculate damage

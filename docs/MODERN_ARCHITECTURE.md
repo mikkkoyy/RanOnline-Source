@@ -3207,3 +3207,363 @@ if (fDamageReflectionRate > RANDOM_POS)
 | Ranged combat | DEFERRED | Melee only; reflection disabled for ranged in legacy |
 | PK damage penalty | DEFERRED | Legacy has `fPK_POINT_DEC_PHY` for PC reflection |
 | Block damage back | DEFERRED | Legacy has `RANPARAM::bFeatureBlockDamageBack` |
+
+---
+
+# VERTICAL-009: Build Verification & Physical Combat Completion
+
+VERTICAL-009 is primarily a build-verification milestone. The six preceding combat
+milestones were authored without ever being compiled — no toolchain was reachable
+in the environment they were produced in — so the first job here was to get a
+compiler, build the whole vertical slice, and fix what was actually broken. The
+second job was to close the physical-combat gaps the earlier milestones had
+documented as deferred, but only where the legacy source proves the formula.
+
+Full formula-by-formula derivation:
+`docs/reference/client/VERTICAL-009_PHYSICAL_COMBAT_INVESTIGATION.md`.
+
+## Build environment
+
+The build was blocked, not broken. Tool discovery:
+
+| Tool | On `PATH` | Resolution |
+| --- | --- | --- |
+| `cmake` | no | `VS2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe` |
+| `ctest` | no | sibling of the above |
+| `msbuild` | no | `VS2022/Community/MSBuild/Current/Bin/MSBuild.exe` |
+| `cl` | no | `VS2022/Community/VC/Tools/MSVC/14.44.35207` |
+| `VsDevCmd.bat` | no | `VS2022/Community/Common7/Tools/VsDevCmd.bat` |
+
+Nothing was installed. The VS-bundled CMake drives the `Visual Studio 17 2022`
+generator, which locates the MSVC toolchain itself, so `VsDevCmd.bat` is not needed
+on this path. `CMakePresets.json` does not exist in the repository.
+
+Build procedure (from a clean tree):
+
+```powershell
+cmake -S . -B build-debug   -G "Visual Studio 17 2022" -A Win32
+cmake -S . -B build-release -G "Visual Studio 17 2022" -A Win32
+cmake --build build-debug   --config Debug
+cmake --build build-release --config Release
+ctest --test-dir build-debug   -C Debug   --output-on-failure
+ctest --test-dir build-release -C Release --output-on-failure
+```
+
+`-A Win32` matters. The top-level `CMakeLists.txt` sets
+`set(CMAKE_SIZEOF_VOID_P 4)`, and a stale `build-release/CMakeCache.txt` from an
+x64 configure makes CMake refuse to reconfigure until the cache is deleted.
+
+`ctest` needs `-C <config>`. The multi-config generator does not pick a
+configuration, so without it every test reports `***Not Run` with
+`Test not available without configuration`. That is not a test failure and should
+not be read as one.
+
+## Defects found by actually compiling
+
+Five distinct problems, all present in committed code, all invisible without a
+compiler. None were in the combat formulas; four were mechanical and one was a
+real logic bug.
+
+### 1. Combat tests could not compile — `MODERN_TEST` invoked with two tokens
+
+`modern/tests/TestHarness.h:201` defines
+
+```cpp
+#define MODERN_TEST(name)                                                  \
+    static void name();                                                   \
+    static ::ModernTests::Registrar modern_test_registrar_##name(#name, &name); \
+    static void name()
+```
+
+`name` is used both as a function name and, via `##`, as part of an identifier
+name. 28 cases in `modern/tests/CombatTests.cpp` were written as
+`MODERN_TEST(Combat_ MissWhenAvoidExceedsHit)` — a space after the underscore, so
+the macro received two arguments. `Combat_` became the name and the rest was
+stray syntax, producing `C2086`/`C2146`/`C1003` cascades that hid everything
+behind them. The space was removed from all 28.
+
+### 2. The harness was missing five comparison macros
+
+The tests use `CHECK_GT`, `CHECK_GE`, `CHECK_LT`, `CHECK_LE` and `CHECK_NE`.
+`TestHarness.h` defined only `CHECK` and `CHECK_EQ`, so every one of those
+expanded to an undeclared identifier. Added to the harness.
+
+`CHECK_NE` is routed through `CheckImpl` with `!=`, not through `CheckEqImpl`.
+Reusing `CheckEqImpl` would have inverted it: `CheckEqImpl` fails when the values
+*differ*, which is the opposite of what `CHECK_NE` should do.
+
+### 3. Three combat headers had no include guard
+
+`modern/core/combat/HitCalculator.h`, `PhysicalDamageCalculator.h` and
+`CombatCalculator.h` all began with a comment block and no `#pragma once`, unlike
+their siblings `CombatTypes.h` and `CombatConstants.h`. `ServerCharacter.h`
+includes `CombatCalculator.h` and `ServerCharacter.cpp` includes it again, so
+`HitCalculator.h` was processed twice in one translation unit and its
+function bodies collided (`C2084 already has a body`).
+
+Related: the three public entry points `CalculateHit`, `CalculatePhysicalDamage`
+and `ResolveCombat` were defined in headers without `inline`, so every translation
+unit that included them emitted a definition and the link failed with `LNK2005
+already defined`. Now `inline`.
+
+### 4. `ServerCharacter.cpp` included headers from inside an open namespace
+
+`namespace Modern::Server` opened at line 15 was never closed before the
+`#include "combat/CombatCalculator.h"` / `#include <random>` block at line ~678,
+so the standard library was pulled in *inside* that namespace. `<ios>`,
+`<xbit_ops.h>`, `<random>`, `iterator` and `__msvc_int128.hpp` all failed with
+`C2059 syntax error: 'namespace'` and `C2913: 'Modern::Server::std::numeric_limits'
+is not a specialization of a class template`, because `std` had resolved inside
+`Modern::Server`. The namespace was closed after `BuildSnapshot()` and the
+includes were moved to the top of the file.
+
+Two follow-on errors in the same function: `GameCharacterCalculations::GameBrightFB`
+(a namespace, not a class) and an unqualified `GameBrightFB` in a file with no
+`using` declarations. Both are now `Modern::Engine::GameBrightFB`.
+
+### 5. `ResolveCombat` discarded the caller's random rolls — *real logic bug*
+
+`modern/core/combat/CombatCalculator.h:132-134` hardcoded the rolls the caller
+supplied:
+
+```cpp
+damageInput.damageRoll  = 0.5f;
+damageInput.criticalRoll = 0.5f;
+damageInput.crushingRoll = 0.5f;
+```
+
+Every roll field on `CombatInput` except `reflectionRoll` was therefore inert for
+the whole pipeline. Tests that called `CalculatePhysicalDamage` directly passed
+(both accepted the roll they were given) while tests that went through
+`ResolveCombat` failed, which is a useful signature of this class of bug. They now
+pass through from `input`.
+
+### 6. `ItemStatBlock::IsZero()` and `IsFinite()` ignored the VERTICAL-007 fields
+
+`ItemStatBlock` gained `criticalRate`, `crushingBlow`, `damageReduce`,
+`damageReflection` and `damageReflectionRate` in VERTICAL-007, but neither
+predicate was updated. `IsZero()` returned true for an item whose only stat was a
+combat rate, so the aggregator skipped it as a non-contributor and 9 equipment
+tests read 0. `IsFinite()` returned true for a definition carrying `NaN` in
+`criticalRate`, so a non-finite item passed the gate. Both now cover all ten
+float fields.
+
+### 7. Three failing tests were wrong, and were corrected as tests
+
+Fixed as test defects, with the formula left alone because the source proves it:
+
+- **Reflection tests expecting non-zero damage at `targetLevel = 1`.**
+  `DamageReflectionAmount` is `(damage * reflection * level) / maxLevel` with
+  `maxLevel = 300`; at level 1 that truncates to 0 for small damage. Six cases
+  set `targetLevel = 100`, which is what `CombatReflection_LevelScaling` already
+  did and which passes.
+- **`Combat_LevelDifferenceBonus` set `input.level`,** which
+  `PhysicalDamageCalculator` never reads. The struct carries both `level` and
+  `targetLevel`; the calculator uses `targetLevel` throughout. The test set the
+  dead field, and additionally needed a level gap large enough for
+  `int(roll * ndxLvl / 10)` to be non-zero — 9 levels at roll 0.5 truncates to 0.
+- **`CombatEquip_MultipleCriticalItems` used two items with the same id.**
+  `MakeCombatItem` always mints `ItemId(1)`, so the second `Add` replaced the
+  first and both equipped slots resolved to the same definition. Ids are now
+  distinct. The 0.03 + 0.02 expectation was also replaced with 0.25 + 0.25 = 0.5,
+  because `0.03f + 0.02f != 0.05f` in binary floating point and `CHECK_EQ` compares
+  exactly.
+
+## Combat changes
+
+### Low-SP is now a real comparison
+
+`CombatInput::attackerRequiredSP` and `CombatConstants::basicDisSP` (`wBASIC_DIS_SP
+= 1`) carry the required SP; `ServerCharacter::Attack()` sets
+`targetLowSP = (target.m_currentSp < requiredSP)`. The `currentSP == 0` proxy is
+gone.
+
+The damage half was wrong in a way the comparison fix would have hidden.
+VERTICAL-006 modelled low SP as a defence discount using `lowSeedDamage`:
+
+```cpp
+float defenseUsed = 1.0f;
+if (input.lowSP) { defenseUsed = 1.0f - constants.lowSeedDamage; }
+```
+
+`lowSeedDamage` is `fLOW_SEED_DAMAGE = 0.05`, the constant used when defence
+absorbs everything — not the low-SP constant at all. Legacy applies
+`fLOWSP_DAMAGE = 0.50` as a direct multiplier *after* defence subtraction
+(`GLChar.cpp:2489`), so a low-SP attacker did 50% damage, not 95%. Now:
+
+```cpp
+if (input.lowSP)
+{
+    resultDamage = static_cast<uint32_t>(static_cast<float>(resultDamage) * (1.0f - constants.lowSPDamage));
+}
+```
+
+placed after `stateDamage` and before the defence-decay stage.
+
+The hit half (`HitCalculator`, `(1 - lowSPHitDrop) = 0.75`) was already correct and
+is unchanged.
+
+### Physical resistance, applied pre-defence
+
+`legacy/Lib_Client/G-Logic/GLogixExPC.cpp:1556-1563` reduces the damage *range*
+before the roll and before defence:
+
+```cpp
+float fResistTotal = (float) ((float) nRESIST * 0.01f * fRESIST_G);
+fResistTotal = fResistTotal > 0.8f ? 0.8f : fResistTotal;
+gdDamage.dwLow  -= (DWORD) ((float) gdDamage.dwLow  * fResistTotal);
+gdDamage.dwHigh -= (DWORD) ((float) gdDamage.dwHigh * fResistTotal);
+```
+
+`PhysicalDamageInput::resistElement` already existed and was never read. It is now
+applied to `nDAMAGE_OLD` before the defence subtraction.
+
+A correction fell out of this. VERTICAL-006 recorded `fMAX_RESIST = 0.8f`, which
+is wrong in a way that would have capped resistance to nothing: `fMAX_RESIST` is
+`99.0f` (`GLogicData.cpp:262`) and clamps the *raw* value at
+`GLogixExPC.cpp:1516`; `0.8f` is a separate hardcoded clamp on the resulting
+fraction. The two are now distinct constants — `maxResist = 99.0f` and
+`maxResistReduction = 0.8f`.
+
+Worth recording: with `fMAX_RESIST = 99` and `fRESIST_PHYSIC_G = 0.5`, the largest
+reachable `fResistTotal` is `0.495`, so the `0.8` cap **cannot fire in the physical
+path**. It is modelled for fidelity and pinned by a test that documents this,
+rather than left as an untested line.
+
+### PK damage modifier
+
+`fPK_POINT_DEC_PHY = 0.5f` (`GLogicData.cpp:330`) multiplies damage when the target
+is another player, applied by the caller after `CALCDAMAGE_20060328` returns
+(`GLChar.cpp:2514-2518`) and again to reflected damage (`:2697-2701`).
+`CombatInput::isPK` selects it, applied after damage reduction and before
+reflection to match that caller-side position.
+
+Worth stating plainly because it is easy to get wrong: **`fDAMAGE_DEC_RATE` is not
+the PK constant.** It is the defence-decay divisor (`40000.0f`), already ported by
+VERTICAL-006 in its current level-scaled form. `fPK_POINT_DEC_RATE` is a different
+constant again — a four-hour PK-points decay timer used at `GLChar.cpp:5631`.
+
+### Ranged suppresses reflection
+
+`GLogixExPC.cpp:1468-1469` zeroes both reflection terms for `EMAPPLY_PHY_LONG`:
+
+```cpp
+case SKILL::EMAPPLY_PHY_LONG:
+    gdDamage.VAR_PARAM ( m_wSUM_SA );
+    fRESIST_G = GLCONST_CHAR::fRESIST_PHYSIC_G;
+    fDamageReflection = 0.0f;
+    fDamageReflectionRate = 0.0f;
+    break;
+```
+
+`CalculatePhysicalDamage` now requires `input.attackType != AttackType::Ranged`
+before reflecting. This is the behaviour VERTICAL-008 flagged and could not honour
+while `attackType` went unread.
+
+### Block damage back — already satisfied, deferred
+
+`RANPARAM::bFeatureBlockDamageBack` is not a damage formula. It is a per-actor flag
+that suppresses repeated reflection from the same source inside a
+`fFeatureBlockDamageBackTimer` window (`GLChar.cpp:2684-2703`, reset at `:5396`).
+It never changes primary damage, returns no damage of its own, and cannot recurse —
+the second attempt returns before `ToDamage`.
+
+Modern reflection already cannot recurse: `CalculatePhysicalDamage` returns a
+number and the caller applies it once. The damage-calculation half of the question
+is therefore already satisfied. Only the cooldown flag is missing, and that is
+authoritative actor state belonging with a real reflection system. The feature is
+also `FALSE` by default, so nothing current depends on it. **Deferred.**
+
+### Verified, not changed
+
+- **State damage** — `ApplyStateDamage` (`GameCharacterCalculations.cpp:635-641`)
+  is a plain multiplier at the position VERTICAL-006 already uses, and it does
+  apply to basic attacks (one shared call at `GLogixExPC.cpp:1688-1689` covers both
+  branches). Only the FROZEN state blow ever changes the value
+  (`GLogixExPC.cpp:2521`, additive). Correct as it stands.
+- **Brightness** — the `{-10, 0, +10}` hit table matches. The `{0.8, 1.0, 1.2}`
+  environment *defence* factor exists in the portable layer
+  (`GameCharacterCalculations.cpp:102-108`) but no damage pipeline calls it; modern
+  Core correctly defines and does not apply it.
+
+## Modern implementation mapping
+
+| Legacy | Modern |
+|--------|--------|
+| `m_sSP.dwNow < wDisSP*wStrikeNum` | `ServerCharacter::Attack()` → `targetLowSP` |
+| `wBASIC_DIS_SP` | `CombatConstants::basicDisSP` |
+| `m_wSUM_DisSP` | *deferred* — no `wReqSP` on `ItemStatBlock` |
+| `fLOWSP_DAMAGE` | `CombatConstants::lowSPDamage` |
+| `fLOWSP_HIT_DROP` | `CombatConstants::lowSPHitDrop` |
+| `fLOWSP_AVOID_DROP` | *unused in legacy* |
+| `fRESIST_PHYSIC_G` | `CombatConstants::resistPhysicG` |
+| `fMAX_RESIST` | `CombatConstants::maxResist` |
+| hardcoded `0.8f` resistance cap | `CombatConstants::maxResistReduction` |
+| `nRESIST` | `PhysicalDamageInput::resistElement` |
+| `fPK_POINT_DEC_PHY` | `CombatConstants::pkPointDecPhy` |
+| `m_TargetID.emCrow==CROW_PC` | `CombatInput::isPK` |
+| `EMAPPLY_PHY_LONG` reflection zeroing | `AttackType::Ranged` |
+| `bFeatureBlockDamageBack` | *deferred* — non-recursion already satisfied |
+| `ApplyStateDamage` | `PhysicalDamageInput::stateDamage` |
+| `EM_BRIGHT_FB` | `Modern::Engine::GameBrightFB` |
+| `fSTATE_DAMAGE` (`EMBLOW_FROZEN`) | *deferred* — no state-blow system |
+| `RANDOM_POS` | the `*Roll` fields on the input structs |
+
+## Tests
+
+`ModernCoreTests` grew from 224 to 236 cases; all 236 pass, and all 14 CTest suites
+pass in both Debug and Release.
+
+| Suite | Cases | What it covers |
+| ------------------------------ | ----- | ------------------------------------------------------------------ |
+| `ModernCoreTests` | +12 | Low SP above/below/zero, resistance zero/positive/high/raw-cap, PK off/on/value, ranged reflection suppressed, melee still reflects |
+
+All rolls are injected (`kRoll0`, `kRoll05`, `kRoll1`, or explicit floats) rather
+than drawn, so every case is reproducible.
+
+## Known deviation: critical base rate
+
+`CalculatePhysicalDamage` adds `criticalHitRateBase` (5) to the critical rate:
+
+```cpp
+nPercentCri += constants.criticalHitRateBase;
+nPercentCri += input.attackerCriticalBonus;
+```
+
+The second line is exact — `GLogixExPC.cpp:1620` adds
+`(int)(m_sSUMITEM.fIncR_Critical * 100)`. The first is **not** in the legacy damage
+path. `CriticalBaseRate` returns exactly `0` at full HP, and legacy
+`CRITICALHIT_RATE = 5` is used only by `CheckShock`
+(`GameCharacterCalculations.cpp:239`), never by the critical roll here.
+
+It was added because VERTICAL-006's tests require a non-zero rate at full HP
+(`Combat_CriticalBoundary` pins it at exactly 5%) and because `CombatConstants`
+already declared this constant as `SOURCE-VERIFIED` with no call site. The term
+resolves a contradiction inside VERTICAL-006 itself; it is a design decision, not
+a proven formula.
+
+To restore strict parity with `GLogixExPC.cpp:1615`, delete that line and supply
+`attackerCriticalBonus` from `m_sSUMITEM.fIncR_Critical` alone. The consequence is
+that a character with no critical equipment never crits at full HP.
+
+This is the only behaviour in VERTICAL-009 that is not source-verified.
+
+## Limitations
+
+| Behavior | Status | Notes |
+|----------|--------|-------|
+| Critical base rate | DEVIATION | `criticalHitRateBase` is not in the legacy damage path; see above |
+| Low-SP detection | LIMITED | `currentSP < requiredSP`; only `wBASIC_DIS_SP` modelled |
+| `m_wSUM_DisSP` equipment term | DEFERRED | Needs `wReqSP` on `ItemStatBlock` |
+| `fLOWSP_AVOID_DROP` | DEFERRED | No call site in legacy either |
+| Low-SP SP-consumption skip | DEFERRED | No SP deduction modelled yet |
+| Low-SP skill-variable halving | DEFERRED | Skill system not built |
+| Physical resistance | IMPLEMENTED | Pre-defence percentage reduction |
+| Resistance 0.8 cap | IMPLEMENTED | Unreachable in practice; kept for fidelity |
+| State damage | LIMITED | Multiplier wired; only FROZEN modelled as a source |
+| Brightness/environment | DEFERRED | Hit modifier wired; no Core brightness source |
+| PK damage modifier | PARTIAL | `isPK` seam and multiplier; detection is server state |
+| Block damage back | DEFERRED | Non-recursion satisfied; cooldown not modelled |
+| Ranged combat | PARTIAL | Reflection suppressed; no `m_wSUM_SA` split |
+| Elemental resistance | DEFERRED | Physical resistance only; magic out of scope |
+| Magic combat | DEFERRED | Not part of the physical milestone |

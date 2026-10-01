@@ -28,7 +28,10 @@ namespace Modern
 		       meleePower == 0 && shootPower == 0 && magicAttack == 0 && hit == 0 &&
 		       avoid == 0 && hitPercent == 0.0f && avoidPercent == 0.0f && defense == 0 &&
 		       damageLow == 0 && damageHigh == 0 && resistFire == 0 && resistIce == 0 &&
-		       resistElectric == 0 && resistPoison == 0 && resistSpirit == 0;
+		       resistElectric == 0 && resistPoison == 0 && resistSpirit == 0 &&
+		       criticalRate == 0.0f && crushingBlow == 0.0f &&
+		       damageReduce == 0.0f && damageReflection == 0.0f &&
+		       damageReflectionRate == 0.0f;
 	}
 
 	bool ItemStatBlock::IsFinite() const noexcept
@@ -39,6 +42,9 @@ namespace Modern
 		// than surfacing later as a refused stat calculation.
 		return std::isfinite(hpRecoveryRate) && std::isfinite(mpRecoveryRate) &&
 		       std::isfinite(spRecoveryRate) && std::isfinite(hitPercent) &&
-		       std::isfinite(avoidPercent);
+		       std::isfinite(avoidPercent) && std::isfinite(criticalRate) &&
+		       std::isfinite(crushingBlow) && std::isfinite(damageReduce) &&
+		       std::isfinite(damageReflection) &&
+		       std::isfinite(damageReflectionRate);
 	}
 }

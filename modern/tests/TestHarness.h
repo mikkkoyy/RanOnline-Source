@@ -207,3 +207,18 @@ struct Describer<Modern::detail::StrongId<Tag, Underlying>>
 
 #define CHECK_EQ(actual, expected) \
     ::ModernTests::CheckEqImpl((actual), (expected), #actual " == " #expected, __FILE__, __LINE__)
+
+#define CHECK_NE(actual, expected) \
+    ::ModernTests::CheckImpl((actual) != (expected), #actual " != " #expected, __FILE__, __LINE__)
+
+#define CHECK_GT(actual, expected) \
+    ::ModernTests::CheckImpl((actual) > (expected), #actual " > " #expected, __FILE__, __LINE__)
+
+#define CHECK_GE(actual, expected) \
+    ::ModernTests::CheckImpl((actual) >= (expected), #actual " >= " #expected, __FILE__, __LINE__)
+
+#define CHECK_LT(actual, expected) \
+    ::ModernTests::CheckImpl((actual) < (expected), #actual " < " #expected, __FILE__, __LINE__)
+
+#define CHECK_LE(actual, expected) \
+    ::ModernTests::CheckImpl((actual) <= (expected), #actual " <= " #expected, __FILE__, __LINE__)

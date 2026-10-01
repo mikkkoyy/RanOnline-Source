@@ -1,3 +1,5 @@
+#pragma once
+
 // VERTICAL-006: hit calculation implementation.
 //
 // Legacy provenance: GLogixExPC.cpp:1291 CHECKHIT, GLogixExPC.cpp:1322-1326
@@ -51,7 +53,7 @@ namespace Modern::Combat
 	}
 
 	// Public interface
-	HitResult CalculateHit(const HitInput& input, const CombatConstants& constants = CombatConstants())
+	inline HitResult CalculateHit(const HitInput& input, const CombatConstants& constants = CombatConstants())
 	{
 		HitResult result;
 		CheckHit(input, constants, result);

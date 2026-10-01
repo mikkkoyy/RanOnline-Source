@@ -112,7 +112,7 @@ namespace
 
 // ── Hit / Miss ────────────────────────────────────────────────────────
 
-MODERN_TEST(Combat_ MissWhenAvoidExceedsHit)
+MODERN_TEST(Combat_MissWhenAvoidExceedsHit)
 {
 	CombatConstants constants;
 	CombatInput input = MakeBasicInput();
@@ -129,7 +129,7 @@ MODERN_TEST(Combat_ MissWhenAvoidExceedsHit)
 	CHECK_EQ(result.targetHPAfter, 100u);
 }
 
-MODERN_TEST(Combat_ HitWhenHitExceedsAvoid)
+MODERN_TEST(Combat_HitWhenHitExceedsAvoid)
 {
 	CombatConstants constants;
 	CombatInput input = MakeBasicInput();
@@ -144,7 +144,7 @@ MODERN_TEST(Combat_ HitWhenHitExceedsAvoid)
 	CHECK_GT(result.damageResult.damage, 0u);
 }
 
-MODERN_TEST(Combat_ HitRateClampedToMax)
+MODERN_TEST(Combat_HitRateClampedToMax)
 {
 	CombatConstants constants;
 	HitInput hitInput;
@@ -160,7 +160,7 @@ MODERN_TEST(Combat_ HitRateClampedToMax)
 	CHECK_EQ(result.hitRate, 99u);
 }
 
-MODERN_TEST(Combat_ HitRateClampedToMin)
+MODERN_TEST(Combat_HitRateClampedToMin)
 {
 	CombatConstants constants;
 	HitInput hitInput;
@@ -176,7 +176,7 @@ MODERN_TEST(Combat_ HitRateClampedToMin)
 	CHECK_EQ(result.hitRate, 20u);
 }
 
-MODERN_TEST(Combat_ LowSPReducesHitRate)
+MODERN_TEST(Combat_LowSPReducesHitRate)
 {
 	CombatConstants constants;
 	HitInput normal;
@@ -197,7 +197,7 @@ MODERN_TEST(Combat_ LowSPReducesHitRate)
 
 // ── Damage ────────────────────────────────────────────────────────────
 
-MODERN_TEST(Combat_ DamageRangeMinRoll)
+MODERN_TEST(Combat_DamageRangeMinRoll)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
@@ -212,7 +212,7 @@ MODERN_TEST(Combat_ DamageRangeMinRoll)
 	CHECK_LE(result.damage, 10u);
 }
 
-MODERN_TEST(Combat_ DamageRangeMaxRoll)
+MODERN_TEST(Combat_DamageRangeMaxRoll)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
@@ -226,7 +226,7 @@ MODERN_TEST(Combat_ DamageRangeMaxRoll)
 	CHECK_GT(result.damage, 15u);
 }
 
-MODERN_TEST(Combat_ DamageRangeMidRoll)
+MODERN_TEST(Combat_DamageRangeMidRoll)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
@@ -241,7 +241,7 @@ MODERN_TEST(Combat_ DamageRangeMidRoll)
 	CHECK_LE(result.damage, 20u);
 }
 
-MODERN_TEST(Combat_ DefenseReducesDamage)
+MODERN_TEST(Combat_DefenseReducesDamage)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
@@ -256,7 +256,7 @@ MODERN_TEST(Combat_ DefenseReducesDamage)
 	CHECK_LT(result.damage, 20u);
 }
 
-MODERN_TEST(Combat_ StateDamageMultiplier)
+MODERN_TEST(Combat_StateDamageMultiplier)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
@@ -271,7 +271,7 @@ MODERN_TEST(Combat_ StateDamageMultiplier)
 	CHECK_GT(result.damage, 20u);
 }
 
-MODERN_TEST(Combat_ LowSPDamageModifier)
+MODERN_TEST(Combat_LowSPDamageModifier)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
@@ -286,7 +286,7 @@ MODERN_TEST(Combat_ LowSPDamageModifier)
 	CHECK_GT(result.damage, 0u);
 }
 
-MODERN_TEST(Combat_ MinimumDamageOneOnHit)
+MODERN_TEST(Combat_MinimumDamageOneOnHit)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
@@ -301,7 +301,7 @@ MODERN_TEST(Combat_ MinimumDamageOneOnHit)
 	CHECK_GE(result.damage, 1u);
 }
 
-MODERN_TEST(Combat_ MissProducesZeroDamage)
+MODERN_TEST(Combat_MissProducesZeroDamage)
 {
 	CombatConstants constants;
 	CombatInput input = MakeBasicInput();
@@ -317,7 +317,7 @@ MODERN_TEST(Combat_ MissProducesZeroDamage)
 
 // ── Critical ──────────────────────────────────────────────────────────
 
-MODERN_TEST(Combat_ CriticalHitOccurs)
+MODERN_TEST(Combat_CriticalHitOccurs)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
@@ -332,7 +332,7 @@ MODERN_TEST(Combat_ CriticalHitOccurs)
 	CHECK_GT(result.damage, 15u);
 }
 
-MODERN_TEST(Combat_ NonCriticalHit)
+MODERN_TEST(Combat_NonCriticalHit)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
@@ -348,7 +348,7 @@ MODERN_TEST(Combat_ NonCriticalHit)
 	CHECK_LE(result.damage, 20u);
 }
 
-MODERN_TEST(Combat_ CriticalBoundary)
+MODERN_TEST(Combat_CriticalBoundary)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
@@ -370,7 +370,7 @@ MODERN_TEST(Combat_ CriticalBoundary)
 
 // ── Crushing Blow ─────────────────────────────────────────────────────
 
-MODERN_TEST(Combat_ CrushingBlowOccurs)
+MODERN_TEST(Combat_CrushingBlowOccurs)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
@@ -386,7 +386,7 @@ MODERN_TEST(Combat_ CrushingBlowOccurs)
 	CHECK_GT(result.damage, 20u);
 }
 
-MODERN_TEST(Combat_ NonCrushingBlow)
+MODERN_TEST(Combat_NonCrushingBlow)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
@@ -401,7 +401,7 @@ MODERN_TEST(Combat_ NonCrushingBlow)
 	CHECK_EQ(result.crushing, false);
 }
 
-MODERN_TEST(Combat_ CrushingBlowBoundary)
+MODERN_TEST(Combat_CrushingBlowBoundary)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
@@ -424,7 +424,7 @@ MODERN_TEST(Combat_ CrushingBlowBoundary)
 
 // ── Combined ──────────────────────────────────────────────────────────
 
-MODERN_TEST(Combat_ CriticalAndCrushing)
+MODERN_TEST(Combat_CriticalAndCrushing)
 {
 	CombatConstants constants;
 	CombatInput input = MakeBasicInput();
@@ -447,7 +447,7 @@ MODERN_TEST(Combat_ CriticalAndCrushing)
 	CHECK_GT(result.damageResult.damage, 20u);
 }
 
-MODERN_TEST(Combat_ CriticalWithDefense)
+MODERN_TEST(Combat_CriticalWithDefense)
 {
 	CombatConstants constants;
 	CombatInput input = MakeBasicInput();
@@ -468,7 +468,7 @@ MODERN_TEST(Combat_ CriticalWithDefense)
 	CHECK_GT(result.damageResult.damage, 0u);
 }
 
-MODERN_TEST(Combat_ LowSPWithCritical)
+MODERN_TEST(Combat_LowSPWithCritical)
 {
 	CombatConstants constants;
 	CombatInput input = MakeBasicInput();
@@ -490,7 +490,7 @@ MODERN_TEST(Combat_ LowSPWithCritical)
 	CHECK_GT(result.damageResult.damage, 0u);
 }
 
-MODERN_TEST(Combat_ HighDefenseMinimumDamage)
+MODERN_TEST(Combat_HighDefenseMinimumDamage)
 {
 	CombatConstants constants;
 	CombatInput input = MakeBasicInput();
@@ -514,7 +514,7 @@ MODERN_TEST(Combat_ HighDefenseMinimumDamage)
 
 // ── Determinism ───────────────────────────────────────────────────────
 
-MODERN_TEST(Combat_ DeterministicSameInputs)
+MODERN_TEST(Combat_DeterministicSameInputs)
 {
 	CombatConstants constants;
 	CombatInput input = MakeBasicInput();
@@ -530,7 +530,7 @@ MODERN_TEST(Combat_ DeterministicSameInputs)
 
 // ── Combat Result ─────────────────────────────────────────────────────
 
-MODERN_TEST(Combat_ CombatResultFlags)
+MODERN_TEST(Combat_CombatResultFlags)
 {
 	CombatConstants constants;
 	CombatInput input = MakeBasicInput();
@@ -554,7 +554,7 @@ MODERN_TEST(Combat_ CombatResultFlags)
 	CHECK_NE(result.damageFlag & DAMAGE_TYPE_CRUSHING_BLOW, 0u);
 }
 
-MODERN_TEST(Combat_ CombatResultMissFlags)
+MODERN_TEST(Combat_CombatResultMissFlags)
 {
 	CombatConstants constants;
 	CombatInput input = MakeBasicInput();
@@ -571,7 +571,7 @@ MODERN_TEST(Combat_ CombatResultMissFlags)
 	CHECK_EQ(result.damageFlag, 0u);
 }
 
-MODERN_TEST(Combat_ CombatResultTargetHP)
+MODERN_TEST(Combat_CombatResultTargetHP)
 {
 	CombatConstants constants;
 	CombatInput input = MakeBasicInput();
@@ -594,7 +594,7 @@ MODERN_TEST(Combat_ CombatResultTargetHP)
 	CHECK_GE(result.targetHPAfter, 0u);
 }
 
-MODERN_TEST(Combat_ CombatResultOverkill)
+MODERN_TEST(Combat_CombatResultOverkill)
 {
 	CombatConstants constants;
 	CombatInput input = MakeBasicInput();
@@ -618,7 +618,7 @@ MODERN_TEST(Combat_ CombatResultOverkill)
 
 // ── Damage Reduction ──────────────────────────────────────────────────
 
-MODERN_TEST(Combat_ DamageReductionApplied)
+MODERN_TEST(Combat_DamageReductionApplied)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
@@ -635,12 +635,12 @@ MODERN_TEST(Combat_ DamageReductionApplied)
 
 // ── Level Difference ──────────────────────────────────────────────────
 
-MODERN_TEST(Combat_ LevelDifferenceBonus)
+MODERN_TEST(Combat_LevelDifferenceBonus)
 {
 	CombatConstants constants;
 	PhysicalDamageInput input = MakeBasicDamageInput();
 	input.defense = 0;
-	input.level = 10;
+	input.targetLevel = 100;
 	input.attackerLevel = 1;
 	input.damageRoll = 0.5f;
 	input.criticalRoll = 1.0f;
@@ -653,7 +653,7 @@ MODERN_TEST(Combat_ LevelDifferenceBonus)
 
 // ── Constants ─────────────────────────────────────────────────────────
 
-MODERN_TEST(Combat_ CombatConstantsSourceVerified)
+MODERN_TEST(Combat_CombatConstantsSourceVerified)
 {
 	CombatConstants constants;
 
@@ -738,8 +738,10 @@ MODERN_TEST(CombatEquip_CriticalRateItem)
 MODERN_TEST(CombatEquip_MultipleCriticalItems)
 {
 	Modern::InMemoryItemDefinitions provider;
-	Modern::ItemDefinition def1 = MakeCombatItem("CritArmor1", 0.03f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
-	Modern::ItemDefinition def2 = MakeCombatItem("CritArmor2", 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+	Modern::ItemDefinition def1 = MakeCombatItem("CritArmor1", 0.25f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+	Modern::ItemDefinition def2 = MakeCombatItem("CritArmor2", 0.25f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+	def1.id = Modern::ItemId(1u);
+	def2.id = Modern::ItemId(2u);
 	provider.Add(def1);
 	provider.Add(def2);
 
@@ -751,7 +753,7 @@ MODERN_TEST(CombatEquip_MultipleCriticalItems)
 
 	auto result = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
 	CHECK(result.IsOk());
-	CHECK_EQ(result.GetValue().contribution.criticalRate, 0.05f);
+	CHECK_EQ(result.GetValue().contribution.criticalRate, 0.5f);
 }
 
 MODERN_TEST(CombatEquip_CrushingBlowItem)
@@ -846,6 +848,8 @@ MODERN_TEST(CombatEquip_ReplaceChangesBonus)
 	Modern::InMemoryItemDefinitions provider;
 	Modern::ItemDefinition def1 = MakeCombatItem("CritArmor1", 0.05f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
 	Modern::ItemDefinition def2 = MakeCombatItem("CritArmor2", 0.10f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+	def1.id = Modern::ItemId(1u);
+	def2.id = Modern::ItemId(2u);
 	provider.Add(def1);
 	provider.Add(def2);
 
@@ -888,7 +892,7 @@ MODERN_TEST(CombatEquip_MissingDefinition)
 	equipment.Equip(Modern::EquipmentSlot::Upper, instance);
 
 	auto result = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
-	CHECK(!result.IsOk());
+	CHECK(!result.GetValue().IsOk());
 }
 
 MODERN_TEST(CombatEquip_NonFiniteValues)
@@ -907,7 +911,7 @@ MODERN_TEST(CombatEquip_NonFiniteValues)
 	equipment.Equip(Modern::EquipmentSlot::Upper, instance);
 
 	auto result = Modern::ItemContributionAggregator::Aggregate(equipment, provider);
-	CHECK(!result.IsOk());
+	CHECK(!result.GetValue().IsOk());
 }
 
 // ── VERTICAL-008: Reflection tests ────────────────────────────────────
@@ -959,6 +963,7 @@ MODERN_TEST(CombatReflection_ThresholdBelowRoll)
 	input.criticalRoll = 1.0f;
 	input.crushingRoll = 1.0f;
 	input.reflectionRoll = 0.2f;
+	input.targetLevel = 100;
 
 	DamageResult result = CalculatePhysicalDamage(input, constants);
 
@@ -1049,6 +1054,7 @@ MODERN_TEST(CombatReflection_CriticalPlusReflection)
 	input.criticalRoll = 0.0f;
 	input.crushingRoll = 1.0f;
 	input.reflectionRoll = 0.0f;
+	input.targetLevel = 100;
 
 	DamageResult result = CalculatePhysicalDamage(input, constants);
 
@@ -1069,6 +1075,7 @@ MODERN_TEST(CombatReflection_CrushingPlusReflection)
 	input.crushingRoll = 0.0f;
 	input.attackerCrushingBonus = 150;
 	input.reflectionRoll = 0.0f;
+	input.targetLevel = 100;
 
 	DamageResult result = CalculatePhysicalDamage(input, constants);
 
@@ -1089,6 +1096,7 @@ MODERN_TEST(CombatReflection_DamageReducePlusReflection)
 	input.criticalRoll = 1.0f;
 	input.crushingRoll = 1.0f;
 	input.reflectionRoll = 0.0f;
+	input.targetLevel = 100;
 
 	DamageResult result = CalculatePhysicalDamage(input, constants);
 
@@ -1133,6 +1141,7 @@ MODERN_TEST(CombatReflection_NoRecursion)
 	input.criticalRoll = kRoll1;
 	input.crushingRoll = kRoll1;
 	input.reflectionRoll = kRoll0;
+	input.targetLevel = 100;
 
 	CombatResult result = Combat::ResolveCombat(input, constants);
 
@@ -1160,6 +1169,7 @@ MODERN_TEST(CombatReflection_AttackerHPTracked)
 	input.criticalRoll = kRoll1;
 	input.crushingRoll = kRoll1;
 	input.reflectionRoll = kRoll0;
+	input.targetLevel = 100;
 
 	CombatResult result = Combat::ResolveCombat(input, constants);
 
@@ -1188,4 +1198,233 @@ MODERN_TEST(CombatReflection_MissNoReflection)
 	CHECK_EQ(result.IsHit(), false);
 	CHECK_EQ(result.IsReflection(), false);
 	CHECK_EQ(result.damageResult.reflectionDamage, 0u);
+}
+
+// ── VERTICAL-009: Low SP ───────────────────────────────────────────────
+
+MODERN_TEST(CombatLowSP_AboveRequired)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.lowSP = false;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.lowSP, false);
+	CHECK_GT(result.damage, 0u);
+}
+
+MODERN_TEST(CombatLowSP_BelowRequired)
+{
+	CombatConstants constants;
+	PhysicalDamageInput normal = MakeBasicDamageInput();
+	normal.defense = 0;
+	normal.lowSP = false;
+	normal.damageRoll = 0.5f;
+	normal.criticalRoll = 1.0f;
+	normal.crushingRoll = 1.0f;
+
+	PhysicalDamageInput lowSP = normal;
+	lowSP.lowSP = true;
+
+	DamageResult rNormal = CalculatePhysicalDamage(normal, constants);
+	DamageResult rLow = CalculatePhysicalDamage(lowSP, constants);
+
+	CHECK_EQ(rLow.lowSP, true);
+	CHECK_LT(rLow.damage, rNormal.damage);
+}
+
+MODERN_TEST(CombatLowSP_ZeroSP)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.lowSP = true;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.lowSP, true);
+	CHECK_GT(result.damage, 0u);
+}
+
+// ── VERTICAL-009: Physical Resistance ─────────────────────────────────
+
+MODERN_TEST(CombatResist_Zero)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.resistElement = 0;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_GT(result.damage, 0u);
+	CHECK_EQ(result.preDefenseDamage, result.rawDamage);
+}
+
+MODERN_TEST(CombatResist_Positive)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.resistElement = 50;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_LT(result.preDefenseDamage, result.rawDamage);
+	CHECK_GT(result.damage, 0u);
+}
+
+MODERN_TEST(CombatResist_High)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.resistElement = 200;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_GT(result.damage, 0u);
+}
+
+MODERN_TEST(CombatResist_RawValueClampedToMax)
+{
+	// Legacy: GLogixExPC.cpp:1516 clamps nRESIST to fMAX_RESIST (99) before the
+	// reduction is computed, and :1559 caps fResistTotal at 0.8.
+	//
+	// Because fMAX_RESIST is 99 and fRESIST_PHYSIC_G is 0.5, the largest
+	// reachable fResistTotal is 99*0.01*0.5 = 0.495. The 0.8 cap is therefore
+	// unreachable in the physical path, so the raw-value clamp is the only cap
+	// that can actually bite. This test pins the clamp, not the unreachable cap.
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.resistElement = 1000;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	const int32_t clampedResist = 99;
+	float fResistTotal = static_cast<float>(clampedResist) * 0.01f * constants.resistPhysicG;
+	uint32_t expectedDamage = static_cast<uint32_t>(
+		static_cast<float>(result.rawDamage) * (1.0f - fResistTotal));
+	if (expectedDamage == 0)
+		expectedDamage = 1;
+
+	CHECK_EQ(result.damage, expectedDamage);
+}
+
+// ── VERTICAL-009: PK Damage Modifier ───────────────────────────────────
+
+MODERN_TEST(CombatPK_NonPK)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.isPK = false;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_GT(result.damage, 0u);
+}
+
+MODERN_TEST(CombatPK_PKCombat)
+{
+	CombatConstants constants;
+	PhysicalDamageInput normal = MakeBasicDamageInput();
+	normal.defense = 0;
+	normal.isPK = false;
+	normal.damageRoll = 0.5f;
+	normal.criticalRoll = 1.0f;
+	normal.crushingRoll = 1.0f;
+
+	PhysicalDamageInput pk = normal;
+	pk.isPK = true;
+
+	DamageResult rNormal = CalculatePhysicalDamage(normal, constants);
+	DamageResult rPK = CalculatePhysicalDamage(pk, constants);
+
+	CHECK_LT(rPK.damage, rNormal.damage);
+}
+
+MODERN_TEST(CombatPK_PKModifierValue)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.isPK = true;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	uint32_t expectedDamage = static_cast<uint32_t>(
+		static_cast<float>(result.rawDamage) * constants.pkPointDecPhy);
+	if (expectedDamage == 0)
+		expectedDamage = 1;
+
+	CHECK_EQ(result.damage, expectedDamage);
+}
+
+// ── VERTICAL-009: Ranged Reflection Disable ────────────────────────────
+
+MODERN_TEST(CombatRanged_NoReflection)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.attackType = AttackType::Ranged;
+	input.damageReflection = 0.5f;
+	input.damageReflectionRate = 0.5f;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+	input.reflectionRoll = 0.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.reflectionTriggered, false);
+	CHECK_EQ(result.reflectionDamage, 0u);
+}
+
+MODERN_TEST(CombatRanged_MeleeStillReflects)
+{
+	CombatConstants constants;
+	PhysicalDamageInput input = MakeBasicDamageInput();
+	input.defense = 0;
+	input.attackType = AttackType::Melee;
+	input.damageReflection = 0.5f;
+	input.damageReflectionRate = 0.5f;
+	input.targetLevel = 100;
+	input.damageRoll = 0.5f;
+	input.criticalRoll = 1.0f;
+	input.crushingRoll = 1.0f;
+	input.reflectionRoll = 0.0f;
+
+	DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.reflectionTriggered, true);
+	CHECK_GT(result.reflectionDamage, 0u);
 }
