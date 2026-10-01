@@ -1008,3 +1008,59 @@ MODERN_TEST(SkillFactV019_ExpiryRemovesAllThree)
 	CHECK_EQ(after.avoid, 0);
 	CHECK_EQ(after.damage, 0);
 }
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-020: defense and resistance
+// ═══════════════════════════════════════════════════════════════════════
+
+// GLogixExPC.cpp:2330 / :2349 - both SUM with int() truncation.
+MODERN_TEST(SkillFactV020_DefenseIsAdditive)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+	                                              SkillFactImpactType::Defense, 8.0f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+	                                              SkillFactImpactType::Defense, 5.0f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.defense, 13);
+}
+
+MODERN_TEST(SkillFactV020_DefenseTruncatesAndAllowsNegative)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+	                                              SkillFactImpactType::Defense, 6.9f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+	                                              SkillFactImpactType::Defense, -2.7f));
+
+	const SkillFactModifiers modifiers = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(modifiers.defense, 4);   // 6 + (-2)
+}
+
+MODERN_TEST(SkillFactV020_ResistIsAdditive)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+	                                              SkillFactImpactType::Resist, 7.0f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+	                                              SkillFactImpactType::Resist, 4.0f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.resist, 11);
+}
+
+MODERN_TEST(SkillFactV020_DefenseAndResistExpireIndependently)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 5.0f,
+	                                              SkillFactImpactType::Defense, 10.0f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 50.0f,
+	                                              SkillFactImpactType::Resist, 3.0f));
+
+	AdvanceSkillFacts(container, 1.0f);
+	AdvanceSkillFacts(container, 5.0f);   // defence expires, resist does not
+
+	const SkillFactModifiers after = AdvanceSkillFacts(container, 1.0f).modifiers;
+
+	CHECK_EQ(after.defense, 0);
+	CHECK_EQ(after.resist, 3);
+}

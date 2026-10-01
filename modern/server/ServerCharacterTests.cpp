@@ -3234,3 +3234,138 @@ MODERN_TEST(ServerFactV019_PhysicalSkillStillRollsForHit)
 	// and the physical channel demonstrably rolls.
 	CHECK_EQ(target.GetValue().BuildSnapshot().GetValue().hp.current, hpBefore);
 }
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-020: defense and resistance through the real server path
+// ═══════════════════════════════════════════════════════════════════════
+
+// EMIMPACTA_DEFENSE is the FLAT TOTAL defence. It must not be confused with
+// body defence or item defence, which legacy never routes it through.
+MODERN_TEST(ServerFactV020_DefenseFactRaisesTotalDefenseOnly)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	const int32_t totalBefore = character.GetValue().BuildSnapshot().GetValue().derived.defense;
+	const int32_t bodyBefore  = character.GetValue().BuildSnapshot().GetValue().derived.defenseBody;
+
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(1, 1, 30.0f, SkillFactImpactType::Defense, 14.0f)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().defense, 14);
+	CHECK_EQ(character.GetValue().BuildSnapshot().GetValue().derived.defense,
+	         totalBefore + 14);
+	// Body defence is untouched - legacy's GetBodyDefense() is a different field.
+	CHECK_EQ(character.GetValue().BuildSnapshot().GetValue().derived.defenseBody, bodyBefore);
+}
+
+MODERN_TEST(ServerFactV020_TwoDefenseFactsSumAndExpire)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	const int32_t before = character.GetValue().BuildSnapshot().GetValue().derived.defense;
+
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(1, 1, 5.0f, SkillFactImpactType::Defense, 6.0f)));
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(1, 2, 5.0f, SkillFactImpactType::Defense, 9.0f)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().defense, 15);
+	CHECK_EQ(character.GetValue().BuildSnapshot().GetValue().derived.defense, before + 15);
+
+	character.GetValue().AdvanceSkillFacts(5.0f);
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().defense, 0);
+	CHECK_EQ(character.GetValue().BuildSnapshot().GetValue().derived.defense, before);
+}
+
+// The resistance bonus reaches ALL FIVE axes, because legacy's
+// SRESIST::operator+=(int) writes the same value to each component.
+MODERN_TEST(ServerFactV020_ResistFactReachesAllFiveAxes)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	const Stats::Resistances before =
+		character.GetValue().BuildSnapshot().GetValue().derived.resistances;
+
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(1, 1, 30.0f, SkillFactImpactType::Resist, 6.0f)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().resist, 6);
+
+	const Stats::Resistances after =
+		character.GetValue().BuildSnapshot().GetValue().derived.resistances;
+
+	CHECK_EQ(after.fire, before.fire + 6);
+	CHECK_EQ(after.ice, before.ice + 6);
+	CHECK_EQ(after.electric, before.electric + 6);
+	CHECK_EQ(after.poison, before.poison + 6);
+	CHECK_EQ(after.spirit, before.spirit + 6);
+}
+
+MODERN_TEST(ServerFactV020_TwoResistFactsSumAndExpire)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	const Stats::Resistances before =
+		character.GetValue().BuildSnapshot().GetValue().derived.resistances;
+
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(1, 1, 5.0f, SkillFactImpactType::Resist, 4.0f)));
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(1, 2, 5.0f, SkillFactImpactType::Resist, 5.0f)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().resist, 9);
+	CHECK_EQ(character.GetValue().BuildSnapshot().GetValue().derived.resistances.fire,
+	         before.fire + 9);
+
+	character.GetValue().AdvanceSkillFacts(5.0f);
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().resist, 0);
+	CHECK_EQ(character.GetValue().BuildSnapshot().GetValue().derived.resistances.fire,
+	         before.fire);
+}
+
+// The defence must actually reduce damage, not merely move a field.
+//
+// NOTE: this asserts on ONE cast rather than comparing two casts, because
+// `CastSkill` calls `DeterministicRandom()` per cast and advances the sequence,
+// so two casts do not share a damage roll and are not comparable. The
+// arithmetic consequence is pinned deterministically in
+// `FactDefense_ReducesFinalDamage` (CombatTests.cpp) instead; here we only need
+// to show the value survives the server plumbing into the damage figure.
+MODERN_TEST(ServerFactV020_DefenseFactReachesTheDamageFigure)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeConfigurableFactSkill(2));
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+	CHECK(attacker.GetValue().LearnSkill(SkillId{ 1, 2 }).IsOk());
+	CHECK(attacker.GetValue().SetSkillLevel(SkillId{ 1, 2 }, 1).IsOk());
+
+	CHECK(target.GetValue().ApplySkillFact(
+		MakeImpactFact(9, 9, 60.0f, SkillFactImpactType::Defense, 10.0f)));
+	target.GetValue().AdvanceSkillFacts(0.1f);
+
+	const Skills::ActiveSkillResult defended =
+		attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue());
+	CHECK(defended.Succeeded());
+
+	// The buffed defence was subtracted: the damage figure is strictly less than
+	// the pre-defence figure for this very cast.
+	CHECK_LT(defended.combat.damageResult.damage,
+	         defended.combat.damageResult.preDefenseDamage);
+}

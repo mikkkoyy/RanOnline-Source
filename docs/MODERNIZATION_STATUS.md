@@ -48,7 +48,8 @@ formula provenance.
 | VERTICAL-016 FACT consumer investigation | [x] | `ef4daab` |
 | VERTICAL-017 FACT combat / cast integration | [x] | `c73aba1` |
 | VERTICAL-018 FACT hit/avoid/damage investigation | [x] | `fc02b2a` |
-| VERTICAL-019 FACT hit/avoid/damage integration | [x] | this commit |
+| VERTICAL-019 FACT hit/avoid/damage integration | [x] | `e56b770` |
+| VERTICAL-020 FACT defense/resist integration | [x] | this commit |
 
 ---
 
@@ -387,9 +388,43 @@ Damage ordering against the attack power is pinned at the `VAR_PARAM` floor,
 where the two orders are actually distinguishable: on range `{1,1}` with a `-1`
 FACT and `+10` power, FACT-first gives 11 and power-first would give 10.
 
+**VERTICAL-020 — FACT defense / defense-rate / resistance.** Complete, and
+deliberately partial. See
+`docs/reference/server/VERTICAL-020_FACT_DEFENSE_DEFENSE_RATE_RESIST_INVESTIGATION.md`.
+
+Two of the three are implemented; one is deferred on evidence, not on
+inconvenience.
+
+**`EMIMPACTA_DEFENSE` raises the flat TOTAL defence only.** Legacy routes it to
+`m_nDEFENSE_SKILL`, which `GetDefense()` returns (`GLChar.h:493`) and
+`CALCDAMAGE` subtracts. Body defence (`m_nDEFENSE_BODY`) and item defence
+(`m_sSUMITEM.nDefense`) are different accessors and are **not** touched — a test
+pins that distinction rather than letting it be assumed.
+
+**`EMIMPACTA_RESIST` turns out to reach more than expected.** It accumulates into
+`m_sSUMRESIST_SKILL` through `SRESIST::operator+=(int)`, which writes the same
+value to **all five** components (`GLCharDefine.h:765-778`), so it is a generic
+all-axes bonus rather than a per-element one. And `GETRESIST()` returns
+`m_sSUMRESIST_SKILL`, not the base — so it affects the damage resistance
+reduction *and* the status-blow resistance that VERTICAL-014 consumes.
+
+**`EMIMPACTA_DEFENSE_RATE` is DEFERRED, and the reason is worth stating.** Its
+consumer *is* proven (`ApplyDefenseRate` at `:2975-2976`, a percentage with a
+`min 1`). But `modern/` has no defence-rate axis at all — no passive, item, pet
+or land rate — so shipping only the FACT term would be a partial, asymmetric
+version of the rule. Worse, legacy applies that `min 1` unconditionally, so
+implementing it would raise a level-1 character's defence from 0 to 1 even with
+no buff present, changing V006/V009 behaviour for everyone. It belongs in a
+dedicated slice that introduces the axis with its passive counterpart.
+
+One correction made during implementation, caught by the existing stat oracle
+rather than by inspection: a resistance clamp was initially placed after the FACT
+fold, which raised a negative intermediate that the later codex term was meant to
+offset. Legacy floors each element once, at `m_sSUMRESIST_SKILL.LIMIT()` (`:2979`),
+after every contribution. The clamp was moved and the reason recorded.
+
 **Next:** the remaining deferred FACT consumers, each still needing its own
-subsystem (resource recovery, damage rate, world targeting). The number is
-deliberately left open rather than invented.
+subsystem. The number is deliberately left open rather than invented.
 
 ---
 

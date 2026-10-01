@@ -322,19 +322,34 @@ namespace Modern::Stats
 		// Both are SUM with `int()` truncation - the opposite rule to the damage
 		// reduction specs, which take a maximum. Attacker-side for hit,
 		// defender-side for avoid.
-		int32_t hit = 0;
+int32_t hit = 0;
 		int32_t avoid = 0;
+		int32_t damage = 0;
+
+		// VERTICAL-020: `m_nDEFENSE_SKILL` and `m_sSUMRESIST_SKILL`.
+		//
+		// `defense` is the FLAT TOTAL defence, not body and not item defence.
+		// Legacy's `GetBodyDefense()` returns `m_nDEFENSE_BODY` and
+		// `GetItemDefense()` returns `m_sSUMITEM.nDefense` (GLChar.h:494-495),
+		// and neither is touched by the FACT impacts.
+		//
+		// `resist` is added to ALL FIVE components, because legacy's
+		// `SRESIST::operator+=(int)` writes the same value to each
+		// (GLCharDefine.h:765-778).
+		int32_t defense = 0;
+		int32_t resist = 0;
 
 		constexpr bool operator==(const FactContribution& other) const noexcept
 		{
 			return meleePower == other.meleePower && shootPower == other.shootPower &&
-			       magicAttack == other.magicAttack && hit == other.hit && avoid == other.avoid;
+			       magicAttack == other.magicAttack && hit == other.hit && avoid == other.avoid &&
+			       damage == other.damage && defense == other.defense && resist == other.resist;
 		}
 
 		constexpr bool IsEmpty() const noexcept
 		{
 			return meleePower == 0 && shootPower == 0 && magicAttack == 0 &&
-			       hit == 0 && avoid == 0;
+			       hit == 0 && avoid == 0 && damage == 0 && defense == 0 && resist == 0;
 		}
 	};
 

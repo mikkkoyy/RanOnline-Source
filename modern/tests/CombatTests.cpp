@@ -2264,3 +2264,52 @@ MODERN_TEST(FactDamage_ExpiryIsJustTheValueGoingAway)
 	CHECK_GT(withFact, without);
 	CHECK_EQ(withFact - without, 25u);
 }
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-020: flat total defence reaching the damage figure
+// ═══════════════════════════════════════════════════════════════════════
+
+MODERN_TEST(FactDefense_ReducesFinalDamage)
+{
+	// The same roll twice; only the defence differs. This is the deterministic
+	// form of the assertion the server test cannot make, because CastSkill
+	// advances its RNG sequence per cast.
+	PhysicalDamageInput bare = MakeBasicDamageInput();
+	bare.physicalDamage = { 100, 100 };
+	bare.meleePower = 0;
+	bare.shootPower = 0;
+	bare.defense = 0;
+	bare.defenseBody = 0;
+	bare.defenseItem = 0;
+	bare.damageRoll = 0.0f;
+	bare.criticalRoll = 1.0f;
+	bare.crushingRoll = 1.0f;
+	bare.lowSP = false;
+
+	PhysicalDamageInput defended = bare;
+	defended.defense = 20;
+
+	const DamageResult bareResult    = CalculatePhysicalDamage(bare);
+	const DamageResult defendedResult = CalculatePhysicalDamage(defended);
+
+	CHECK_EQ(bareResult.damage - defendedResult.damage, 20u);
+}
+
+MODERN_TEST(FactDefense_BodyAndItemDecayIsSeparateFromFlatDefense)
+{
+	// The FACT adds flat defence only. Body/item defence feeds the separate
+	// decay stage (GLogixExPC.cpp:1701-1713) and is not the same axis.
+	PhysicalDamageInput bare = MakeBasicDamageInput();
+	bare.defense = 0;
+	bare.defenseBody = 0;
+	bare.defenseItem = 0;
+	bare.damageRoll = 0.0f;
+	bare.criticalRoll = 1.0f;
+	bare.crushingRoll = 1.0f;
+
+	PhysicalDamageInput decayOnly = bare;
+	decayOnly.defenseBody = 30;
+	decayOnly.defenseItem = 30;
+
+	CHECK_LT(CalculatePhysicalDamage(decayOnly).damage,
+	         CalculatePhysicalDamage(bare).damage);
+}

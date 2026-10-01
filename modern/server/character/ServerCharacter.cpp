@@ -197,6 +197,10 @@ Status ServerCharacter::Recalculate()
 		input.facts.hit   = m_factModifiers.hit;
 		input.facts.avoid = m_factModifiers.avoid;
 
+		// VERTICAL-020: flat total defence and the all-axes resistance bonus.
+		input.facts.defense = m_factModifiers.defense;
+		input.facts.resist  = m_factModifiers.resist;
+
 		const Result<Stats::DerivedStats> result = Stats::Calculate(input);
 		if (result.IsError())
 		{
@@ -1200,13 +1204,17 @@ namespace Modern::Server
 		    m_factStatsPowersApplied.shootPower  != m_factModifiers.shootPower ||
 		    m_factStatsPowersApplied.magicAttack != m_factModifiers.magicAttack ||
 		    m_factStatsPowersApplied.hit         != m_factModifiers.hit ||
-		    m_factStatsPowersApplied.avoid       != m_factModifiers.avoid)
+		    m_factStatsPowersApplied.avoid       != m_factModifiers.avoid ||
+		    m_factStatsPowersApplied.defense      != m_factModifiers.defense ||
+		    m_factStatsPowersApplied.resist       != m_factModifiers.resist)
 		{
 			m_factStatsPowersApplied.meleePower  = m_factModifiers.meleePower;
 			m_factStatsPowersApplied.shootPower  = m_factModifiers.shootPower;
 			m_factStatsPowersApplied.magicAttack = m_factModifiers.magicAttack;
 			m_factStatsPowersApplied.hit         = m_factModifiers.hit;
 			m_factStatsPowersApplied.avoid       = m_factModifiers.avoid;
+			m_factStatsPowersApplied.defense     = m_factModifiers.defense;
+			m_factStatsPowersApplied.resist      = m_factModifiers.resist;
 			(void) Recalculate();
 		}
 	}

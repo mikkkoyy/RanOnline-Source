@@ -96,6 +96,10 @@ namespace Modern::Skills
 		int32_t hit = 0;
 		int32_t avoid = 0;
 		int32_t damage = 0;
+
+		// VERTICAL-020: flat total defence and the all-axes resistance bonus.
+		int32_t defense = 0;
+		int32_t resist = 0;
 	};
 
 	struct SkillFactAdvanceResult
@@ -188,6 +192,17 @@ namespace Modern::Skills
 						break;
 					case SkillFactImpactType::Damage:
 						modifiers.damage += static_cast<int32_t>(impact.value);
+						break;
+
+					// VERTICAL-020: GLogixExPC.cpp:2330 and :2349
+					//   m_nDEFENSE_SKILL    += int(fADDON_VAR);
+					//   m_sSUMRESIST_SKILL  += int(fADDON_VAR);
+					// Both SUM with int() truncation.
+					case SkillFactImpactType::Defense:
+						modifiers.defense += static_cast<int32_t>(impact.value);
+						break;
+					case SkillFactImpactType::Resist:
+						modifiers.resist += static_cast<int32_t>(impact.value);
 						break;
 
 					default:
@@ -320,6 +335,12 @@ namespace Modern::Skills
 						break;
 					case SkillFactImpactType::Damage:
 						modifiers.damage += static_cast<int32_t>(impact.value);
+						break;
+					case SkillFactImpactType::Defense:
+						modifiers.defense += static_cast<int32_t>(impact.value);
+						break;
+					case SkillFactImpactType::Resist:
+						modifiers.resist += static_cast<int32_t>(impact.value);
 						break;
 					default:
 						break;

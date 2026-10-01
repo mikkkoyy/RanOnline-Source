@@ -377,6 +377,19 @@ meleePower  = VariationClamped(pa, WrapAdd(input.items.meleePower,
 		stats.defense = WrapAdd(stats.defenseBody, input.items.defense);
 		stats.defense = WrapAdd(stats.defense, input.passives.defense);
 		stats.defense = WrapAdd(stats.defense, static_cast<int32_t>(input.codex.defense));
+		// VERTICAL-020: `m_nDEFENSE_SKILL += int(fADDON_VAR)`
+		// (GLogixExPC.cpp:2330). This is the flat TOTAL defence - the same
+		// accumulator as items, passives and codex - and it is what
+		// `GETDEFENSE()`/`GetDefense()` returns, so it reaches the damage
+		// pipeline as `PhysicalDamageInput::defense`. Body and item defence are
+		// deliberately NOT touched.
+		//
+		// Plain signed addition rather than `WrapAdd`: the FACT value is a
+		// signed `int` in legacy and may be negative, whereas `WrapAdd` takes a
+		// `uint32_t` bonus and would turn a negative contribution into a huge
+		// positive one. The unsigned sources above cannot go negative, so their
+		// wrap behaviour stays.
+		stats.defense += input.facts.defense;
 
 		// GLogixExPC.cpp:380-389. RAN chooses melee or shoot power here from
 		// the equipped weapon's range; with no equipment the melee branch is
@@ -406,6 +419,19 @@ meleePower  = VariationClamped(pa, WrapAdd(input.items.meleePower,
 		stats.resistances.electric += input.items.resistances.electric;
 		stats.resistances.poison   += input.items.resistances.poison;
 		stats.resistances.spirit   += input.items.resistances.spirit;
+		// VERTICAL-020: `m_sSUMRESIST_SKILL += int(fADDON_VAR)`
+		// (GLogixExPC.cpp:2349) goes through `SRESIST::operator+=(int)`, which
+		// writes the SAME value to every component (GLCharDefine.h:765-778). So
+		// one scalar reaches all five axes, not a selected element.
+		stats.resistances.fire     += input.facts.resist;
+		stats.resistances.ice      += input.facts.resist;
+		stats.resistances.electric += input.facts.resist;
+		stats.resistances.poison   += input.facts.resist;
+		stats.resistances.spirit   += input.facts.resist;
+		// NOTE: no clamp here. Legacy floors each element once, at
+		// `m_sSUMRESIST_SKILL.LIMIT()` (:2979), AFTER every contribution
+		// including the codex one. Clamping mid-fold would raise a negative
+		// intermediate that a later positive term was meant to offset.
 		stats.resistances.AddAll(static_cast<int32_t>(input.codex.resistance));
 		stats.resistances.ClampNonNegative();
 
