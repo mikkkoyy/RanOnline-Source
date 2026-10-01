@@ -350,19 +350,57 @@ int32_t hit = 0;
 		// added RAW - legacy does not normalise it to a percentage.
 		float defenseRate = 0.0f;
 
+		// VERTICAL-022: the RECOVERY RATE impacts, EMIMPACTA_VARHP /
+		// VARMP / VARSP / VARAP.
+		//
+		// Legacy (GLogixExPC.cpp:2331-2338) adds `fADDON_VAR` to the local
+		// `fINCR_HP` / `fINCR_MP` / `fINCR_SP`, which is the *rate* term of
+		// `fINC_x = fElap * ( dwMax * fINCR_x + fX_INC + fInc_X )` (:3020-3022).
+		//
+		// NOT the flat term. `EMIMPACTA_VARAP` is not an action-point pool: it
+		// adds the same value to all THREE rates (`:2334-2338`), and the enum
+		// comment calls it "HP,MP,SP recovery". RAN's separate combat-point
+		// resource (`m_sCombatPoint`) is never touched by any of these impacts.
+		//
+		// Float, SUM, added RAW - legacy performs no cast and no normalisation.
+		float hpRecoveryRate = 0.0f;
+		float mpRecoveryRate = 0.0f;
+		float spRecoveryRate = 0.0f;
+
+		// VERTICAL-022: the MAXIMUM-RESOURCE impacts, EMIMPACTA_HP_RATE /
+		// MP_RATE / SP_RATE.
+		//
+		// Despite the "RATE" name these do NOT touch recovery. Legacy adds them
+		// to `m_fHP_RATE` (`:2346`) and consumes that in UPDATE_MAX_POINT:
+		//
+		//   m_sHP.dwMax = DWORD( dwMax * (1 + passiveRate + m_fHP_RATE) * conf )
+		//
+		// (`:2165`). So it is a multiplier on the resource MAXIMUM, exactly like
+		// `PassiveContribution::hpRate` which the permanent path already carries.
+		// Float, SUM, added RAW.
+		float hpRate = 0.0f;
+		float mpRate = 0.0f;
+		float spRate = 0.0f;
+
 		constexpr bool operator==(const FactContribution& other) const noexcept
 		{
 			return meleePower == other.meleePower && shootPower == other.shootPower &&
 			       magicAttack == other.magicAttack && hit == other.hit && avoid == other.avoid &&
 			       damage == other.damage && defense == other.defense && resist == other.resist &&
-			       defenseRate == other.defenseRate;
+			       defenseRate == other.defenseRate &&
+			       hpRecoveryRate == other.hpRecoveryRate &&
+			       mpRecoveryRate == other.mpRecoveryRate &&
+			       spRecoveryRate == other.spRecoveryRate &&
+			       hpRate == other.hpRate && mpRate == other.mpRate && spRate == other.spRate;
 		}
 
 		constexpr bool IsEmpty() const noexcept
 		{
 			return meleePower == 0 && shootPower == 0 && magicAttack == 0 &&
 			       hit == 0 && avoid == 0 && damage == 0 && defense == 0 && resist == 0 &&
-			       defenseRate == 0.0f;
+			       defenseRate == 0.0f && hpRecoveryRate == 0.0f &&
+			       mpRecoveryRate == 0.0f && spRecoveryRate == 0.0f &&
+			       hpRate == 0.0f && mpRate == 0.0f && spRate == 0.0f;
 		}
 	};
 

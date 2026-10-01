@@ -112,9 +112,11 @@ namespace
 			if (n > 65535) { n = 65535; }
 			return n;
 		};
-		d.meleePower  = static_cast<uint16_t>(variation(pa, in.items.meleePower + in.passives.meleePower + static_cast<int>(in.codex.meleePower)));
-		d.shootPower  = static_cast<uint16_t>(variation(sa, in.items.shootPower + in.passives.shootPower + static_cast<int>(in.codex.shootPower)));
-		d.magicAttack = static_cast<uint16_t>(variation(ma, in.items.magicAttack + in.passives.magicAttack + static_cast<int>(in.codex.magicAttack)));
+		// VERTICAL-022: the timed FACT block participates here too, in the same
+		// accumulator and in the same order as every other source.
+		d.meleePower  = static_cast<uint16_t>(variation(pa, in.items.meleePower + in.passives.meleePower + static_cast<int>(in.codex.meleePower) + in.facts.meleePower));
+		d.shootPower  = static_cast<uint16_t>(variation(sa, in.items.shootPower + in.passives.shootPower + static_cast<int>(in.codex.shootPower) + in.facts.shootPower));
+		d.magicAttack = static_cast<uint16_t>(variation(ma, in.items.magicAttack + in.passives.magicAttack + static_cast<int>(in.codex.magicAttack) + in.facts.magicAttack));
 
 		auto resource = [&](uint16_t stat, float coefficient, int32_t itemFlat,
 		                   int32_t passiveFlat, float rate, uint32_t codexFlat)
@@ -125,28 +127,38 @@ namespace
 			maximum += codexFlat;
 			return maximum;
 		};
-		d.maxHp = resource(s.str, cc.hpPerStr, in.items.hp, in.passives.hp, in.passives.hpRate, in.codex.hp);
-		d.maxMp = resource(s.spi, cc.mpPerSpi, in.items.mp, in.passives.mp, in.passives.mpRate, in.codex.mp);
-		d.maxSp = resource(s.sta, cc.spPerSta, in.items.sp, in.passives.sp, in.passives.spRate, in.codex.sp);
+		// VERTICAL-022: the rate argument carries BOTH the permanent and the FACT
+		// half, matching UPDATE_MAX_POINT (`1 + passiveRate + m_fHP_RATE`).
+		d.maxHp = resource(s.str, cc.hpPerStr, in.items.hp, in.passives.hp,
+		                   in.passives.hpRate + in.facts.hpRate, in.codex.hp);
+		d.maxMp = resource(s.spi, cc.mpPerSpi, in.items.mp, in.passives.mp,
+		                   in.passives.mpRate + in.facts.mpRate, in.codex.mp);
+		d.maxSp = resource(s.sta, cc.spPerSta, in.items.sp, in.passives.sp,
+		                   in.passives.spRate + in.facts.spRate, in.codex.sp);
 
-		const int hitRaw   = IntTrunc(s.dex * cc.hitPerDex   + in.items.hit   + in.passives.hit   + static_cast<int>(in.codex.hit));
-		const int avoidRaw = IntTrunc(s.dex * cc.avoidPerDex + in.items.avoid + in.passives.avoid + static_cast<int>(in.codex.avoid));
+		const int hitRaw   = IntTrunc(s.dex * cc.hitPerDex   + in.items.hit   + in.passives.hit   + static_cast<int>(in.codex.hit)   + in.facts.hit);
+		const int avoidRaw = IntTrunc(s.dex * cc.avoidPerDex + in.items.avoid + in.passives.avoid + static_cast<int>(in.codex.avoid) + in.facts.avoid);
 		d.hit   = IntTrunc(hitRaw   * (100.0f + in.items.hitRatePercent)   * 0.01f);
 		d.avoid = IntTrunc(avoidRaw * (100.0f + in.items.avoidRatePercent) * 0.01f);
 
 		d.defenseBody = IntTrunc(static_cast<float>(d.defensePoint) +
 		                           static_cast<float>(s.dex) * cc.defensePerDex);
 		d.defense = d.defenseBody + in.items.defense + in.passives.defense + static_cast<int>(in.codex.defense);
-	d.defense += in.facts.defense;
+		d.defense += in.facts.defense;
 
-	// VERTICAL-021: m_fDefenseRate multiplies the summed flat defence, and the
-	// clamp is esult < 0 so a zero defence stays zero.
-	d.defenseRate = 1.0f + in.passives.defenseRate + in.facts.defenseRate;
-	d.defense = Modern::Engine::ApplyDefenseRate(d.defense, d.defenseRate);
+		// VERTICAL-021: m_fDefenseRate multiplies the summed flat defence, and the
+		// clamp is `result < 0`, so a zero defence stays zero.
+		d.defenseRate = 1.0f + in.passives.defenseRate + in.facts.defenseRate;
+		d.defense = Modern::Engine::ApplyDefenseRate(d.defense, d.defenseRate);
 
 		const int damageBase = IntTrunc(static_cast<float>(d.attackPoint) +
 		                                   static_cast<float>(in.passives.damage) +
 		                                   static_cast<float>(in.codex.attack));
+		// NOTE: `in.facts.damage` is deliberately NOT added here. Legacy stores it
+		// as a VAR_PARAM on `m_gdDAMAGE_SKILL` (`GLogixExPC.cpp:2329`), which is
+		// applied at the combat boundary rather than folded into the derived
+		// range - VERTICAL-019 recorded that, and adding it here would assert a
+		// behaviour the calculator deliberately does not have.
 		int low  = damageBase + in.items.damageLow;
 		int high = damageBase + in.items.damageHigh;
 		const int applied = static_cast<int>(d.meleePower);
@@ -155,16 +167,24 @@ namespace
 		d.physicalDamage.low  = static_cast<uint32_t>(low);
 		d.physicalDamage.high = static_cast<uint32_t>(high);
 
-		d.resistances.fire     = in.passives.resistances.fire     + in.items.resistances.fire     + static_cast<int>(in.codex.resistance);
-		d.resistances.ice      = in.passives.resistances.ice      + in.items.resistances.ice      + static_cast<int>(in.codex.resistance);
-		d.resistances.electric = in.passives.resistances.electric + in.items.resistances.electric + static_cast<int>(in.codex.resistance);
-		d.resistances.poison   = in.passives.resistances.poison   + in.items.resistances.poison   + static_cast<int>(in.codex.resistance);
-		d.resistances.spirit   = in.passives.resistances.spirit   + in.items.resistances.spirit   + static_cast<int>(in.codex.resistance);
+		// VERTICAL-022: the timed FACT resistance is added to all five axes, the
+		// same scalar, before the single non-negative clamp.
+		d.resistances.fire     = in.passives.resistances.fire     + in.items.resistances.fire     + static_cast<int>(in.codex.resistance) + in.facts.resist;
+		d.resistances.ice      = in.passives.resistances.ice      + in.items.resistances.ice      + static_cast<int>(in.codex.resistance) + in.facts.resist;
+		d.resistances.electric = in.passives.resistances.electric + in.items.resistances.electric + static_cast<int>(in.codex.resistance) + in.facts.resist;
+		d.resistances.poison   = in.passives.resistances.poison   + in.items.resistances.poison   + static_cast<int>(in.codex.resistance) + in.facts.resist;
+		d.resistances.spirit   = in.passives.resistances.spirit   + in.items.resistances.spirit   + static_cast<int>(in.codex.resistance) + in.facts.resist;
 		d.resistances.ClampNonNegative();
 
-		d.hpRecoveryRate = RecoveryRateConstant::kHp + in.items.hpRecoveryRate + in.passives.hpRecoveryRate;
-		d.mpRecoveryRate = RecoveryRateConstant::kMp + in.items.mpRecoveryRate + in.passives.mpRecoveryRate;
-		d.spRecoveryRate = RecoveryRateConstant::kSp + in.items.spRecoveryRate + in.passives.spRecoveryRate;
+		// VERTICAL-022: the recovery-rate fold carries the FACT half as a third
+		// addend, mirroring `fINCR_x = m_fINCR_x` seeded from the permanent sum
+		// and then increased by the timed VARx impact.
+		d.hpRecoveryRate = RecoveryRateConstant::kHp + in.items.hpRecoveryRate +
+		                   in.passives.hpRecoveryRate + in.facts.hpRecoveryRate;
+		d.mpRecoveryRate = RecoveryRateConstant::kMp + in.items.mpRecoveryRate +
+		                   in.passives.mpRecoveryRate + in.facts.mpRecoveryRate;
+		d.spRecoveryRate = RecoveryRateConstant::kSp + in.items.spRecoveryRate +
+		                   in.passives.spRecoveryRate + in.facts.spRecoveryRate;
 
 		return d;
 	}
@@ -215,6 +235,41 @@ namespace
 		return in;
 	}
 
+	// Renders a field for the mismatch report. Floating point is printed at a
+	// fixed precision so a sub-ulp disagreement is visible rather than hidden
+	// behind a rounding that makes both sides look equal.
+	inline std::string ToText(float value)
+	{
+		char buffer[64];
+		std::snprintf(buffer, sizeof(buffer), "%.9g", static_cast<double>(value));
+		return std::string(buffer);
+	}
+
+	inline std::string ToText(double value)
+	{
+		char buffer[64];
+		std::snprintf(buffer, sizeof(buffer), "%.17g", value);
+		return std::string(buffer);
+	}
+
+	template <typename T>
+	inline std::string ToText(const T& value)
+	{
+		return std::to_string(value);
+	}
+
+	// Prints one disagreeing field. Only called when the structs already
+	// differ, so a passing run is silent.
+	template <typename T>
+	void ReportField(const char* name, const T& got, const T& expected)
+	{
+		if (!(got == expected))
+		{
+			std::printf("        %-18s got %s expected %s\n",
+			            name, ToText(got).c_str(), ToText(expected).c_str());
+		}
+	}
+
 	// Asserts the calculator and the oracle agree, field by field, so a
 	// mismatch says which value moved.
 	void CheckMatchesOracle(const StatCalculationInput& input, const char* what)
@@ -230,7 +285,30 @@ namespace
 		const DerivedStats& got = actual.GetValue();
 		if (!(got == expected))
 		{
+			// Name every field that moved. Printing only the mismatch makes a
+			// failure in one expression indistinguishable from a failure in
+			// another, which is the difference between a one-line fix and a
+			// bisect.
 			std::printf("      oracle mismatch in %s\n", what);
+			ReportField("maxHp",            got.maxHp,            expected.maxHp);
+			ReportField("maxMp",            got.maxMp,            expected.maxMp);
+			ReportField("maxSp",            got.maxSp,            expected.maxSp);
+			ReportField("meleePower",       got.meleePower,       expected.meleePower);
+			ReportField("shootPower",       got.shootPower,       expected.shootPower);
+			ReportField("magicAttack",      got.magicAttack,      expected.magicAttack);
+			ReportField("hit",              got.hit,              expected.hit);
+			ReportField("avoid",            got.avoid,            expected.avoid);
+			ReportField("defenseBody",      got.defenseBody,      expected.defenseBody);
+			ReportField("defense",          got.defense,          expected.defense);
+			ReportField("defenseRate",      got.defenseRate,      expected.defenseRate);
+			ReportField("hpRecoveryRate",   got.hpRecoveryRate,   expected.hpRecoveryRate);
+			ReportField("mpRecoveryRate",   got.mpRecoveryRate,   expected.mpRecoveryRate);
+			ReportField("spRecoveryRate",   got.spRecoveryRate,   expected.spRecoveryRate);
+			ReportField("hpRecoveryFlat",   got.hpRecoveryFlat,   expected.hpRecoveryFlat);
+			ReportField("resist.fire",      got.resistances.fire, expected.resistances.fire);
+			ReportField("resist.poison",    got.resistances.poison, expected.resistances.poison);
+			ReportField("physicalDamage.l", got.physicalDamage.low,  expected.physicalDamage.low);
+			ReportField("physicalDamage.h", got.physicalDamage.high, expected.physicalDamage.high);
 		}
 		CHECK(got == expected);
 	}
@@ -703,14 +781,30 @@ MODERN_TEST(Stats_AgreesWithOracleOnContributionCombinations)
 	codex.shootPower = 12; codex.meleePower = 14; codex.magicAttack = 6;
 	codex.resistance = 3; codex.hit = 7; codex.avoid = 4;
 
+	// VERTICAL-022: the timed FACT block, exercised both alone and alongside
+	// the permanent sources, so the oracle covers the two new recovery axes
+	// rather than leaving them untested by the sweep.
+	FactContribution facts;
+	facts.meleePower = 4; facts.shootPower = -2; facts.magicAttack = 6;
+	facts.hit = 5; facts.avoid = -3; facts.damage = 7; facts.defense = 11; facts.resist = 2;
+	facts.defenseRate = 0.1f;
+	facts.hpRecoveryRate = 0.007f; facts.mpRecoveryRate = -0.001f; facts.spRecoveryRate = 0.008f;
+	facts.hpRate = 0.15f; facts.mpRate = -0.05f; facts.spRate = 0.02f;
+
 	CheckMatchesOracle(base, "no contributions");
 	CheckMatchesOracle([&] { auto i = base; i.items = items; return i; }(), "items only");
 	CheckMatchesOracle([&] { auto i = base; i.passives = passives; return i; }(), "passives only");
 	CheckMatchesOracle([&] { auto i = base; i.codex = codex; return i; }(), "codex only");
+	CheckMatchesOracle([&] { auto i = base; i.facts = facts; return i; }(), "facts only");
 	CheckMatchesOracle([&] { auto i = base; i.items = items; i.passives = passives; return i; }(), "items and passives");
 	CheckMatchesOracle([&] { auto i = base; i.items = items; i.codex = codex; return i; }(), "items and codex");
 	CheckMatchesOracle([&] { auto i = base; i.passives = passives; i.codex = codex; return i; }(), "passives and codex");
+	CheckMatchesOracle([&] { auto i = base; i.passives = passives; i.facts = facts; return i; }(),
+	                    "permanent and timed rates together");
 	CheckMatchesOracle([&] { auto i = base; i.items = items; i.passives = passives; i.codex = codex; return i; }(), "all three");
+	CheckMatchesOracle([&] {
+		auto i = base; i.items = items; i.passives = passives; i.codex = codex; i.facts = facts; return i; }(),
+		"everything");
 }
 
 MODERN_TEST(Stats_AgreesWithOracleOnEveryClass)
@@ -960,4 +1054,208 @@ MODERN_TEST(DefenseRate_PermanentAndFactRatesSum)
 {
 	// (40 + 4) * (1 + 0.1 + 0.2) = int(44 * 1.3) = int(57.2) = 57
 	CHECK_EQ(DefenseOf(MakeDefenseInput(40, 0, 4, 0.1f, 0.2f)), 57);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VERTICAL-022: the recovery FACT axis
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace
+{
+	// A minimal stat input in which ONLY the three resource axes and the two
+	// recovery terms can move, so a failure localises to the axis under test.
+	//
+	// hpPerStr and the flat bonuses are zeroed so `maxHp` is 0 and therefore
+	// fully determined by the rate and the truncations; the recovery tests set
+	// their own maximum explicitly.
+	StatCalculationInput MakeRecoveryInput()
+	{
+		StatCalculationInput in;
+		in.level          = 1;
+		in.characterClass = CharClassIndex::BrawlerMale;
+		in.classConstants.avoidPerDex           = 0.0f;
+		in.classConstants.hitPerDex             = 0.0f;
+		in.classConstants.defensePerDex         = 0.0f;
+		in.classConstants.beginDefensePoint     = 0;
+		in.classConstants.levelUpDefensePoint   = 0.0f;
+		in.classConstants.defensePointConversion = 1.0f;
+		in.confPointRate = 1.0f;
+		return in;
+	}
+
+	Result<DerivedStats> RecoveryStats(const StatCalculationInput& in)
+	{
+		return Calculate(in);
+	}
+}
+
+// VARHP/VARMP/VARSP are the RECOVERY RATE: `fINCR_x`, the fraction of the
+// maximum added per unit of time. Legacy has no cast on this accumulation
+// (`:2331`), so it stays a float all the way into `DerivedStats`.
+
+MODERN_TEST(RecoveryFact_VarHpAddsToTheRateAndNotTheMaximum)
+{
+	StatCalculationInput in = MakeRecoveryInput();
+	in.passives.hpRecoveryRate = 0.001f;
+	in.facts.hpRecoveryRate    = 0.002f;
+
+	const Result<DerivedStats> r = RecoveryStats(in);
+	CHECK(r.IsOk());
+	CHECK_EQ(r.GetValue().hpRecoveryRate, 0.3f * 0.01f + 0.001f + 0.002f);
+
+	// The rate must NOT have leaked into the maximum. With every flat term at
+	// zero the maximum stays zero whatever the rate is.
+	CHECK_EQ(r.GetValue().maxHp, 0u);
+}
+
+MODERN_TEST(RecoveryFact_VarHpDoesNotMoveTheOtherTwoResources)
+{
+	StatCalculationInput in = MakeRecoveryInput();
+	in.facts.hpRecoveryRate = 0.005f;
+
+	const Result<DerivedStats> r = RecoveryStats(in);
+	CHECK(r.IsOk());
+	CHECK_EQ(r.GetValue().hpRecoveryRate, 0.3f * 0.01f + 0.005f);
+	CHECK_EQ(r.GetValue().mpRecoveryRate, 0.3f * 0.01f);
+	CHECK_EQ(r.GetValue().spRecoveryRate, 0.5f * 0.01f);
+}
+
+// VARAP is NOT an action-point pool. `:2334-2338` adds the same value to all
+// three rates, and the enum comment reads "HP,MP,SP recovery".
+MODERN_TEST(RecoveryFact_VarApFeedsAllThreeRates)
+{
+	StatCalculationInput in = MakeRecoveryInput();
+	in.facts.hpRecoveryRate = 0.004f;
+	in.facts.mpRecoveryRate = 0.004f;
+	in.facts.spRecoveryRate = 0.004f;
+
+	const Result<DerivedStats> r = RecoveryStats(in);
+	CHECK(r.IsOk());
+	CHECK_EQ(r.GetValue().hpRecoveryRate, 0.3f * 0.01f + 0.004f);
+	CHECK_EQ(r.GetValue().mpRecoveryRate, 0.3f * 0.01f + 0.004f);
+	CHECK_EQ(r.GetValue().spRecoveryRate, 0.5f * 0.01f + 0.004f);
+}
+
+MODERN_TEST(RecoveryFact_NegativeRateIsCarriedFaithfully)
+{
+	StatCalculationInput in = MakeRecoveryInput();
+	in.passives.hpRecoveryRate = 0.01f;
+	in.facts.hpRecoveryRate    = -0.004f;
+
+	const Result<DerivedStats> r = RecoveryStats(in);
+	CHECK(r.IsOk());
+	// SUM, signed. Legacy does not clamp the rate, so a negative one survives
+	// to the consumer and can drain a pool.
+	CHECK_EQ(r.GetValue().hpRecoveryRate, 0.3f * 0.01f + 0.01f - 0.004f);
+}
+
+MODERN_TEST(RecoveryFact_PositiveAndNegativeFactsSum)
+{
+	StatCalculationInput in = MakeRecoveryInput();
+	in.facts.hpRecoveryRate = 0.01f;
+	// The calculator sees one accumulated total; the summing itself is the
+	// aggregator's job and is pinned in SkillFactTests.
+	const Result<DerivedStats> r = RecoveryStats(in);
+	CHECK(r.IsOk());
+	CHECK_EQ(r.GetValue().hpRecoveryRate, 0.3f * 0.01f + 0.01f);
+}
+
+// HP_RATE / MP_RATE / SP_RATE scale the resource MAXIMUM, not recovery. Legacy
+// reads m_fHP_RATE only in UPDATE_MAX_POINT: `dwMax * (1 + passive + fact)`.
+MODERN_TEST(RecoveryFact_HpRateScalesTheMaximumAndNotTheRate)
+{
+	StatCalculationInput in = MakeRecoveryInput();
+	in.passives.hp = 100;
+	in.facts.hpRate = 0.5f;
+
+	const Result<DerivedStats> r = RecoveryStats(in);
+	CHECK(r.IsOk());
+	// 100 * (1 + 0 + 0.5) * 1.0 = 150
+	CHECK_EQ(r.GetValue().maxHp, 150u);
+	// The recovery RATE is untouched by a maximum-rate impact. This is the
+	// assertion that keeps the two axes from being conflated.
+	CHECK_EQ(r.GetValue().hpRecoveryRate, 0.3f * 0.01f);
+}
+
+MODERN_TEST(RecoveryFact_HpRateDoesNotMoveTheOtherTwoMaxima)
+{
+	StatCalculationInput in = MakeRecoveryInput();
+	in.passives.hp = 100;
+	in.passives.mp = 80;
+	in.passives.sp = 60;
+	in.facts.hpRate = 0.5f;
+
+	const Result<DerivedStats> r = RecoveryStats(in);
+	CHECK(r.IsOk());
+	CHECK_EQ(r.GetValue().maxHp, 150u);
+	CHECK_EQ(r.GetValue().maxMp, 80u);
+	CHECK_EQ(r.GetValue().maxSp, 60u);
+}
+
+// ORDERING, and the reason this test exists: the codex bonus is added AFTER
+// the rate multiplier (`max = DWORD(max * (1+rate) * conf); max += codex`).
+// Moving the codex inside the multiplier would give 110 here.
+MODERN_TEST(RecoveryFact_CodexBonusIsAddedAfterTheRateMultiplier)
+{
+	StatCalculationInput in = MakeRecoveryInput();
+	in.passives.hp = 100;
+	in.facts.hpRate = 0.5f;
+	in.codex.hp    = 10;
+
+	const Result<DerivedStats> r = RecoveryStats(in);
+	CHECK(r.IsOk());
+	// (100 * 1.5) + 10 = 160, NOT 100 * 1.5 + 10 == 160 by luck but
+	// 100 * (1.5 + 10/100) would be a different number entirely.
+	CHECK_EQ(r.GetValue().maxHp, 160u);
+}
+
+// Truncation is DWORD() twice: once after the stat fold, once after the rate.
+MODERN_TEST(RecoveryFact_MaximumIsTruncatedAfterTheRate)
+{
+	StatCalculationInput in = MakeRecoveryInput();
+	in.passives.hp = 101;
+	in.facts.hpRate = 0.5f;
+
+	const Result<DerivedStats> r = RecoveryStats(in);
+	CHECK(r.IsOk());
+	// 101 * 1.5 = 151.5 -> 151
+	CHECK_EQ(r.GetValue().maxHp, 151u);
+}
+
+MODERN_TEST(RecoveryFact_NegativeMaximumRateCanCollapseTheMaximum)
+{
+	StatCalculationInput in = MakeRecoveryInput();
+	in.passives.hp = 100;
+	in.facts.hpRate = -1.0f;
+
+	const Result<DerivedStats> r = RecoveryStats(in);
+	CHECK(r.IsOk());
+	// (1 + -1) = 0, so the maximum is 0. Legacy does not floor the maximum
+	// back up here - `if (dwMax <= 0) dwMax = 1` exists only on the HP line
+	// and only for the LINKHP-adjusted value, so 0 is what the fold produces.
+	CHECK_EQ(r.GetValue().maxHp, 0u);
+}
+
+MODERN_TEST(RecoveryFact_PermanentAndFactRatesSumOnTheMaximum)
+{
+	StatCalculationInput in = MakeRecoveryInput();
+	in.passives.hp = 40;
+	in.passives.hpRate = 0.1f;
+	in.facts.hpRate    = 0.2f;
+
+	const Result<DerivedStats> r = RecoveryStats(in);
+	CHECK(r.IsOk());
+	// 40 * (1 + 0.1 + 0.2) = 52
+	CHECK_EQ(r.GetValue().maxHp, 52u);
+}
+
+MODERN_TEST(RecoveryFact_ZeroFactIsAnIdentityOnBothAxes)
+{
+	StatCalculationInput in = MakeRecoveryInput();
+	in.passives.hp = 77;
+
+	const Result<DerivedStats> withZeros = RecoveryStats(in);
+	CHECK(withZeros.IsOk());
+	CHECK_EQ(withZeros.GetValue().maxHp, 77u);
+	CHECK_EQ(withZeros.GetValue().hpRecoveryRate, 0.3f * 0.01f);
 }

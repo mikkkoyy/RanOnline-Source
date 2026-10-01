@@ -17,9 +17,9 @@ formula provenance.
 | ---- | ----- |
 | Legacy import | complete |
 | Core foundation | complete |
-| Vertical gameplay slices 001-021 | complete |
+| Vertical gameplay slices 001-022 | complete |
 | Build verification (BUILD-001) | complete |
-| Impact/addon modifiers, world targeting | partial — combat FACT axes through VERTICAL-021; recovery, velocity, status, range and world targeting still deferred |
+| Impact/addon modifiers, world targeting | partial — combat and resource FACT axes through VERTICAL-022; velocity, status, range and world targeting still deferred |
 
 ---
 
@@ -50,7 +50,8 @@ formula provenance.
 | VERTICAL-018 FACT hit/avoid/damage investigation | [x] | `fc02b2a` |
 | VERTICAL-019 FACT hit/avoid/damage integration | [x] | `e56b770` |
 | VERTICAL-020 FACT defense/resist integration | [x] | `855f5d7` |
-| VERTICAL-021 FACT defense-rate axis | [x] | see `docs/reference/server/VERTICAL-021_DEFENSE_RATE_INVESTIGATION.md` |
+| VERTICAL-021 FACT defense-rate axis | [x] | `7f3550d` |
+| VERTICAL-022 Recovery / HP-MP-SP-AP FACT | [x] | see `docs/reference/server/VERTICAL-022_RECOVERY_FACT_INVESTIGATION.md` |
 
 ---
 
@@ -449,14 +450,45 @@ effect, item FACT, system buff) are deferred with subsystems that do not exist.
 13 tests; Debug and Release both 0 errors / 0 warnings, CTest 14/14, core 474,
 server 107.
 
-**Next:** the remaining deferred FACT impacts. The largest identifiable group is
-the resource/recovery axis (`EMIMPACTA_VARHP/VARMP/VARSP/VARAP`,
-`HP_RATE/MP_RATE/SP_RATE`), which still needs its legacy accumulator traced
-before anything is written. Also open: velocity, potion, invisibility, pierce,
-range, stun, continuous damage, curse, immunity, stigma, enhancement,
+**VERTICAL-022 - Recovery / HP-MP-SP-AP FACT.** Complete. See
+`docs/reference/server/VERTICAL-022_RECOVERY_FACT_INVESTIGATION.md`.
+
+The seven impacts turned out to be **two axes, not one**, and the names are
+misleading in opposite directions. `EMIMPACTA_HP_RATE` / `MP_RATE` / `SP_RATE`
+accumulate into `m_fHP_RATE` (`:2346`) and are read in exactly one place -
+`UPDATE_MAX_POINT` at `:2165`, `dwMax * (1 + passiveRate + m_fHP_RATE)`. They
+scale the **resource maximum** and never touch recovery.
+
+`EMIMPACTA_VARHP/VARMP/VARSP` feed `fINCR_*` (`:2331-2333`), the fraction of the
+maximum per unit time in `fElap * ( dwMax * fINCR_x + ... )` (`:3020`).
+
+And **`EMIMPACTA_VARAP` is not an action-point pool**: `:2334-2338` adds one
+value to all three recovery rates, and the enum comment reads "HP,MP,SP recovery"
+(`GLCharDefine.h:980`). RAN's real CP resource, `m_sCombatPoint`, is untouched by
+all seven - so no CP pool was invented.
+
+All six rate accumulators are SUM, float, raw, with no cast anywhere on the path.
+Both axes extended `FactContribution` rather than adding a subsystem:
+`DerivedStats` gained **no** new field, because `maxHp` and `hpRecoveryRate` are
+what downstream code already reads. Three orderings pinned, notably that the
+codex bonus is added *after* the rate multiplier (100 flat at rate 0.5 with codex
+10 is 160, not 110).
+
+23 tests. Extending the file's oracle to carry the timed FACT block across every
+field - rather than skipping the new axes - is what made this a real check, and
+upgrading its mismatch report to name each disagreeing field is how one genuine
+distinction was found. Debug and Release both 0 errors / 0 warnings, CTest 14/14,
+core 494, server 111.
+
+**Next:** the remaining deferred FACT impacts. `EMIMPACTA_HP_RECOVERY_VAR` and
+its `MP`/`SP`/`CP` siblings (enum 19-23) are **not found** in any legacy
+accumulation switch, so they have no proven consumer and are deferred on that
+ground rather than on subsystem grounds. Recovery deferred with subsystems: pet,
+land effect, item FACT, system buff. Also open: velocity, potion, invisibility,
+pierce, range, stun, continuous damage, curse, immunity, stigma, enhancement,
 `DEFENSE_SKILL_ACTIVE`, `REFDAMAGE`, `TALK_TO_NPC`, `DAMAGE_LOOP`, `TAR_BUFF`,
-and the world/entity, networking, movement and client-presentation layers. The
-count is deliberately left open rather than invented.
+`CHANGESTATS`, and the world/entity, networking, movement and client-presentation
+layers. The count is deliberately left open rather than invented.
 
 ---
 

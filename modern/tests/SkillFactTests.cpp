@@ -1108,3 +1108,132 @@ MODERN_TEST(SkillFactV021_NegativeDefenseRateIsCarriedFaithfully)
 
 	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.defenseRate, -1.5f);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VERTICAL-022: recovery FACT stacking and expiry
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Every recovery accumulator is a plain `+=` on a float (`:2331-2338`,
+// `:2346-2348`), so the rule is SUM for all six. No `int()` is applied, so
+// there is no truncation in the accumulation itself.
+MODERN_TEST(SkillFactV022_RecoveryRatesAreAdditive)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::VarHp, 0.001f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+		SkillFactImpactType::VarHp, 0.002f));
+
+	const SkillFactModifiers m = AdvanceSkillFacts(container, 1.0f).modifiers;
+	CHECK_EQ(m.hpRecoveryRate, 0.001f + 0.002f);
+	// The HP facts must not have wandered into the other pools.
+	CHECK_EQ(m.mpRecoveryRate, 0.0f);
+	CHECK_EQ(m.spRecoveryRate, 0.0f);
+}
+
+MODERN_TEST(SkillFactV022_MaximumRatesAreAdditive)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::HpRate, 0.10f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+		SkillFactImpactType::HpRate, 0.20f));
+
+	const SkillFactModifiers m = AdvanceSkillFacts(container, 1.0f).modifiers;
+	CHECK_EQ(m.hpRate, 0.10f + 0.20f);
+	CHECK_EQ(m.mpRate, 0.0f);
+	CHECK_EQ(m.spRate, 0.0f);
+}
+
+// VARAP feeds all three rates in ONE case body (`:2334-2338`).
+MODERN_TEST(SkillFactV022_VarApFeedsAllThreeAccumulators)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::VarAp, 0.003f));
+
+	const SkillFactModifiers m = AdvanceSkillFacts(container, 1.0f).modifiers;
+	CHECK_EQ(m.hpRecoveryRate, 0.003f);
+	CHECK_EQ(m.mpRecoveryRate, 0.003f);
+	CHECK_EQ(m.spRecoveryRate, 0.003f);
+}
+
+MODERN_TEST(SkillFactV022_PositiveAndNegativeFactsCombineBySum)
+{
+	SkillFactContainer container;
+	// Exactly representable binary fractions, so the assertion tests the
+	// stacking rule rather than float subtraction. 0.5 and -0.25 give 0.25
+	// exactly; 0.01f - 0.004f does not, and would fail for the wrong reason.
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::VarHp, 0.5f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+		SkillFactImpactType::VarHp, -0.25f));
+
+	// SUM, so they partially cancel. A MAX or LAST-WINS rule would report
+	// 0.5f instead.
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.hpRecoveryRate, 0.25f);
+}
+
+// The two axes are independent accumulators. A fact on one must not disturb
+// the other, which is the property that lets them be two separate fields.
+MODERN_TEST(SkillFactV022_RecoveryAndMaximumRatesAreIndependent)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::VarHp, 0.004f));
+
+	const SkillFactModifiers m = AdvanceSkillFacts(container, 1.0f).modifiers;
+	CHECK_EQ(m.hpRecoveryRate, 0.004f);
+	CHECK_EQ(m.hpRate, 0.0f);
+}
+
+// Expiry must rebuild from zero on BOTH axes at once.
+MODERN_TEST(SkillFactV022_RecoveryExpiryRebuildsFromZero)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 5.0f,
+		SkillFactImpactType::VarHp, 0.005f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 5.0f,
+		SkillFactImpactType::HpRate, 0.25f));
+
+	const SkillFactModifiers live = AdvanceSkillFacts(container, 1.0f).modifiers;
+	CHECK_EQ(live.hpRecoveryRate, 0.005f);
+	CHECK_EQ(live.hpRate, 0.25f);
+
+	// The advance that crosses the boundary still reports the facts, so the
+	// rebuilt state is read on the following advance - the same shape as every
+	// other expiry test in this file.
+	AdvanceSkillFacts(container, 6.0f);
+	const SkillFactModifiers after = AdvanceSkillFacts(container, 1.0f).modifiers;
+	CHECK_EQ(after.hpRecoveryRate, 0.0f);
+	CHECK_EQ(after.hpRate, 0.0f);
+}
+
+// One fact expiring must leave the other's contribution intact - this is what
+// distinguishes a rebuild from a restore, and it is the reason no
+// save/restore state was introduced.
+MODERN_TEST(SkillFactV022_OneExpiryDoesNotDisturbTheSurvivingFact)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 5.0f,
+		SkillFactImpactType::VarHp, 0.002f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 20.0f,
+		SkillFactImpactType::VarHp, 0.006f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.hpRecoveryRate, 0.008f);
+
+	// The 5-second fact expires; the 20-second one survives.
+	AdvanceSkillFacts(container, 6.0f);
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.hpRecoveryRate, 0.006f);
+}
+
+// A fractional value must survive the accumulator unchanged, because legacy
+// applies no cast on this path. An `int()` here would silently lose it.
+MODERN_TEST(SkillFactV022_FractionalRecoveryRateIsNotTruncated)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::VarHp, 0.000125f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.hpRecoveryRate, 0.000125f);
+}

@@ -328,15 +328,32 @@ meleePower  = VariationClamped(pa, WrapAdd(input.items.meleePower,
 		SumAttackPowers(input, stats.totalStats, stats.meleePower, stats.shootPower,
 		                stats.magicAttack);
 
-		// GLogixExPC.cpp:342-355
+		// GLogixExPC.cpp:342-355, with the VERTICAL-022 FACT rate added.
+		//
+		// UPDATE_MAX_POINT (:2164-2168) reads BOTH the permanent and the timed
+		// rate inside one multiplier:
+		//
+		//   dwMax = DWORD( dwMax * (1 + m_sSUM_PASSIVE.m_fHP_RATE + m_fHP_RATE) * conf )
+		//
+		// `m_fHP_RATE` is `EMIMPACTA_HP_RATE` (`:2346`). Legacy adds the two in
+		// source order - permanent first, then FACT - so the sum is formed in
+		// that order rather than left to the compiler. The result is identical
+		// for any single addition, but stating it keeps the fold readable and
+		// avoids a future contributor reordering it.
+		//
+		// The codex bonus is still added AFTER the multiplier, so a rate can
+		// never dilute it - unchanged, and now load-bearing for a second axis.
 		stats.maxHp = SumResourceMax(stats.totalStats.str, input.classConstants.hpPerStr,
-		                              input.items.hp, input.passives.hp, input.passives.hpRate,
+		                              input.items.hp, input.passives.hp,
+		                              input.passives.hpRate + input.facts.hpRate,
 		                              input.confPointRate, input.codex.hp);
 		stats.maxMp = SumResourceMax(stats.totalStats.spi, input.classConstants.mpPerSpi,
-		                              input.items.mp, input.passives.mp, input.passives.mpRate,
+		                              input.items.mp, input.passives.mp,
+		                              input.passives.mpRate + input.facts.mpRate,
 		                              input.confPointRate, input.codex.mp);
 		stats.maxSp = SumResourceMax(stats.totalStats.sta, input.classConstants.spPerSta,
-		                              input.items.sp, input.passives.sp, input.passives.spRate,
+		                              input.items.sp, input.passives.sp,
+		                              input.passives.spRate + input.facts.spRate,
 		                              input.confPointRate, input.codex.sp);
 
 		// GLogixExPC.cpp:365-366, then the percentage modifier at 370-371.
@@ -459,12 +476,24 @@ meleePower  = VariationClamped(pa, WrapAdd(input.items.meleePower,
 		stats.resistances.ClampNonNegative();
 
 		// GLogixExPC.cpp:397-399. A rate, not an amount per second.
+		//
+		// VERTICAL-022: `m_fINCR_HP` is SEEDED from the permanent sum (`:397`)
+		// and the timed `EMIMPACTA_VARHP` is added to a LOCAL copy each tick
+		// (`:2241` then `:2331`). This models that shape directly: permanent
+		// first, then the FACT, folded into the same single rate.
+		//
+		// The consumer multiplies this by the resource maximum
+		// (`fElap * ( dwMax * fINCR_HP + ... )`, `:3020`), so it is a FRACTION
+		// of the maximum per unit time - exactly what `ResourceState::Recover`
+		// computes. No `int()` is applied to the rate itself; truncation happens
+		// in `UPDATE_POINT`, which `Recover` already reproduces via its
+		// remainder accumulator.
 		stats.hpRecoveryRate = RecoveryRateConstant::kHp + input.items.hpRecoveryRate +
-		                       input.passives.hpRecoveryRate;
+		                       input.passives.hpRecoveryRate + input.facts.hpRecoveryRate;
 		stats.mpRecoveryRate = RecoveryRateConstant::kMp + input.items.mpRecoveryRate +
-		                       input.passives.mpRecoveryRate;
+		                       input.passives.mpRecoveryRate + input.facts.mpRecoveryRate;
 		stats.spRecoveryRate = RecoveryRateConstant::kSp + input.items.spRecoveryRate +
-		                       input.passives.spRecoveryRate;
+		                       input.passives.spRecoveryRate + input.facts.spRecoveryRate;
 
 		// GLogixExPC.cpp:3020-3022. The absolute term of the recovery amount:
 		// `fElap * ( dwMax * fINCR_HP + fHP_INC + m_sSUMITEM.fInc_HP )`. Only the

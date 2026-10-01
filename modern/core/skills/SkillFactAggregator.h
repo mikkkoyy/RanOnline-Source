@@ -104,6 +104,22 @@ namespace Modern::Skills
 		// VERTICAL-021: m_fDefenseRate += fADDON_VAR (GLogixExPC.cpp:2341).
 		// Float, SUM, added raw - no percentage normalisation.
 		float defenseRate = 0.0f;
+
+		// VERTICAL-022: the RECOVERY RATE, from EMIMPACTA_VARHP / VARMP /
+		// VARSP / VARAP (GLogixExPC.cpp:2331-2338).
+		//
+		// `VARAP` feeds all three (`:2334-2338`) - it is "HP,MP,SP recovery",
+		// not an action-point pool. Float, SUM, raw.
+		float hpRecoveryRate = 0.0f;
+		float mpRecoveryRate = 0.0f;
+		float spRecoveryRate = 0.0f;
+
+		// VERTICAL-022: the MAXIMUM-RESOURCE rate, from EMIMPACTA_HP_RATE /
+		// MP_RATE / SP_RATE (GLogixExPC.cpp:2346-2348), consumed in
+		// UPDATE_MAX_POINT at `:2165`. Float, SUM, raw.
+		float hpRate = 0.0f;
+		float mpRate = 0.0f;
+		float spRate = 0.0f;
 	};
 
 	struct SkillFactAdvanceResult
@@ -210,6 +226,40 @@ namespace Modern::Skills
 						break;
 					case SkillFactImpactType::DefenseRate:
 						modifiers.defenseRate += impact.value;
+						break;
+
+					// VERTICAL-022. Recovery RATE, not a flat amount and not a
+					// maximum-resource change:
+					//   fINCR_HP += fADDON_VAR;   (:2331)
+					// consumed by `fElap * ( dwMax * fINCR_HP + ... )` (:3020).
+					// Float, SUM, raw - no cast, so no truncation happens here.
+					case SkillFactImpactType::VarHp:
+						modifiers.hpRecoveryRate += impact.value;
+						break;
+					case SkillFactImpactType::VarMp:
+						modifiers.mpRecoveryRate += impact.value;
+						break;
+					case SkillFactImpactType::VarSp:
+						modifiers.spRecoveryRate += impact.value;
+						break;
+					// Not an action-point pool: the same value goes to all three.
+					case SkillFactImpactType::VarAp:
+						modifiers.hpRecoveryRate += impact.value;
+						modifiers.mpRecoveryRate += impact.value;
+						modifiers.spRecoveryRate += impact.value;
+						break;
+
+					// VERTICAL-022. Despite the name these scale the resource
+					// MAXIMUM, not recovery - `m_fHP_RATE` is read only in
+					// UPDATE_MAX_POINT: `dwMax * (1 + passive + m_fHP_RATE)`.
+					case SkillFactImpactType::HpRate:
+						modifiers.hpRate += impact.value;
+						break;
+					case SkillFactImpactType::MpRate:
+						modifiers.mpRate += impact.value;
+						break;
+					case SkillFactImpactType::SpRate:
+						modifiers.spRate += impact.value;
 						break;
 
 					default:
@@ -351,6 +401,34 @@ namespace Modern::Skills
 						break;
 					case SkillFactImpactType::DefenseRate:
 						modifiers.defenseRate += impact.value;
+						break;
+					// VERTICAL-022: identical accumulation to the advancing
+					// aggregator above. `AggregateSkillFacts` reads an already
+					// ticked pool, so it does not re-apply lifetime, but the
+					// arithmetic must not diverge or the two paths would report
+					// different totals for the same set of active facts.
+					case SkillFactImpactType::VarHp:
+						modifiers.hpRecoveryRate += impact.value;
+						break;
+					case SkillFactImpactType::VarMp:
+						modifiers.mpRecoveryRate += impact.value;
+						break;
+					case SkillFactImpactType::VarSp:
+						modifiers.spRecoveryRate += impact.value;
+						break;
+					case SkillFactImpactType::VarAp:
+						modifiers.hpRecoveryRate += impact.value;
+						modifiers.mpRecoveryRate += impact.value;
+						modifiers.spRecoveryRate += impact.value;
+						break;
+					case SkillFactImpactType::HpRate:
+						modifiers.hpRate += impact.value;
+						break;
+					case SkillFactImpactType::MpRate:
+						modifiers.mpRate += impact.value;
+						break;
+					case SkillFactImpactType::SpRate:
+						modifiers.spRate += impact.value;
 						break;
 					default:
 						break;

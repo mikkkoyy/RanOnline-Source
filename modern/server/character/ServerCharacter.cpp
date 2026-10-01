@@ -206,6 +206,19 @@ Status ServerCharacter::Recalculate()
 		// (GLogixExPC.cpp:2220, :2341).
 		input.facts.defenseRate = m_factModifiers.defenseRate;
 
+		// VERTICAL-022: the recovery RATE (EMIMPACTA_VARHP/VARMP/VARSP/VARAP).
+		// Feeds `fElap * ( dwMax * fINCR_x + ... )`, the rate term. Float, raw.
+		input.facts.hpRecoveryRate = m_factModifiers.hpRecoveryRate;
+		input.facts.mpRecoveryRate = m_factModifiers.mpRecoveryRate;
+		input.facts.spRecoveryRate = m_factModifiers.spRecoveryRate;
+
+		// VERTICAL-022: the MAXIMUM-resource rate (EMIMPACTA_HP_RATE / MP_RATE
+		// / SP_RATE). Despite the name this does not touch recovery - it is
+		// folded into `dwMax * (1 + ...)` in UPDATE_MAX_POINT.
+		input.facts.hpRate = m_factModifiers.hpRate;
+		input.facts.mpRate = m_factModifiers.mpRate;
+		input.facts.spRate = m_factModifiers.spRate;
+
 		const Result<Stats::DerivedStats> result = Stats::Calculate(input);
 		if (result.IsError())
 		{
@@ -1212,16 +1225,32 @@ namespace Modern::Server
 		    m_factStatsPowersApplied.avoid       != m_factModifiers.avoid ||
 		    m_factStatsPowersApplied.defense      != m_factModifiers.defense ||
 		    m_factStatsPowersApplied.resist       != m_factModifiers.resist ||
-		    m_factStatsPowersApplied.defenseRate  != m_factModifiers.defenseRate)
+		    m_factStatsPowersApplied.defenseRate  != m_factModifiers.defenseRate ||
+		    // VERTICAL-022: both recovery axes change DerivedStats, so a change
+		    // in either must trigger a recalculation. The MAX-rate axis is the
+		    // more important of the two here, because it moves `maxHp` /
+		    // `maxMp` / `maxSp`, which in turn changes the recovery amount.
+		    m_factStatsPowersApplied.hpRecoveryRate != m_factModifiers.hpRecoveryRate ||
+		    m_factStatsPowersApplied.mpRecoveryRate != m_factModifiers.mpRecoveryRate ||
+		    m_factStatsPowersApplied.spRecoveryRate != m_factModifiers.spRecoveryRate ||
+		    m_factStatsPowersApplied.hpRate         != m_factModifiers.hpRate ||
+		    m_factStatsPowersApplied.mpRate         != m_factModifiers.mpRate ||
+		    m_factStatsPowersApplied.spRate         != m_factModifiers.spRate)
 		{
-			m_factStatsPowersApplied.meleePower  = m_factModifiers.meleePower;
-			m_factStatsPowersApplied.shootPower  = m_factModifiers.shootPower;
-			m_factStatsPowersApplied.magicAttack = m_factModifiers.magicAttack;
-			m_factStatsPowersApplied.hit         = m_factModifiers.hit;
-			m_factStatsPowersApplied.avoid       = m_factModifiers.avoid;
-			m_factStatsPowersApplied.defense     = m_factModifiers.defense;
-			m_factStatsPowersApplied.resist      = m_factModifiers.resist;
-			m_factStatsPowersApplied.defenseRate = m_factModifiers.defenseRate;
+			m_factStatsPowersApplied.meleePower     = m_factModifiers.meleePower;
+			m_factStatsPowersApplied.shootPower     = m_factModifiers.shootPower;
+			m_factStatsPowersApplied.magicAttack    = m_factModifiers.magicAttack;
+			m_factStatsPowersApplied.hit            = m_factModifiers.hit;
+			m_factStatsPowersApplied.avoid          = m_factModifiers.avoid;
+			m_factStatsPowersApplied.defense        = m_factModifiers.defense;
+			m_factStatsPowersApplied.resist         = m_factModifiers.resist;
+			m_factStatsPowersApplied.defenseRate    = m_factModifiers.defenseRate;
+			m_factStatsPowersApplied.hpRecoveryRate = m_factModifiers.hpRecoveryRate;
+			m_factStatsPowersApplied.mpRecoveryRate = m_factModifiers.mpRecoveryRate;
+			m_factStatsPowersApplied.spRecoveryRate = m_factModifiers.spRecoveryRate;
+			m_factStatsPowersApplied.hpRate         = m_factModifiers.hpRate;
+			m_factStatsPowersApplied.mpRate         = m_factModifiers.mpRate;
+			m_factStatsPowersApplied.spRate         = m_factModifiers.spRate;
 			(void) Recalculate();
 		}
 	}

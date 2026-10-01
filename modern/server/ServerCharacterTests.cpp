@@ -3419,3 +3419,148 @@ MODERN_TEST(ServerFactV021_DefenseRateFactReachesDerivedStatsAndExpires)
 	CHECK_EQ(character.GetValue().GetFactModifiers().defenseRate, 0.0f);
 	CHECK(character.GetValue().GetDerivedStats() == before);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-022: the recovery axis through the real server path
+// ═══════════════════════════════════════════════════════════════════════
+
+// A VARHP fact must reach `DerivedStats::hpRecoveryRate`, which is what
+// `ResourceState::Recover` multiplies by the maximum.
+MODERN_TEST(ServerFactV022_VarHpFactReachesTheDerivedRecoveryRate)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeConfigurableFactSkill(2));
+
+	auto character = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	const Stats::DerivedStats before = character.GetValue().GetDerivedStats();
+
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(10, 1, 60.0f, SkillFactImpactType::VarHp, 0.005f)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().hpRecoveryRate, 0.005f);
+
+	const Stats::DerivedStats during = character.GetValue().GetDerivedStats();
+	CHECK_EQ(during.hpRecoveryRate, before.hpRecoveryRate + 0.005f);
+
+	// It must NOT have become a flat amount, and must not have touched the
+	// maximum - that is the VarHp/HpRate distinction.
+	CHECK_EQ(during.hpRecoveryFlat, before.hpRecoveryFlat);
+	CHECK_EQ(during.maxHp, before.maxHp);
+
+	// Expiry returns both the modifier and the whole derived block to baseline.
+	character.GetValue().AdvanceSkillFacts(61.0f);
+	character.GetValue().AdvanceSkillFacts(1.0f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().hpRecoveryRate, 0.0f);
+	CHECK(character.GetValue().GetDerivedStats() == before);
+}
+
+// An HP_RATE fact scales the maximum, which is a different consumer from
+// VARHP - and it changes the recovery AMOUNT indirectly, because the rate is a
+// fraction of the maximum.
+MODERN_TEST(ServerFactV022_HpRateFactMovesTheMaximumAndNotTheRate)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeConfigurableFactSkill(2));
+
+	auto character = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	const Stats::DerivedStats before = character.GetValue().GetDerivedStats();
+
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(10, 2, 60.0f, SkillFactImpactType::HpRate, 0.5f)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().hpRate, 0.5f);
+
+	const Stats::DerivedStats during = character.GetValue().GetDerivedStats();
+
+	// The rate term itself is untouched by a maximum-rate impact.
+	CHECK_EQ(during.hpRecoveryRate, before.hpRecoveryRate);
+
+	if ( before.maxHp > 0 )
+	{
+		// The multiplier is 1 + 0 + 0.5 over the already-truncated maximum, so
+		// the expectation is expressible from the pre-fact value exactly.
+		CHECK_EQ(during.maxHp,
+		         static_cast<uint32_t>(static_cast<float>(before.maxHp) * 1.5f));
+	}
+
+	character.GetValue().AdvanceSkillFacts(61.0f);
+	character.GetValue().AdvanceSkillFacts(1.0f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().hpRate, 0.0f);
+	CHECK(character.GetValue().GetDerivedStats() == before);
+}
+
+// Two recovery facts on the two different axes must both aggregate, and both
+// must clear independently on expiry - which is the property that proves the
+// rebuild rather than a restore.
+MODERN_TEST(ServerFactV022_TwoRecoveryFactsAggregateThenExpireIndependently)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeConfigurableFactSkill(2));
+
+	auto character = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	const Stats::DerivedStats before = character.GetValue().GetDerivedStats();
+
+	// Short fact on the maximum axis, long fact on the recovery axis.
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(10, 3, 10.0f, SkillFactImpactType::HpRate, 0.5f)));
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(10, 4, 60.0f, SkillFactImpactType::VarHp, 0.005f)));
+
+	character.GetValue().AdvanceSkillFacts(1.0f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().hpRate, 0.5f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().hpRecoveryRate, 0.005f);
+
+	// The short one expires; the long one must still be contributing, and no
+	// stale value from the expired one may survive.
+	character.GetValue().AdvanceSkillFacts(11.0f);
+	character.GetValue().AdvanceSkillFacts(1.0f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().hpRate, 0.0f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().hpRecoveryRate, 0.005f);
+
+	// Now the second expires too and the baseline is exact again.
+	character.GetValue().AdvanceSkillFacts(61.0f);
+	character.GetValue().AdvanceSkillFacts(1.0f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().hpRecoveryRate, 0.0f);
+	CHECK(character.GetValue().GetDerivedStats() == before);
+}
+
+// VARAP is "HP,MP,SP recovery", not an action-point pool: one fact must move
+// all three derived rates and no maximum.
+MODERN_TEST(ServerFactV022_VarApFactMovesAllThreeRates)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeConfigurableFactSkill(2));
+
+	auto character = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	const Stats::DerivedStats before = character.GetValue().GetDerivedStats();
+
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(10, 5, 60.0f, SkillFactImpactType::VarAp, 0.003f)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	const Stats::DerivedStats during = character.GetValue().GetDerivedStats();
+	CHECK_EQ(during.hpRecoveryRate, before.hpRecoveryRate + 0.003f);
+	CHECK_EQ(during.mpRecoveryRate, before.mpRecoveryRate + 0.003f);
+	CHECK_EQ(during.spRecoveryRate, before.spRecoveryRate + 0.003f);
+	CHECK_EQ(during.maxHp, before.maxHp);
+	CHECK_EQ(during.maxMp, before.maxMp);
+	CHECK_EQ(during.maxSp, before.maxSp);
+
+	character.GetValue().AdvanceSkillFacts(61.0f);
+	character.GetValue().AdvanceSkillFacts(1.0f);
+	CHECK(character.GetValue().GetDerivedStats() == before);
+}
