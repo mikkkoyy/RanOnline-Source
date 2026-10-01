@@ -22,12 +22,69 @@
 
 namespace Modern::Combat
 {
+	namespace
+	{
+		// VERTICAL-012: `GLDWDATA::VAR_PARAM` (GLDefine.h:364-371).
+		//
+		// Saturating on both sides: a range end that would fall below 1 is set
+		// to 1 rather than wrapping, and the two ends are handled
+		// independently, so a range can be clamped at one end without the
+		// other. The comparison is done in `int` and the add in the range's own
+		// type, which is what legacy does.
+		inline uint32_t ApplyAttackPower(uint32_t rangeEnd, int32_t attackPower) noexcept
+		{
+			if (static_cast<int32_t>(rangeEnd) + attackPower < 1)
+			{
+				return 1u;
+			}
+			return static_cast<uint32_t>(static_cast<int32_t>(rangeEnd) + attackPower);
+		}
+	}
+
 	// Calculates physical damage result.
 	inline DamageResult CalculatePhysicalDamage(const PhysicalDamageInput& input, const CombatConstants& constants = CombatConstants())
 	{
 		DamageResult result;
 
+		// VERTICAL-012: the attack power, before the range is rolled.
+		//
+		// Legacy adds it to the damage *range*, not after the roll. Both the
+		// basic-attack path and the skill path do this, and both choose
+		// between the two powers by attack kind:
+		//
+		//   GLogixExPC.cpp:1584 (basic, ISLONGRANGE_ARMS)
+		//       gdDamage.VAR_PARAM ( m_wSUM_SA );
+		//   GLogixExPC.cpp:1594 (basic, otherwise)
+		//       gdDamage.VAR_PARAM ( m_wSUM_PA );
+		//   GLogixExPC.cpp:1451 (skill, EMAPPLY_PHY_SHORT)
+		//       gdDamage.VAR_PARAM ( m_wSUM_PA );
+		//   GLogixExPC.cpp:1463 (skill, EMAPPLY_PHY_LONG)
+		//       gdDamage.VAR_PARAM ( m_wSUM_SA );
+		//
+		// `GLDWDATA::VAR_PARAM` (GLDefine.h:364-371) is a saturating add on
+		// both ends of the range:
+		//
+		//   if ( (int(wLow) +nValue) < 1 )  wLow = 1;  else wLow  += nValue;
+		//   if ( (int(wHigh)+nValue) < 1 )  wHigh = 1; else wHigh += nValue;
+		//
+		// `m_wSUM_PA` is the modern `DerivedStats::meleePower` and `m_wSUM_SA`
+		// is `DerivedStats::shootPower`; `Stats::Calculate` already builds both
+		// the way RAN does, with the class/level term, the stat term and the
+		// VARIATION clamp over item, passive and codex
+		// (GLogixExPC.cpp:313-337 against modern/core/stats/StatCalculator.cpp
+		// :168-206). Nothing about the stat side needed to change.
+		//
+		// The choice is made on `AttackType`, which is the same discriminator
+		// legacy uses via `emAPPLY` for skills and `ISLONGRANGE_ARMS()` for
+		// basic attacks - a `bool isRanged` beside a melee path would have been
+		// a second way to say the same thing.
+		const int32_t attackPower = (input.attackType == AttackType::Ranged)
+		                                ? static_cast<int32_t>(input.shootPower)
+		                                : static_cast<int32_t>(input.meleePower);
+
 		Stats::DamageRange damage = input.physicalDamage;
+		damage.low  = ApplyAttackPower(damage.low, attackPower);
+		damage.high = ApplyAttackPower(damage.high, attackPower);
 
 		uint32_t nDAMAGE_NOW = static_cast<uint32_t>(
 			static_cast<float>(damage.low) +

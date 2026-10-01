@@ -212,8 +212,10 @@ MODERN_TEST(Combat_DamageRangeMinRoll)
 
 	DamageResult result = CalculatePhysicalDamage(input, constants);
 
-	CHECK_GT(result.damage, 0u);
-	CHECK_LE(result.damage, 10u);
+	// VERTICAL-012: the melee power is added to the range before the roll
+	// (GLogixExPC.cpp:1594, VAR_PARAM). The fixture's range is {10,20} and its
+	// melee power is 3, so the rolled low end is 10 + 3 = 13 rather than 10.
+	CHECK_EQ(result.damage, 13u);
 }
 
 MODERN_TEST(Combat_DamageRangeMaxRoll)
@@ -1146,7 +1148,17 @@ MODERN_TEST(RequiredSPMatrix_HighSPIsNotLowSP)
 	const CombatResult lowResult  = Combat::ResolveCombat(low);
 	const CombatResult highResult = Combat::ResolveCombat(high);
 
-	CHECK_EQ(highResult.damageResult.damage, lowResult.damageResult.damage * 2);
+	// The low-SP penalty is `* 0.5` in floating point then truncated to an
+	// integer, so on an odd pre-penalty value the halved figure is not exactly
+	// half and `low * 2` is one short. The verified property is that the
+	// low-SP damage is strictly less and no more than the funded damage, which
+	// is what the rule says; the exact-halving form is pinned separately by
+	// `RequiredSPMatrix_LowSPHalvesSkillDamage`, whose fixture is chosen to be
+	// even.
+	CHECK_EQ(lowResult.damageResult.lowSP, true);
+	CHECK_EQ(highResult.damageResult.lowSP, false);
+	CHECK_LT(lowResult.damageResult.damage, highResult.damageResult.damage);
+	CHECK_LE(lowResult.damageResult.damage * 2, highResult.damageResult.damage + 1u);
 }
 
 // Test 8: no SP at all is low SP whenever anything is required.
@@ -1340,7 +1352,20 @@ MODERN_TEST(CombatReflection_DamageReducePlusReflection)
 
 	CHECK_EQ(result.reflectionTriggered, true);
 	CHECK_GT(result.reflectionDamage, 0u);
-	CHECK_LT(result.damage, 20u);
+	// VERTICAL-012: the melee power now reaches the range, so this case's
+	// absolute figure moved. What it exists to check is that the reduction is
+	// applied, and that is asserted against the unreduced value rather than a
+	// magic number:
+	//
+	//   range {10,20} + meleePower 3  -> {13,23}      (:1594, VAR_PARAM)
+	//   damageRoll 0.5                 -> 18
+	//   targetLevel 100 > attacker 1   -> nExtFORCE int(0.5*99/10) = 4
+	//   nDAMAGE_OLD 22, defense 0       -> 22
+	//   DamageReduceAmount(22, 0.3, 100, 300) = int(2.2) = 2
+	//   22 - 2 = 20
+	//
+	// The old bound was `< 20`, which the added attack power reaches exactly.
+	CHECK_EQ(result.damage, 20u);
 }
 
 MODERN_TEST(CombatReflection_MinimumDamagePlusReflection)

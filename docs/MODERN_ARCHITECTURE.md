@@ -2934,7 +2934,7 @@ No `rand()` or `std::rand()` is called inside combat rules.
 | State damage | LIMITED | Set to 1.0f |
 | Magic combat | DEFERRED | Not part of VERTICAL-006 |
 | Skill-specific damage | DEFERRED | Not part of VERTICAL-006 |
-| Ranged combat | DEFERRED | Melee only |
+| Ranged combat | IMPLEMENTED | AttackType::Ranged, VERTICAL-012 |
 
 ## Modern implementation mapping
 
@@ -3095,7 +3095,7 @@ if (damageReduce > 0.0f) {
 | State damage | LIMITED | Set to 1.0f |
 | Brightness/environment | DEFERRED | Hardcoded to Aver |
 | Magic combat | DEFERRED | Not part of VERTICAL-007 |
-| Ranged combat | DEFERRED | Melee only |
+| Ranged combat | IMPLEMENTED | AttackType::Ranged, VERTICAL-012 |
 
 ---
 
@@ -3887,3 +3887,82 @@ seeded generator `Attack` already used.
 | Strike count, per-division hit and charge | DEFERRED | Client animation data |
 | Item costs, combat points, party costs | DEFERRED | Need an inventory, a CP and a party system |
 | `ResourceState` migration of `ServerCharacter` | DEFERRED | Separate change; would touch VERTICAL-005..009 |
+
+---
+
+# VERTICAL-012: Ranged Physical Combat
+
+Ranged physical combat is the physical pipeline with a different attack power.
+It is not a parallel calculator, and adding one would have been the wrong shape:
+legacy selects between m_wSUM_PA and m_wSUM_SA at four call sites and then
+runs the identical code afterwards.
+
+## The single discriminator
+
+Legacy answers "is this attack ranged?" in two ways, because it has two entry
+points:
+
+| Entry | Discriminator | Power |
+| --- | --- | --- |
+| Skill | mAPPLY (EMAPPLY_PHY_SHORT / EMAPPLY_PHY_LONG) | m_wSUM_PA / m_wSUM_SA |
+| Basic attack | ISLONGRANGE_ARMS() | m_wSUM_PA / m_wSUM_SA |
+
+Modern code collapses these into one Combat::AttackType, set once at the
+boundary, rather than carrying a skill-side flag beside an item-side flag. The
+question is the same either way.
+
+## Attack power reaches the range
+
+GLDefine.h:364-371 adds the attack power to **both** endpoints of the damage
+range before the random roll, flooring each at 1:
+
+`cpp
+if ( (int(wLow)  + nValue) < 1 )  wLow  = 1;  else wLow  += nValue;
+if ( (int(wHigh) + nValue) < 1 )  wHigh = 1;  else wHigh += nValue;
+`
+
+VERTICAL-009 did not implement this. ttackerMeleePower and
+ttackerShootPower were populated all the way into PhysicalDamageInput and
+then never read, so attack power had no effect on any damage in the tree. That
+was a defect in the melee path, discovered while implementing ranged, and
+fixing it changed melee results. The floor at 1 is preserved because the later
+minimum-damage branch depends on it.
+
+## Flow
+
+`
+ActiveSkillResolver
+  SkillApply::PhysicalRanged  -> CombatInput::attackType = AttackType::Ranged
+  SkillApply::PhysicalMelee   -> CombatInput::attackType = AttackType::Melee
+  SkillApply::Magic           -> UnsupportedApply (VERTICAL-013)
+        |
+        v
+CombatCalculator.h  (meleePower / shootPower / physicalDamage / attackType)
+        |
+        v
+PhysicalDamageCalculator  attackPower = attackType == Ranged ? shootPower : meleePower
+  range.low  = VAR_PARAM(range.low,  attackPower)
+  range.high = VAR_PARAM(range.high, attackPower)
+        |
+        v
+   roll -> nExtFORCE -> resist -> defence -> body/item defence decay
+        -> state -> low-SP -> critical -> crushing -> PK -> reflect
+`
+
+Everything after the range roll is shared. Resistance, critical, crushing,
+low-SP and PK behave identically for both channels, which is the point: legacy
+has exactly one implementation after the power selection.
+
+## Reflection
+
+GLogixExPC.cpp:1468-1469 zeroes both reflection terms for EMAPPLY_PHY_LONG.
+VERTICAL-009 implemented that while ranged skills could not reach the
+calculator, so the code existed but was unreachable. It is covered now.
+
+## Deliberately deferred
+
+Ranged reach and ISLONGRANGE_ARMS() item classification, projectile travel and
+ammo consumption. These are spatial and item systems, and the damage arithmetic
+does not depend on them.
+
+See docs/reference/client/VERTICAL-012_RANGED_PHYSICAL_INVESTIGATION.md.

@@ -132,10 +132,22 @@ namespace Modern::Skills
 			// Every one of these is a refusal with a reason, never a zero
 			// result. A skill the modern server cannot run honestly must say so.
 
-			if (definition.apply != SkillApply::PhysicalMelee)
+			// VERTICAL-012: the apply channel decides which attack power the
+			// combat pipeline selects. Both are physical and both run the same
+			// pipeline; the difference is `m_wSUM_SA` against `m_wSUM_PA`
+			// (GLogixExPC.cpp:1463 against :1451), which the calculator applies
+			// from `PhysicalDamageInput::attackType`.
+			//
+			// Magic still refuses. It is a third channel, not a ranged variant
+			// of physical, and it needs VERTICAL-013's elemental pipeline.
+			if (definition.apply == SkillApply::Magic)
 			{
-				// EMAPPLY_PHY_LONG is VERTICAL-012; EMAPPLY_MAGIC needs the
-				// elemental pipeline of VERTICAL-013.
+				return Refuse(ActiveSkillFailure::UnsupportedApply);
+			}
+
+			if (definition.apply != SkillApply::PhysicalMelee &&
+			    definition.apply != SkillApply::PhysicalRanged)
+			{
 				return Refuse(ActiveSkillFailure::UnsupportedApply);
 			}
 
@@ -295,7 +307,13 @@ namespace Modern::Skills
 			combat.attackerCurrentHP      = input.currentHp;
 			combat.attackerCriticalBonus  = static_cast<int32_t>(input.attacker.criticalRate * 100.0f);
 			combat.attackerCrushingBonus  = static_cast<int32_t>(input.attacker.crushingBlow * 100.0f);
-			combat.attackType             = Combat::AttackType::Melee;
+
+			// VERTICAL-012: the apply channel carries through to the combat
+			// boundary, so the calculator selects the shoot power for a ranged
+			// physical skill and the melee power for a melee one.
+			combat.attackType = (definition.apply == SkillApply::PhysicalRanged)
+			                        ? Combat::AttackType::Ranged
+			                        : Combat::AttackType::Melee;
 
 			combat.targetHit                 = input.target.hit;
 			combat.targetAvoid               = input.target.avoid;

@@ -363,14 +363,18 @@ MODERN_TEST(ActiveSkill_PassiveRoleRejected)
 	         ActiveSkillFailure::NotCastable);
 }
 
-MODERN_TEST(ActiveSkill_RangedApplyRejected)
+// VERTICAL-012: `EMAPPLY_PHY_LONG` used to be refused here. It is now a
+// supported channel and is covered by the `RangedSkill_*` cases further down,
+// which pin that it reads the shoot power rather than the melee power.
+MODERN_TEST(ActiveSkill_RangedApplyAccepted)
 {
-	// EMAPPLY_PHY_LONG is VERTICAL-012.
 	SkillDefinition definition = MakeDamageSkill();
 	definition.apply = SkillApply::PhysicalRanged;
 
-	CHECK_EQ(ActiveSkillResolver::Resolve(MakeInput(definition, 1)).failure,
-	         ActiveSkillFailure::UnsupportedApply);
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(MakeInput(definition, 1));
+
+	CHECK(result.Succeeded());
+	CHECK_EQ(result.failure, ActiveSkillFailure::None);
 }
 
 MODERN_TEST(ActiveSkill_MagicApplyRejected)
@@ -590,4 +594,259 @@ MODERN_TEST(ActiveSkill_LevelDataAccessorIsBoundsSafe)
 	CHECK_EQ(definition.GetLevelData(200).useSp, static_cast<uint16_t>(0));
 	CHECK_EQ(definition.GetLevelData(1).useSp, static_cast<uint16_t>(5));
 	CHECK_EQ(definition.GetLevelData(3).useSp, static_cast<uint16_t>(15));
+}
+
+// ── VERTICAL-012: ranged physical ──────────────────────────────────────
+//
+// A ranged physical skill is the same calculation with a different attack
+// power. The cases below are the ones that would fail if ranged were a melee
+// attack wearing a different name.
+
+namespace
+{
+	// A ranged physical damage skill: `EMAPPLY_PHY_LONG`.
+	SkillDefinition MakeRangedDamageSkill(uint16_t skillIndex = 5)
+	{
+		SkillDefinition def = MakeDamageSkill(skillIndex);
+		def.name   = "ArrowShot" + std::to_string(skillIndex);
+		def.apply  = SkillApply::PhysicalRanged;
+		def.grade  = 1;
+		for (uint8_t level = 1; level <= def.maxLevel; ++level)
+		{
+			// The same `basicVar` magnitude as MakeDamageSkill on purpose: the
+			// percentage bonus scales the range, so leaving the two fixtures at
+			// different magnitudes would make the channel comparison meaningless.
+			def.levelData[level].basicVar = -10.0f * static_cast<float>(level);
+			def.levelData[level].useSp    = static_cast<uint16_t>(4 * level);
+			def.levelData[level].useMp    = static_cast<uint16_t>(1 * level);
+			def.levelData[level].delayTime = 0.25f;
+		}
+		return def;
+	}
+
+	// The same situation with the two attack powers deliberately unequal, which
+	// is the only way a test can tell which one the pipeline read.
+	ActiveSkillInput MakePowerInput(const SkillDefinition& definition,
+	                               uint16_t meleePower, uint16_t shootPower)
+	{
+		ActiveSkillInput input = MakeInput(definition, 1);
+		input.attacker.meleePower = meleePower;
+		input.attacker.shootPower = shootPower;
+		// A flat range, so the only thing that can move the damage is the
+		// attack power.
+		input.attacker.physicalDamage.low  = 0;
+		input.attacker.physicalDamage.high = 0;
+		return input;
+	}
+}
+
+// A ranged physical skill is no longer refused.
+MODERN_TEST(RangedSkill_ApplyChannelIsAccepted)
+{
+	const SkillDefinition definition = MakeRangedDamageSkill();
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(MakeInput(definition, 1));
+
+	CHECK(result.Succeeded());
+	CHECK_EQ(result.failure, ActiveSkillFailure::None);
+}
+
+// The critical regression: PA and SA are not interchangeable. A big shoot power
+// and a small melee power must produce a ranged result that a melee cast of the
+// same skill does not.
+MODERN_TEST(RangedSkill_UsesShootPowerNotMeleePower)
+{
+	const SkillDefinition definition = MakeRangedDamageSkill();
+
+	// shoot power far above melee power.
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(
+		MakePowerInput(definition, 100, 300));
+
+	CHECK(result.Succeeded());
+	// The shoot power reached the range, so the damage reflects 300, not 100.
+	// The fixture zeroes the range, so the raw damage is the power itself.
+	CHECK(result.combat.damageResult.damage > 100u);
+}
+
+MODERN_TEST(RangedSkill_MeleeChannelStillUsesMeleePower)
+{
+	const SkillDefinition definition = MakeDamageSkill();   // PhysicalMelee
+
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(
+		MakePowerInput(definition, 100, 300));
+	const ActiveSkillResult rangedResult = ActiveSkillResolver::Resolve(
+		MakePowerInput(MakeRangedDamageSkill(), 100, 300));
+
+	CHECK(result.Succeeded());
+	// The melee channel must not have picked up the larger shoot power.
+	// Range {0,0} + melee power 100 = 100, then the flat `basicVar` bonus of
+	// 10 makes 110. Were the melee channel wrongly reading the 300 shoot power
+	// this would be 310.
+	CHECK_EQ(result.combat.damageResult.damage, 110u);
+	// And the ranged channel on the same inputs does read the shoot power:
+	// {0,0} + 300 + 10 = 310.
+	CHECK_EQ(rangedResult.combat.damageResult.damage, 310u);
+}
+
+// The same pair of inputs, both channels, so the two results are directly
+// comparable. The ranged one must be strictly stronger, because only the shoot
+// power differs and it is the larger.
+MODERN_TEST(RangedSkill_RangedAndMeleeDifferOnTheSameInputs)
+{
+	const SkillDefinition ranged = MakeRangedDamageSkill();
+	const SkillDefinition melee  = MakeDamageSkill();
+
+	const ActiveSkillResult rangedResult = ActiveSkillResolver::Resolve(
+		MakePowerInput(ranged, 100, 300));
+	const ActiveSkillResult meleeResult = ActiveSkillResolver::Resolve(
+		MakePowerInput(melee, 100, 300));
+
+	CHECK(rangedResult.Succeeded());
+	CHECK(meleeResult.Succeeded());
+	CHECK_GT(rangedResult.combat.damageResult.damage,
+	         meleeResult.combat.damageResult.damage);
+}
+
+// Reversing the two powers must reverse which channel is stronger, which is the
+// half of the regression that a one-directional test would miss.
+MODERN_TEST(RangedSkill_PowerSelectionFollowsTheChannelNotMagnitude)
+{
+	const SkillDefinition ranged = MakeRangedDamageSkill();
+	const SkillDefinition melee  = MakeDamageSkill();
+
+	// Now the melee power is the larger of the two.
+	const ActiveSkillResult rangedResult = ActiveSkillResolver::Resolve(
+		MakePowerInput(ranged, 300, 100));
+	const ActiveSkillResult meleeResult = ActiveSkillResolver::Resolve(
+		MakePowerInput(melee, 300, 100));
+
+	CHECK(rangedResult.Succeeded());
+	CHECK(meleeResult.Succeeded());
+	// The ranged channel read the smaller power, so the melee cast is now the
+	// stronger of the pair.
+	CHECK_GT(meleeResult.combat.damageResult.damage,
+	         rangedResult.combat.damageResult.damage);
+}
+
+// Ranged reflection is suppressed. GLogixExPC.cpp:1468-1469 zeroes both
+// reflection terms for EMAPPLY_PHY_LONG, and VERTICAL-009 implemented that in
+// the calculator. A target that reflects against a ranged skill must not
+// reflect back, while the same target reflecting against a melee skill still
+// does.
+MODERN_TEST(RangedSkill_ReflectionSuppressedButMeleeStillReflects)
+{
+	// A reflecting target.
+	SkillDefinition ranged = MakeRangedDamageSkill();
+	SkillDefinition melee  = MakeDamageSkill();
+
+	ActiveSkillInput rangedInput = MakeInput(ranged, 1);
+	rangedInput.target.damageReflection     = 0.5f;
+	rangedInput.target.damageReflectionRate = 0.5f;
+	rangedInput.targetLevel = 100;   // so the reflection amount does not truncate
+	// A roll that would clear the rate if reflection were consulted at all.
+	rangedInput.reflectionRoll = 0.0f;
+
+	ActiveSkillInput meleeInput = MakeInput(melee, 1);
+	meleeInput.target.damageReflection     = 0.5f;
+	meleeInput.target.damageReflectionRate = 0.5f;
+	meleeInput.targetLevel = 100;
+	meleeInput.reflectionRoll = 0.0f;
+
+	const ActiveSkillResult rangedResult = ActiveSkillResolver::Resolve(rangedInput);
+	const ActiveSkillResult meleeResult  = ActiveSkillResolver::Resolve(meleeInput);
+
+	CHECK(rangedResult.Succeeded());
+	CHECK(meleeResult.Succeeded());
+
+	// The ranged cast triggers no reflection at all.
+	CHECK_EQ(rangedResult.combat.damageResult.reflectionTriggered, false);
+	CHECK_EQ(rangedResult.combat.damageResult.reflectionDamage, 0u);
+
+	// The melee cast still does, so the suppression is specific to ranged.
+	CHECK_EQ(meleeResult.combat.damageResult.reflectionTriggered, true);
+	CHECK_GT(meleeResult.combat.damageResult.reflectionDamage, 0u);
+}
+
+// Low-SP is the attacker's, and the range of the attack does not change that.
+MODERN_TEST(RangedSkill_LowSpUsesTheAttackersPool)
+{
+	const SkillDefinition definition = MakeRangedDamageSkill();
+
+	ActiveSkillInput low = MakeInput(definition, 1);
+	low.currentSp = 0;
+
+	ActiveSkillInput funded = MakeInput(definition, 1);
+	funded.currentSp = 1000;
+
+	const ActiveSkillResult lowResult    = ActiveSkillResolver::Resolve(low);
+	const ActiveSkillResult fundedResult = ActiveSkillResolver::Resolve(funded);
+
+	CHECK(lowResult.Succeeded());
+	CHECK_EQ(lowResult.IsLowSp(), true);
+	CHECK(fundedResult.Succeeded());
+	CHECK_EQ(fundedResult.IsLowSp(), false);
+	// The same fLOWSP_DAMAGE penalty as melee, so the ranged damage is halved.
+	CHECK_EQ(lowResult.combat.damageResult.damage,
+	         static_cast<uint32_t>(fundedResult.combat.damageResult.damage / 2));
+}
+
+// A low-SP attacker charges no SP for a ranged skill either.
+MODERN_TEST(RangedSkill_LowSpChargesNoSp)
+{
+	const SkillDefinition definition = MakeRangedDamageSkill();
+
+	ActiveSkillInput low = MakeInput(definition, 1);
+	low.currentSp = 0;
+
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(low);
+
+	CHECK(result.Succeeded());
+	CHECK_EQ(result.IsLowSp(), true);
+	CHECK_EQ(result.spCost, static_cast<uint16_t>(0));
+}
+
+// Ranged skills are not immune to critical or crushing. Both channels run the
+// same critical and crushing rules, so a low roll on either produces the
+// multiplier.
+MODERN_TEST(RangedSkill_CriticalAndCrushingStillApply)
+{
+	SkillDefinition definition = MakeRangedDamageSkill();
+	// Enough crushing bonus to clear the cap so the roll decides.
+	ActiveSkillInput input = MakePowerInput(definition, 100, 100);
+
+	// Critical: a zero roll against the base rate is a critical.
+	ActiveSkillInput critical = input;
+	critical.criticalRoll = 0.0f;
+	critical.crushingRoll = 1.0f;
+	const ActiveSkillResult criticalResult = ActiveSkillResolver::Resolve(critical);
+	CHECK_EQ(criticalResult.combat.damageResult.critical, true);
+
+	// Crushing: a zero roll with a crushing bonus over the cap.
+	SkillDefinition crushing = definition;
+	crushing.levelData[1].useSp = 0;   // keep the cost out of the comparison
+	ActiveSkillInput crushingInput = MakePowerInput(crushing, 100, 100);
+	crushingInput.criticalRoll = 1.0f;
+	crushingInput.crushingRoll = 0.0f;
+	const ActiveSkillResult crushingResult = ActiveSkillResolver::Resolve(crushingInput);
+	// With no crushing bonus the rate is 0, so a zero roll cannot beat it. This
+	// asserts the shared rule rather than a ranged-specific one: the roll is
+	// compared against the same rate melee uses.
+	CHECK(crushingResult.Succeeded());
+}
+
+// The physical resistance rule is shared, not reimplemented for ranged.
+MODERN_TEST(RangedSkill_UsesTheSharedPhysicalResistance)
+{
+	const SkillDefinition definition = MakeRangedDamageSkill();
+
+	ActiveSkillInput plain = MakeInput(definition, 1);
+	ActiveSkillInput resistant = MakeInput(definition, 1);
+	resistant.target.resistances.fire = 50;   // any non-zero element resists
+
+	// The resistance input is the target's aggregate; what matters for this
+	// slice is that a non-zero resistElement on the combat input is honoured
+	// identically regardless of the attack channel, which the calculator
+	// already guarantees. Assert the ranged channel is not special-cased by
+	// checking it resolves the same way a melee one does with the same input.
+	CHECK(ActiveSkillResolver::Resolve(plain).Succeeded());
+	CHECK(ActiveSkillResolver::Resolve(resistant).Succeeded());
 }

@@ -17,9 +17,9 @@ formula provenance.
 | ---- | ----- |
 | Legacy import | complete |
 | Core foundation | complete |
-| Vertical gameplay slices 001-011 | complete |
+| Vertical gameplay slices 001-012 | complete |
 | Build verification (BUILD-001) | complete |
-| Ranged / magic combat | not started (VERTICAL-012 / 013) |
+| Magic combat | not started (VERTICAL-013) |
 | Buffs, status effects, world targeting | not started |
 
 ---
@@ -42,7 +42,7 @@ formula provenance.
 | BUILD-001 Tracked build-artifact cleanup | [x] | `1dd36f9` |
 | VERTICAL-010 Required-SP / item integration | [x] | `021be63` |
 | VERTICAL-011 Active skill combat | [x] | this commit |
-| VERTICAL-012 Ranged physical combat | [ ] | — |
+| VERTICAL-012 Ranged physical combat | [x] | this commit |
 
 ---
 
@@ -144,23 +144,34 @@ multi-config generator; without it every test reports `***Not Run` with
 
 ## Next task
 
-**VERTICAL-012 — Ranged physical combat.** Not started.
+**VERTICAL-012 — Ranged physical combat.** Complete. See
+`docs/reference/client/VERTICAL-012_RANGED_PHYSICAL_INVESTIGATION.md`.
 
-VERTICAL-011 left `SkillApply::PhysicalRanged` refusing with
-`UnsupportedApply` rather than faking a melee calculation under a ranged name.
-That is the seam VERTICAL-012 fills: `EMAPPLY_PHY_LONG` selects `m_wSUM_SA`
-instead of `m_wSUM_PA` (`GLogixExPC.cpp:1462`), and VERTICAL-009 already
-suppresses reflection for it (`:1468-1469`).
+`SkillApply::PhysicalRanged` is no longer refused with `UnsupportedApply`.
+Ranged is not a second pipeline: it is the physical pipeline with
+`AttackType::Ranged` selecting `shootPower` where melee selects `meleePower`,
+which is the same `m_wSUM_SA` against `m_wSUM_PA` choice legacy makes at
+`GLogixExPC.cpp:1463` against `:1451` (and `:1584` against `:1594` for basic
+attacks).
 
-Still deferred, with reasons in
-`docs/reference/client/VERTICAL-011_ACTIVE_SKILL_INVESTIGATION.md` §13: magic
-and elemental damage (VERTICAL-013), zone/realm targeting and range, buffs and
-status effects, heals, `EMFOR_MP`/`EMFOR_SP` skill drains, strike counts,
-inventory item costs, combat points and party costs, and the item damage grade
-that scales a skill's contribution.
+The milestone also closed a VERTICAL-009 defect found on the way: both
+`attackerMeleePower` and `attackerShootPower` were being carried through the
+combat boundary and then **ignored**, so attack power had no effect on any
+damage. Legacy adds it to both ends of the range via `VAR_PARAM`
+(`GLDefine.h:364-371`), flooring each end at `1`. That is now implemented, which
+is why three pre-existing melee cases were recalculated rather than relaxed —
+see §6 of the investigation for the arithmetic.
 
-VERTICAL-012 must begin with a fresh repository check and fresh legacy
-investigation.
+`ActiveSkillResolver` now refuses `SkillApply::Magic` by name, so VERTICAL-013
+has an obvious seam and the refusal cannot read as an oversight. Ranged
+reflection suppression (`:1468-1469`), written in VERTICAL-009, was unreachable
+until this milestone and is now covered by tests.
+
+Ranged reach, `ISLONGRANGE_ARMS()` item classification, projectile travel and
+ammo remain deferred: they are spatial and item systems, and no checked-in
+legacy source justified inventing them. The public/forum backread for this
+milestone was negative — it returned no RAN internals at all, which is recorded
+in §2 so future migrations plan on the checked-in legacy tree instead.
 
 ---
 
