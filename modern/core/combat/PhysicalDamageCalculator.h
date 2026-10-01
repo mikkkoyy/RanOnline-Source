@@ -22,24 +22,9 @@
 
 namespace Modern::Combat
 {
-	namespace
-	{
-		// VERTICAL-012: `GLDWDATA::VAR_PARAM` (GLDefine.h:364-371).
-		//
-		// Saturating on both sides: a range end that would fall below 1 is set
-		// to 1 rather than wrapping, and the two ends are handled
-		// independently, so a range can be clamped at one end without the
-		// other. The comparison is done in `int` and the add in the range's own
-		// type, which is what legacy does.
-		inline uint32_t ApplyAttackPower(uint32_t rangeEnd, int32_t attackPower) noexcept
-		{
-			if (static_cast<int32_t>(rangeEnd) + attackPower < 1)
-			{
-				return 1u;
-			}
-			return static_cast<uint32_t>(static_cast<int32_t>(rangeEnd) + attackPower);
-		}
-	}
+	// `ApplyAttackPower` is `CombatTypes.h` (VERTICAL-012/013). It was private
+	// here until magic needed the identical operation, and one implementation
+	// is the point: legacy uses the same `VAR_PARAM` for PA, SA and MA.
 
 	// Calculates physical damage result.
 	inline DamageResult CalculatePhysicalDamage(const PhysicalDamageInput& input, const CombatConstants& constants = CombatConstants())

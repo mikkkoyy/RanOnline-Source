@@ -10,12 +10,38 @@
 
 namespace Modern::Combat
 {
-	// The kind of physical attack being resolved.
+	// The kind of attack being resolved.
 	enum class AttackType : uint8_t
 	{
 		Melee,   // SKILL::EMAPPLY_PHY_SHORT
 		Ranged,  // SKILL::EMAPPLY_PHY_LONG
+		Magic,   // SKILL::EMAPPLY_MAGIC  (VERTICAL-013)
 	};
+
+	// VERTICAL-012/013: the attack-power contribution to a damage range.
+	//
+	// `GLDWDATA::VAR_PARAM` (GLDefine.h:364-371) is a saturating add applied to
+	// BOTH ends of the range before the random roll, each end independently:
+	//
+	//   if ( (int(wLow)  + nValue) < 1 )  wLow  = 1;  else wLow  += nValue;
+	//   if ( (int(wHigh) + nValue) < 1 )  wHigh = 1;  else wHigh += nValue;
+	//
+	// The floor at 1 (not 0) matters: it is what keeps the later
+	// minimum-damage branch reachable. The comparison is done in `int` so a
+	// wrapped unsigned add is still compared as a signed value.
+	//
+	// This lives here rather than in PhysicalDamageCalculator because magic
+	// uses exactly the same operation (GLogixExPC.cpp:1477 for `m_wSUM_MA`,
+	// against :1451/:1463/:1584/:1594 for PA and SA). One implementation, four
+	// call sites in legacy, one here.
+	inline uint32_t ApplyAttackPower(uint32_t rangeEnd, int32_t attackPower) noexcept
+	{
+		if (static_cast<int32_t>(rangeEnd) + attackPower < 1)
+		{
+			return 1u;
+		}
+		return static_cast<uint32_t>(static_cast<int32_t>(rangeEnd) + attackPower);
+	}
 
 	// The result of a hit/miss determination.
 	struct HitResult

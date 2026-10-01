@@ -272,4 +272,22 @@ namespace Modern
 		}
 		return "Unknown";
 	}
+
+	const char* ToString(SkillElement type) noexcept
+	{
+		switch (type)
+		{
+			case SkillElement::Spirit:   return "Spirit";
+			case SkillElement::Fire:     return "Fire";
+			case SkillElement::Ice:      return "Ice";
+			case SkillElement::Electric: return "Electric";
+			case SkillElement::Stone:    return "Stone";
+			case SkillElement::Mad:      return "Mad";
+			case SkillElement::Poison:   return "Poison";
+			case SkillElement::Curse:    return "Curse";
+			case SkillElement::Zen:      return "Zen";
+			case SkillElement::ArmWeapon: return "ArmWeapon";
+		}
+		return "Unknown";
+	}
 }

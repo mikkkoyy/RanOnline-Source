@@ -9,6 +9,7 @@
 #include "combat/CombatConstants.h"
 #include "combat/HitCalculator.h"
 #include "combat/PhysicalDamageCalculator.h"
+#include "combat/MagicDamageCalculator.h"
 #include "combat/CombatCalculator.h"
 #include "engine/GameCharacterCalculations.h"
 #include "equipment/EquipmentState.h"
@@ -1690,4 +1691,456 @@ MODERN_TEST(CombatRanged_MeleeStillReflects)
 
 	CHECK_EQ(result.reflectionTriggered, true);
 	CHECK_GT(result.reflectionDamage, 0u);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// VERTICAL-013: magic / elemental combat
+// ══════════════════════════════════════════════════════════════════════
+
+namespace
+{
+	// A magic fixture with every roll pinned so the result is a pure function
+	// of the inputs. skillRange is {0,0} on purpose: with a flat range the
+	// attack power and the skill magnitude are the only things that can move
+	// the number, which is what most of these cases need to isolate.
+	MagicDamageInput MakeMagicInput(uint16_t magicAttack = 100,
+	                                float    skillBasicVar = -50.0f)
+	{
+		MagicDamageInput input;
+		input.magicAttack   = magicAttack;
+		input.skillRange    = { 0, 0 };
+		input.skillBasicVar = skillBasicVar;
+
+		input.attackerLevel     = 10;
+		input.attackerMaxHP     = 1000;
+		input.attackerCurrentHP = 1000;
+		input.damageRate        = 1.0f;
+
+		input.targetLevel = 10;
+		input.stateDamage = 1.0f;
+
+		input.damageRoll     = 0.0f;
+		input.criticalRoll   = 1.0f;
+		input.crushingRoll   = 1.0f;
+		input.reflectionRoll = 1.0f;
+		return input;
+	}
+}
+
+// ── Attack power ───────────────────────────────────────────────────────
+//
+// The VERTICAL-013 counterpart to VERTICAL-012's regression. The power must
+// reach the range through VAR_PARAM, and swapping the two powers must swap the
+// result.
+MODERN_TEST(Magic_MagicAttackChangesTheDamageRange)
+{
+	MagicDamageInput low  = MakeMagicInput(100);
+	MagicDamageInput high = MakeMagicInput(300);
+
+	const DamageResult lowResult  = CalculateMagicDamage(low);
+	const DamageResult highResult = CalculateMagicDamage(high);
+
+	// {0,0} + 100 + |int(-50)| = 150; {0,0} + 300 + 50 = 350.
+	CHECK_EQ(lowResult.rawDamage, 150u);
+	CHECK_EQ(highResult.rawDamage, 350u);
+	CHECK_GT(highResult.damage, lowResult.damage);
+}
+
+MODERN_TEST(Magic_MagicAttackIsNotSwappedWithMeleeOrShootPower)
+{
+	// The physical calculator must be indifferent to magicAttack and vice
+	// versa. If either had started reading the other's field, this fails.
+	PhysicalDamageInput physical = MakeBasicDamageInput();
+	physical.meleePower    = 100;
+	physical.shootPower    = 300;
+	physical.physicalDamage = { 0, 0 };
+	physical.damageRoll = 0.0f;
+	physical.criticalRoll = 1.0f;
+	physical.crushingRoll = 1.0f;
+
+	const DamageResult melee = CalculatePhysicalDamage(physical);
+	physical.attackType = AttackType::Ranged;
+	const DamageResult ranged = CalculatePhysicalDamage(physical);
+
+	CHECK_EQ(melee.rawDamage, 100u);
+	CHECK_EQ(ranged.rawDamage, 300u);
+
+	// Magic with the same numbers, but its own power.
+	MagicDamageInput magic = MakeMagicInput(250);
+	CHECK_EQ(CalculateMagicDamage(magic).rawDamage, 300u); // 250 + |int(-50)|
+}
+
+// The VAR_PARAM floor at 1, not 0. A power low enough to drive an end below 1
+// must land on exactly 1 (GLDefine.h:364-371).
+MODERN_TEST(Magic_AttackPowerFloorIsOneNotZero)
+{
+	MagicDamageInput input = MakeMagicInput(0);
+	input.skillRange    = { 0, 0 };
+	input.skillBasicVar = 0.0f;   // no skill magnitude to hide behind
+
+	const DamageResult result = CalculateMagicDamage(input);
+
+	CHECK_EQ(result.rawDamage, 1u);
+}
+
+// ── Skill magnitude ────────────────────────────────────────────────────
+//
+// float fSKILL_VAR = sSKILL_DATA.fBASIC_VAR;
+// int nVAR = abs ( int(fSKILL_VAR*fPOWER) );        :1520-1524
+MODERN_TEST(Magic_SkillMagnitudeIsAbsOfTheWeatherScaledProduct)
+{
+	MagicDamageInput plain = MakeMagicInput(100);
+	plain.skillRange = { 0, 0 };
+
+	// -50 -> abs(int(-50)) = 50.
+	CHECK_EQ(CalculateMagicDamage(plain).rawDamage, 150u);
+
+	// Truncation happens before abs, so -0.5 becomes 0, not 1.
+	MagicDamageInput fractional = MakeMagicInput(100);
+	fractional.skillBasicVar = -0.5f;
+	CHECK_EQ(CalculateMagicDamage(fractional).rawDamage, 100u);
+
+	// And -1.5 truncates toward zero to -1 -> 1.
+	MagicDamageInput oneAndAHalf = MakeMagicInput(100);
+	oneAndAHalf.skillBasicVar = -1.5f;
+	CHECK_EQ(CalculateMagicDamage(oneAndAHalf).rawDamage, 101u);
+}
+
+MODERN_TEST(Magic_WeatherElementPowerScalesTheSkillMagnitude)
+{
+	MagicDamageInput plain = MakeMagicInput(100);
+	plain.skillBasicVar = -100.0f;
+
+	MagicDamageInput weathered = MakeMagicInput(100);
+	weathered.skillBasicVar = -100.0f;
+	weathered.weatherElementPower = 1.2f;
+
+	// abs(int(-100*1.0)) = 100 vs abs(int(-100*1.2)) = 120.
+	CHECK_EQ(CalculateMagicDamage(plain).rawDamage, 200u);
+	CHECK_EQ(CalculateMagicDamage(weathered).rawDamage, 220u);
+}
+
+// ── Physical defence is ignored ────────────────────────────────────────
+//
+// GLogixExPC.cpp:1474-1476 forces nDEFENSE, nDEFAULT_DEFENSE and
+// nITEM_DEFENSE to 0 for magic. The magic calculator has no defence parameter
+// at all, so a target's physical armour cannot reach it.
+MODERN_TEST(Magic_PhysicalDefenseDoesNotReduceMagicDamage)
+{
+	MagicDamageInput input = MakeMagicInput(100);
+
+	const DamageResult direct = CalculateMagicDamage(input);
+
+	// Drive the physical path with the same fixture and a large defence: it
+	// must be reduced. This is the contrast that proves the magic path is
+	// genuinely separate rather than silently reusing the physical one.
+	CombatInput physical = MakeBasicInput();
+	physical.attackType = AttackType::Melee;
+	physical.attackerMeleePower = 100;
+	physical.targetDefense = 0;
+	const CombatResult undefended = Combat::ResolveCombat(physical);
+	physical.targetDefense = 9999;
+	const CombatResult defended = Combat::ResolveCombat(physical);
+
+	CHECK_LT(defended.damageResult.damage, undefended.damageResult.damage);
+
+	// The magic result is the same figure whichever way the physical path is
+	// configured, because it never reads a defence field.
+	CHECK_EQ(direct.rawDamage, 150u);
+}
+
+// ── Resistance ─────────────────────────────────────────────────────────
+//
+// Magic applies resistance to the RANGE with a subtraction of the truncated
+// product (:1562-1563), before the roll. That is deliberately not the physical
+// path's multiplicative form on the rolled value.
+MODERN_TEST(Magic_ResistanceReducesTheRangeBeforeTheRoll)
+{
+	MagicDamageInput plain = MakeMagicInput(100);
+	plain.skillBasicVar = 0.0f;   // range {100,100} exactly
+	plain.resistElement = 0;
+
+	MagicDamageInput resisted = plain;
+	resisted.resistElement = 50;
+
+	// fResistTotal = 50 * 0.01 * fRESIST_G(0.5) = 0.25.
+	// 100 - DWORD(100 * 0.25) = 100 - 25 = 75.
+	CHECK_EQ(CalculateMagicDamage(plain).rawDamage, 100u);
+	CHECK_EQ(CalculateMagicDamage(resisted).rawDamage, 75u);
+}
+
+MODERN_TEST(Magic_ResistanceIsClampedToTheLegacyMaximum)
+{
+	// fMAX_RESIST is 99 and the reduction caps at 0.8 (GLogixExPC.cpp:1516,
+	// :1559). resistElement is clamped to 99 first, so 99*0.01*0.5 = 0.495,
+	// and both an above-max value and the cap value agree.
+	MagicDamageInput capped = MakeMagicInput(100);
+	capped.skillBasicVar = 0.0f;
+	capped.resistElement = 99;
+
+	MagicDamageInput absurd = capped;
+	absurd.resistElement = 100000;
+
+	CHECK_EQ(CalculateMagicDamage(capped).rawDamage, CalculateMagicDamage(absurd).rawDamage);
+
+	// 100 - DWORD(100 * 0.495) = 100 - 49 = 51.
+	CHECK_EQ(CalculateMagicDamage(capped).rawDamage, 51u);
+}
+
+// The reduction cap: a resistance large enough to exceed 0.8 is held at 0.8.
+MODERN_TEST(Magic_ResistanceReductionIsCappedAtEightyPercent)
+{
+	CombatConstants constants;
+	constants.resistGeneralG = 1.0f;   // force fResistTotal past the 0.8 cap
+
+	MagicDamageInput input = MakeMagicInput(100);
+	input.skillBasicVar = 0.0f;
+	input.resistElement = 99;         // 99 * 0.01 * 1.0 = 0.99 -> capped to 0.8
+
+	// 100 - DWORD(100 * 0.8) = 100 - 80 = 20.
+	CHECK_EQ(CalculateMagicDamage(input, constants).rawDamage, 20u);
+}
+
+// ── Magic damage reduction ─────────────────────────────────────────────
+//
+// Same DamageReduceAmount as physical, different source value (:1482).
+MODERN_TEST(Magic_MagicDamageReduceUsesTheLevelScaledAmount)
+{
+	MagicDamageInput none = MakeMagicInput(100);
+	MagicDamageInput reduced = MakeMagicInput(100);
+	reduced.targetLevel = 150;
+	reduced.magicDamageReduce = 0.5f;
+
+	const DamageResult full = CalculateMagicDamage(none);
+	const DamageResult less = CalculateMagicDamage(reduced);
+
+	CHECK_GT(less.damage, 0u);
+	CHECK_LT(less.damage, full.damage);
+}
+
+MODERN_TEST(Magic_PhysicalDamageReduceDoesNotAffectMagic)
+{
+	// `MagicDamageInput` has no physical reduction field at all - magic reads
+	// only `magicDamageReduce` - so the two cannot be confused. What is
+	// asserted is that the magic value is honoured on its own.
+	MagicDamageInput plain = MakeMagicInput(100);
+	MagicDamageInput reduced = plain;
+	reduced.magicDamageReduce = 0.5f;
+
+	const DamageResult plainResult  = CalculateMagicDamage(plain);
+	const DamageResult reducedResult = CalculateMagicDamage(reduced);
+
+	CHECK_GT(plainResult.damage, reducedResult.damage);
+}
+
+// ── Magic reflection ───────────────────────────────────────────────────
+//
+// Magic reflection is NOT the ranged-physical suppression VERTICAL-012 added.
+// Magic reads m_fMagicDamageReflection / m_fMagicDamageReflectionRate
+// (:1483-1484) and reflects normally.
+MODERN_TEST(Magic_MagicReflectionOccursWhenEnabled)
+{
+	MagicDamageInput input = MakeMagicInput(100);
+	input.targetLevel = 100;
+	input.magicDamageReflection     = 0.5f;
+	input.magicDamageReflectionRate = 0.5f;
+	input.reflectionRoll = 0.0f;      // clears the rate
+
+	const DamageResult result = CalculateMagicDamage(input);
+
+	CHECK_EQ(result.reflectionTriggered, true);
+	CHECK_GT(result.reflectionDamage, 0u);
+}
+
+MODERN_TEST(Magic_MagicReflectionDoesNotOccurWhenDisabled)
+{
+	MagicDamageInput input = MakeMagicInput(100);
+	input.targetLevel = 100;
+	input.magicDamageReflection     = 0.5f;
+	input.magicDamageReflectionRate = 0.0f;   // disabled
+	input.reflectionRoll = 0.0f;
+
+	const DamageResult result = CalculateMagicDamage(input);
+
+	CHECK_EQ(result.reflectionTriggered, false);
+	CHECK_EQ(result.reflectionDamage, 0u);
+}
+
+// The complement of VERTICAL-012's suppression: magic reflection is unaffected
+// by the attack type, and physical ranged reflection is still suppressed.
+MODERN_TEST(Magic_MagicReflectionIsIndependentOfTheRangedSuppression)
+{
+	MagicDamageInput magic = MakeMagicInput(100);
+	magic.targetLevel = 100;
+	magic.magicDamageReflection     = 0.5f;
+	magic.magicDamageReflectionRate = 0.5f;
+	magic.reflectionRoll = 0.0f;
+
+	CHECK_EQ(CalculateMagicDamage(magic).reflectionTriggered, true);
+
+	// The same target reflecting against a ranged physical skill still does not.
+	PhysicalDamageInput ranged = MakeBasicDamageInput();
+	ranged.attackType = AttackType::Ranged;
+	ranged.damageReflection     = 0.5f;
+	ranged.damageReflectionRate = 0.5f;
+	ranged.targetLevel = 100;
+	ranged.reflectionRoll = 0.0f;
+
+	CHECK_EQ(CalculatePhysicalDamage(ranged).reflectionTriggered, false);
+
+	// ...and melee still does, so the suppression is still scoped to ranged.
+	PhysicalDamageInput melee = ranged;
+	melee.attackType = AttackType::Melee;
+	CHECK_EQ(CalculatePhysicalDamage(melee).reflectionTriggered, true);
+}
+
+// ── Critical ───────────────────────────────────────────────────────────
+//
+// Magic has no separate critical rule in legacy; it shares dwCRITICAL_DAMAGE.
+MODERN_TEST(Magic_CriticalAppliesTheSharedCriticalDamage)
+{
+	MagicDamageInput normal = MakeMagicInput(100);
+	MagicDamageInput critical = normal;
+	critical.criticalRoll = 0.0f;
+
+	const DamageResult normalResult   = CalculateMagicDamage(normal);
+	const DamageResult criticalResult = CalculateMagicDamage(critical);
+
+	CHECK_EQ(normalResult.critical, false);
+	CHECK_EQ(criticalResult.critical, true);
+	CHECK_EQ(criticalResult.damage,
+	         static_cast<uint32_t>(static_cast<float>(normalResult.damage) * 1.2f));
+}
+
+// ── Crushing ───────────────────────────────────────────────────────────
+//
+// EMSPECA_CRUSHING_BLOW is added in a loop outside the apply switch
+// (:1494-1501), so a magic skill can carry it.
+MODERN_TEST(Magic_CrushingAppliesFromTheSkillSpec)
+{
+	MagicDamageInput normal = MakeMagicInput(100);
+	MagicDamageInput crushing = normal;
+	crushing.skillCrushingBonus = 20;   // exactly the cap
+	crushing.crushingRoll = 0.0f;
+
+	const DamageResult normalResult   = CalculateMagicDamage(normal);
+	const DamageResult crushingResult = CalculateMagicDamage(crushing);
+
+	CHECK_EQ(normalResult.crushing, false);
+	CHECK_EQ(crushingResult.crushing, true);
+	CHECK_EQ(crushingResult.damage,
+	         static_cast<uint32_t>(static_cast<float>(normalResult.damage) * 1.5f));
+}
+
+// ── Low SP ─────────────────────────────────────────────────────────────
+//
+// Applied exactly once, at the same 0.5 factor physical uses. Even fixture:
+// the halved value is exactly half, so the doubling identity is satisfiable.
+MODERN_TEST(Magic_LowSpHalvesDamageOnAnEvenFixture)
+{
+	MagicDamageInput funded = MakeMagicInput(100);
+	MagicDamageInput low = funded;
+	low.lowSP = true;
+
+	const DamageResult fundedResult = CalculateMagicDamage(funded);
+	const DamageResult lowResult    = CalculateMagicDamage(low);
+
+	CHECK_EQ(lowResult.lowSP, true);
+	CHECK_EQ(fundedResult.lowSP, false);
+	CHECK_EQ(lowResult.damage, static_cast<uint32_t>(fundedResult.damage / 2));
+	CHECK_EQ(lowResult.damage * 2, fundedResult.damage);
+}
+
+// Odd fixture: truncation means the doubling identity is NOT satisfiable.
+// VERTICAL-012 already demonstrated why asserting it blindly is wrong, so this
+// case asserts the rule instead of the arithmetic coincidence.
+MODERN_TEST(Magic_LowSpHalvingOnAnOddFixtureLosesTheRemainder)
+{
+	MagicDamageInput funded = MakeMagicInput(100);
+	MagicDamageInput low = funded;
+	low.lowSP = true;
+
+	const DamageResult fundedResult = CalculateMagicDamage(funded);
+	const DamageResult lowResult    = CalculateMagicDamage(low);
+
+	CHECK_LT(lowResult.damage, fundedResult.damage);
+	CHECK_GE(fundedResult.damage - lowResult.damage, 1u);
+	CHECK_LE(lowResult.damage * 2, fundedResult.damage + 1u);
+}
+
+// Exactly once, not twice. If the resolver and the calculator both halved, the
+// result would be a quarter and the even-fixture identity would fail.
+MODERN_TEST(Magic_LowSpIsAppliedOnceNotTwice)
+{
+	MagicDamageInput funded = MakeMagicInput(200);
+	MagicDamageInput low = funded;
+	low.lowSP = true;
+
+	const DamageResult fundedResult = CalculateMagicDamage(funded);
+	const DamageResult lowResult    = CalculateMagicDamage(low);
+
+	CHECK_GT(fundedResult.damage / 2, 0u);
+	CHECK_GT(lowResult.damage, fundedResult.damage / 4);
+}
+
+// ── Minimum damage ─────────────────────────────────────────────────────
+MODERN_TEST(Magic_DamageNeverReturnsZero)
+{
+	MagicDamageInput input = MakeMagicInput(0);
+	input.skillBasicVar = 0.0f;
+	input.skillRange = { 0, 0 };
+	input.resistElement = 99;      // resist the whole range away
+	input.magicDamageReduce = 1.0f;
+
+	const DamageResult result = CalculateMagicDamage(input);
+
+	CHECK_GE(result.damage, 1u);
+}
+
+// ── Channel separation ─────────────────────────────────────────────────
+//
+// The strongest statement of VERTICAL-013's central claim: magic is not the
+// physical formula with a flag. Same power, same range, different channel,
+// different answer.
+MODERN_TEST(Magic_ResistanceRunsBeforeTheRollAndPhysicalResistanceDoesNot)
+{
+	// The ordering difference, stated so it cannot drift.
+	//
+	// Magic applies resistance to the damage RANGE (:1562-1563) before the
+	// roll, so `rawDamage` - the rolled figure - moves when resistance changes.
+	// Physical applies resistance to the ALREADY-ROLLED value
+	// (PhysicalDamageCalculator.h:119), so its `rawDamage` is recorded before
+	// resistance and must not move at all.
+	PhysicalDamageInput physical = MakeBasicDamageInput();
+	physical.attackType     = AttackType::Melee;
+	physical.meleePower     = 100;
+	physical.physicalDamage = { 0, 0 };
+	physical.damageRoll     = 0.0f;
+	physical.criticalRoll   = 1.0f;
+	physical.crushingRoll   = 1.0f;
+	physical.defense        = 0;
+	physical.defenseBody    = 0;
+	physical.defenseItem    = 0;
+	physical.resistElement  = 0;
+	const uint32_t physicalRawNoResist = CalculatePhysicalDamage(physical).rawDamage;
+
+	physical.resistElement = 50;
+	const DamageResult physicalResisted = CalculatePhysicalDamage(physical);
+
+	// Physical: the pre-resistance roll is untouched.
+	CHECK_EQ(physicalResisted.rawDamage, physicalRawNoResist);
+	CHECK_LT(physicalResisted.damage, physicalRawNoResist);
+
+	// Magic: the range itself shrinks, so the rolled figure moves.
+	MagicDamageInput magic = MakeMagicInput(100);
+	magic.skillBasicVar = 0.0f;
+	magic.resistElement = 0;
+	const uint32_t magicRawNoResist = CalculateMagicDamage(magic).rawDamage;
+
+	magic.resistElement = 50;
+	const uint32_t magicRawResisted = CalculateMagicDamage(magic).rawDamage;
+
+	CHECK_EQ(magicRawNoResist, 100u);
+	CHECK_EQ(magicRawResisted, 75u);
+	CHECK_LT(magicRawResisted, magicRawNoResist);
 }

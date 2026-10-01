@@ -187,8 +187,10 @@ namespace Modern::Stats
 				static_cast<float>(stats.pow) * cc.shootPerPow +
 				static_cast<float>(stats.dex) * cc.shootPerDex));
 
-			// Magic attack has no level term and no VARIATION clamp; RAN assigns
-			// it directly from the three stats.
+// Magic attack has no level term: RAN assigns it directly
+		// from the three stats (GLogixExPC.cpp:319), unlike PA/SA which carry a
+		// base-plus-per-level term. It does go through VARIATION like the
+		// others (:332).
 			const uint16_t ma = ToWordTruncating(
 				static_cast<float>(stats.dex) * cc.magicPerDex +
 				static_cast<float>(stats.spi) * cc.magicPerSpi +

@@ -22,6 +22,7 @@
 #include "CombatTypes.h"
 #include "CombatConstants.h"
 #include "HitCalculator.h"
+#include "MagicDamageCalculator.h"
 #include "PhysicalDamageCalculator.h"
 #include "engine/GameCharacterCalculations.h"
 
@@ -36,6 +37,7 @@ namespace Modern::Combat
 		int32_t attackerAvoid = 0;
 		uint16_t attackerMeleePower = 0;
 		uint16_t attackerShootPower = 0;
+		uint16_t attackerMagicPower = 0;   // VERTICAL-013: m_wSUM_MA
 		Stats::DamageRange attackerPhysicalDamage;
 		uint32_t attackerLevel = 1;
 		uint32_t attackerMaxHP = 0;
@@ -43,6 +45,16 @@ namespace Modern::Combat
 		int32_t attackerCriticalBonus = 0;
 		int32_t attackerCrushingBonus = 0;
 		AttackType attackType = AttackType::Melee;
+
+		// VERTICAL-013: the magic skill's own contribution and the two per-cast
+		// modifiers that magic reads instead of their physical counterparts.
+		//
+		// `skillBasicVar` is sSKILL_DATA.fBASIC_VAR. Its sign selects damage
+		// against heal in legacy (GLChar.cpp:3077-3090); only the negative
+		// (damaging) form is executed by this slice.
+		float skillBasicVar = 0.0f;
+		float attackerDamageRate = 1.0f;   // m_fDamageRate
+		int32_t skillCrushingBonus = 0;    // EMSPECA_CRUSHING_BLOW * 100
 
 		// Target derived stats
 		int32_t targetHit = 0;
@@ -58,6 +70,14 @@ namespace Modern::Combat
 		float targetDamageReflection = 0.0f;
 		float targetDamageReflectionRate = 0.0f;
 		int32_t targetResistElement = 0;
+
+		// VERTICAL-013: the magic-specific halves of DAMAGE_SPEC. Magic reads
+		// these instead of the psy values above (GLogixExPC.cpp:1482-1484); they
+		// are separate fields in legacy, not the same value under another name.
+		float targetMagicDamageReduce = 0.0f;
+		float targetMagicDamageReflection = 0.0f;
+		float targetMagicDamageReflectionRate = 0.0f;
+		float targetDamageDecrease = 0.0f;  // GetDecR_DamageMagicSkill
 
 		// VERTICAL-010: the SP cost of the attack, and the attacker's current
 		// pool. The low-SP rule is evaluated in Core from these two, not
@@ -149,41 +169,86 @@ namespace Modern::Combat
 			return result;
 		}
 
-		// 2. Build physical damage input
-		PhysicalDamageInput damageInput;
-		damageInput.physicalDamage = input.attackerPhysicalDamage;
-		damageInput.meleePower = input.attackerMeleePower;
-		damageInput.shootPower = input.attackerShootPower;
-		damageInput.attackType = input.attackType;
-		damageInput.defense = input.targetDefense;
-		damageInput.defenseBody = input.targetDefenseBody;
-		damageInput.defenseItem = input.targetDefenseItem;
-		damageInput.level = input.targetLevel;
-		damageInput.stateDamage = input.targetStateDamage;
-		damageInput.damageReduce = input.targetDamageReduce;
-		damageInput.damageReflection = input.targetDamageReflection;
-		damageInput.damageReflectionRate = input.targetDamageReflectionRate;
-		damageInput.resistElement = input.targetResistElement;
-		damageInput.lowSP = lowSP;
-		damageInput.stateDamageMultiplier = input.targetStateDamage;
-		damageInput.requiredSP = input.attackerRequiredSP;
-		damageInput.isPK = input.isPK;
-		damageInput.attackerLevel = input.attackerLevel;
-		damageInput.attackerMaxHP = input.attackerMaxHP;
-		damageInput.attackerCurrentHP = input.attackerCurrentHP;
-		damageInput.attackerCriticalBonus = input.attackerCriticalBonus;
-		damageInput.attackerCrushingBonus = input.attackerCrushingBonus;
-		damageInput.targetLevel = input.targetLevel;
-		damageInput.targetMaxHP = input.targetMaxHP;
-		damageInput.resistElement = input.targetResistElement;
-		damageInput.weatherElementPower = 1.0f;
-		damageInput.damageRoll = input.damageRoll;
-		damageInput.criticalRoll = input.criticalRoll;
-		damageInput.crushingRoll = input.crushingRoll;
-		damageInput.reflectionRoll = input.reflectionRoll;
+		// 2. Build the damage input for the channel
+		//
+		// VERTICAL-013: magic is a different formula over the same range type,
+		// not a flag on the physical one, so it gets its own input and its own
+		// calculator. See MagicDamageCalculator.h for the full list of
+		// differences.
+		DamageResult damageResult{};
 
-		// 3. Calculate damage
-		result.damageResult = CalculatePhysicalDamage(damageInput);
+		if (input.attackType == AttackType::Magic)
+		{
+			MagicDamageInput magicInput;
+			magicInput.magicAttack     = input.attackerMagicPower;
+			magicInput.skillRange      = input.attackerPhysicalDamage;
+			magicInput.skillBasicVar   = input.skillBasicVar;
+			magicInput.damageRate      = input.attackerDamageRate;
+			magicInput.skillCrushingBonus = input.skillCrushingBonus;
+
+			magicInput.attackerLevel        = input.attackerLevel;
+			magicInput.attackerMaxHP        = input.attackerMaxHP;
+			magicInput.attackerCurrentHP    = input.attackerCurrentHP;
+			magicInput.attackerCriticalBonus = input.attackerCriticalBonus;
+			magicInput.attackerCrushingBonus = input.attackerCrushingBonus;
+
+			magicInput.targetLevel        = input.targetLevel;
+			magicInput.resistElement      = input.targetResistElement;
+			magicInput.magicDamageReduce  = input.targetMagicDamageReduce;
+			magicInput.magicDamageReflection     = input.targetMagicDamageReflection;
+			magicInput.magicDamageReflectionRate = input.targetMagicDamageReflectionRate;
+			magicInput.targetDamageDecrease = input.targetDamageDecrease;
+			magicInput.stateDamage        = input.targetStateDamage;
+			magicInput.lowSP              = lowSP;
+			magicInput.isPK               = input.isPK;
+
+			magicInput.weatherElementPower = input.weatherElementPower;
+			magicInput.damageRoll     = input.damageRoll;
+			magicInput.criticalRoll   = input.criticalRoll;
+			magicInput.crushingRoll   = input.crushingRoll;
+			magicInput.reflectionRoll = input.reflectionRoll;
+
+			damageResult = CalculateMagicDamage(magicInput);
+		}
+		else
+		{
+			PhysicalDamageInput damageInput;
+			damageInput.physicalDamage = input.attackerPhysicalDamage;
+			damageInput.meleePower = input.attackerMeleePower;
+			damageInput.shootPower = input.attackerShootPower;
+			damageInput.attackType = input.attackType;
+			damageInput.defense = input.targetDefense;
+			damageInput.defenseBody = input.targetDefenseBody;
+			damageInput.defenseItem = input.targetDefenseItem;
+			damageInput.level = input.targetLevel;
+			damageInput.stateDamage = input.targetStateDamage;
+			damageInput.damageReduce = input.targetDamageReduce;
+			damageInput.damageReflection = input.targetDamageReflection;
+			damageInput.damageReflectionRate = input.targetDamageReflectionRate;
+			damageInput.resistElement = input.targetResistElement;
+			damageInput.lowSP = lowSP;
+			damageInput.stateDamageMultiplier = input.targetStateDamage;
+			damageInput.requiredSP = input.attackerRequiredSP;
+			damageInput.isPK = input.isPK;
+			damageInput.attackerLevel = input.attackerLevel;
+			damageInput.attackerMaxHP = input.attackerMaxHP;
+			damageInput.attackerCurrentHP = input.attackerCurrentHP;
+			damageInput.attackerCriticalBonus = input.attackerCriticalBonus;
+			damageInput.attackerCrushingBonus = input.attackerCrushingBonus;
+			damageInput.targetLevel = input.targetLevel;
+			damageInput.targetMaxHP = input.targetMaxHP;
+			damageInput.resistElement = input.targetResistElement;
+			damageInput.weatherElementPower = 1.0f;
+			damageInput.damageRoll = input.damageRoll;
+			damageInput.criticalRoll = input.criticalRoll;
+			damageInput.crushingRoll = input.crushingRoll;
+			damageInput.reflectionRoll = input.reflectionRoll;
+
+			// 3. Calculate damage
+			damageResult = CalculatePhysicalDamage(damageInput);
+		}
+
+		result.damageResult = damageResult;
 
 		// 4. Apply damage to target HP
 		result.targetHPBefore = input.targetCurrentHP;

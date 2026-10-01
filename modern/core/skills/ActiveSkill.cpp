@@ -13,6 +13,36 @@
 
 namespace Modern::Skills
 {
+	// VERTICAL-013: `SRESIST::GetElement(emELMT)` (GLogixExPC.cpp:1515).
+	//
+	// `Stats::Resistances` carries only the five elements RAN actually models
+	// as separate resistance axes (fire, ice, electric, poison, spirit). The
+	// remaining EMELEMENT values - stone, mad, curse, zen - have no field, so
+	// they read 0 rather than silently borrowing another element's number.
+	// Widening `Resistances` is a data-model change, not a combat change, and
+	// guessing those four values here would be inventing balance data.
+	static int32_t ResolveResistance(const Stats::Resistances& resistances,
+	                                 SkillElement element) noexcept
+	{
+		switch (element)
+		{
+			case SkillElement::Fire:     return resistances.fire;
+			case SkillElement::Ice:      return resistances.ice;
+			case SkillElement::Electric: return resistances.electric;
+			case SkillElement::Poison:   return resistances.poison;
+			case SkillElement::Spirit:   return resistances.spirit;
+
+			// No modelled resistance axis.
+			case SkillElement::Stone:
+			case SkillElement::Mad:
+			case SkillElement::Curse:
+			case SkillElement::Zen:      return 0;
+
+			// Already resolved before this call; belt and braces.
+			case SkillElement::ArmWeapon: return 0;
+		}
+		return 0;
+	}
 	namespace ActiveSkillResolver
 	{
 		namespace
@@ -132,23 +162,55 @@ namespace Modern::Skills
 			// Every one of these is a refusal with a reason, never a zero
 			// result. A skill the modern server cannot run honestly must say so.
 
-			// VERTICAL-012: the apply channel decides which attack power the
-			// combat pipeline selects. Both are physical and both run the same
-			// pipeline; the difference is `m_wSUM_SA` against `m_wSUM_PA`
-			// (GLogixExPC.cpp:1463 against :1451), which the calculator applies
-			// from `PhysicalDamageInput::attackType`.
+			// VERTICAL-012/013: the apply channel decides which attack power the
+			// combat pipeline selects, and which calculator runs.
 			//
-			// Magic still refuses. It is a third channel, not a ranged variant
-			// of physical, and it needs VERTICAL-013's elemental pipeline.
-			if (definition.apply == SkillApply::Magic)
+			//   PhysicalMelee / PhysicalRanged -> CalculatePhysicalDamage
+			//   Magic                          -> CalculateMagicDamage
+			//
+			// Magic is not a third flag on the physical formula; see
+			// MagicDamageCalculator.h for the differences that make it a
+			// separate function.
+			if (definition.apply != SkillApply::PhysicalMelee &&
+			    definition.apply != SkillApply::PhysicalRanged &&
+			    definition.apply != SkillApply::Magic)
 			{
 				return Refuse(ActiveSkillFailure::UnsupportedApply);
 			}
 
-			if (definition.apply != SkillApply::PhysicalMelee &&
-			    definition.apply != SkillApply::PhysicalRanged)
+			// VERTICAL-013: the executed magic slice is narrow and says so.
+			//
+			//   EMAPPLY_MAGIC + EMFOR_HP + fBASIC_VAR < 0 + TAR_SPEC + SIDE_ENEMY
+			//
+			// Everything else in the magic switch (GLChar.cpp:3075-3123) is a
+			// refusal with its own reason, never a zero result and never a
+			// silently reinterpreted damage number.
+			if (definition.apply == SkillApply::Magic)
 			{
-				return Refuse(ActiveSkillFailure::UnsupportedApply);
+				const SkillLevelData& magicLevel = definition.GetLevelData(input.level);
+
+				// A positive fBASIC_VAR is a heal (GLChar.cpp:3087-3091). It is
+				// not negative damage, and representing it as such would invert
+				// the sign convention for no gain.
+				if (magicLevel.basicVar > 0.0f)
+				{
+					return Refuse(ActiveSkillFailure::UnsupportedEffect);
+				}
+
+				// EMFOR_MP / EMFOR_SP (GLChar.cpp:3094-3122) never reach
+				// CALCDAMAGE at all - they are their own arithmetic and would
+				// need their own tests, not a reuse of the HP path.
+				if (definition.applyType != PassiveApplyType::Hp)
+				{
+					return Refuse(ActiveSkillFailure::UnsupportedEffect);
+				}
+
+				// A heal can also hide in the side: legacy EMFOR_HP with a
+				// friendly impact is a restorative, not damage.
+				if (definition.impactSide != SkillImpactSide::Enemy)
+				{
+					return Refuse(ActiveSkillFailure::UnsupportedEffect);
+				}
 			}
 
 			if (definition.targetKind != SkillTargetKind::Spec &&
@@ -308,12 +370,21 @@ namespace Modern::Skills
 			combat.attackerCriticalBonus  = static_cast<int32_t>(input.attacker.criticalRate * 100.0f);
 			combat.attackerCrushingBonus  = static_cast<int32_t>(input.attacker.crushingBlow * 100.0f);
 
-			// VERTICAL-012: the apply channel carries through to the combat
-			// boundary, so the calculator selects the shoot power for a ranged
-			// physical skill and the melee power for a melee one.
+			// VERTICAL-012/013: the apply channel carries through to the
+			// combat boundary, so the pipeline selects the shoot power for a
+			// ranged physical skill, the melee power for a melee one, and the
+			// magic calculator for magic.
 			combat.attackType = (definition.apply == SkillApply::PhysicalRanged)
 			                        ? Combat::AttackType::Ranged
-			                        : Combat::AttackType::Melee;
+			                        : (definition.apply == SkillApply::Magic)
+			                              ? Combat::AttackType::Magic
+			                              : Combat::AttackType::Melee;
+
+			// VERTICAL-013: magic. m_wSUM_MA, the skill's own magnitude, and
+			// the magic halves of DAMAGE_SPEC.
+			combat.attackerMagicPower = input.attacker.magicAttack;
+			combat.skillBasicVar      = level.basicVar;
+			combat.skillCrushingBonus = static_cast<int32_t>(input.skillCrushingBonus * 100.0f);
 
 			combat.targetHit                 = input.target.hit;
 			combat.targetAvoid               = input.target.avoid;
@@ -327,7 +398,39 @@ namespace Modern::Skills
 			combat.targetDamageReduce        = input.target.damageReduce;
 			combat.targetDamageReflection    = input.target.damageReflection;
 			combat.targetDamageReflectionRate = input.target.damageReflectionRate;
-			combat.targetResistElement       = 0;
+
+			// VERTICAL-013: element selection and the magic halves of
+			// DAMAGE_SPEC.
+			//
+			// GLogixExPC.cpp:1504-1513:
+			//
+			//   EMELEMENT emELMT( EMELEMENT_SPIRIT );
+			//   if ( emELEMENT == EMELEMENT_ARM ) {
+			//       SITEM* pITEM = GET_ELMT_ITEM();
+			//       if ( pITEM ) emELMT = STATE_TO_ELEMENT(pITEM->sSuitOp.sBLOW.emTYPE);
+			//   } else {
+			//       emELMT = emELEMENT;
+			//   }
+			//
+			// The default is Spirit and ArmWeapon only overrides it when a weapon
+			// element is actually available, so a missing weapon yields Spirit
+			// rather than a refusal.
+			SkillElement emELMT = definition.element;
+			if (emELMT == SkillElement::ArmWeapon)
+			{
+				emELMT = (input.weaponElement == SkillElement::ArmWeapon)
+				             ? SkillElement::Spirit
+				             : input.weaponElement;
+			}
+
+			// sRESIST.GetElement(emELMT) (:1515). The clamp to fMAX_RESIST is
+			// applied inside the magic calculator.
+			combat.targetResistElement = ResolveResistance(input.target.resistances, emELMT);
+
+			combat.targetMagicDamageReduce  = input.targetMagicDamageReduce;
+			combat.targetMagicDamageReflection     = input.targetMagicDamageReflection;
+			combat.targetMagicDamageReflectionRate = input.targetMagicDamageReflectionRate;
+			combat.targetDamageDecrease     = input.targetDamageDecrease;
 
 			// VERTICAL-010's rule, applied to the caster's own pool.
 			combat.attackerRequiredSP = result.requiredSP;
@@ -345,6 +448,7 @@ namespace Modern::Skills
 			combat.reflectionRoll = input.reflectionRoll;
 
 			result.combat = Combat::ResolveCombat(combat);
+		result.attackTypeUsed = combat.attackType;
 
 			return result;
 		}

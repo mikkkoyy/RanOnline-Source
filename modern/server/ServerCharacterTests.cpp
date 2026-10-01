@@ -2246,10 +2246,19 @@ MODERN_TEST(ServerActiveSkill_UnsupportedSkillIsRefusedNotFaked)
 
 	const uint32_t hpBefore = target.GetValue().BuildSnapshot().GetValue().hp.current;
 
-	// Each is refused with its own reason, and none of them damages anything.
+	// The zone and passive skills are still refused, each with its own reason, and
+	// neither damages anything.
+	//
+	// VERTICAL-013 removed the magic case from this list: `{1,2}` is a hostile
+	// single-target HP magic skill, which is exactly the slice this milestone
+	// executes, so it now damages the target instead of refusing.
 	const Skills::ActiveSkillResult magicResult =
 		attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue());
-	CHECK_EQ(magicResult.failure, Skills::ActiveSkillFailure::UnsupportedApply);
+	CHECK(magicResult.Succeeded());
+	CHECK_EQ(magicResult.attackTypeUsed, Combat::AttackType::Magic);
+	CHECK_LT(target.GetValue().BuildSnapshot().GetValue().hp.current, hpBefore);
+
+	const uint32_t hpBeforeUnsupported = target.GetValue().BuildSnapshot().GetValue().hp.current;
 
 	const Skills::ActiveSkillResult zoneResult =
 		attacker.GetValue().CastSkill(SkillId{ 1, 3 }, target.GetValue());
@@ -2259,7 +2268,8 @@ MODERN_TEST(ServerActiveSkill_UnsupportedSkillIsRefusedNotFaked)
 		attacker.GetValue().CastSkill(SkillId{ 1, 4 }, target.GetValue());
 	CHECK_EQ(passiveResult.failure, Skills::ActiveSkillFailure::NotCastable);
 
-	CHECK_EQ(target.GetValue().BuildSnapshot().GetValue().hp.current, hpBefore);
+	// The refusals really are inert.
+	CHECK_EQ(target.GetValue().BuildSnapshot().GetValue().hp.current, hpBeforeUnsupported);
 }
 
 MODERN_TEST(ServerActiveSkill_NoProviderRefused)

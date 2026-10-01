@@ -153,6 +153,39 @@ namespace Modern::Skills
 		// aggregation path.
 		uint16_t equipmentRequiredSP = 0;
 
+		// VERTICAL-013: the element the caster's weapon inflicts.
+		//
+		// GLogixExPC.cpp:1505-1509 resolves EMELEMENT_ARM through
+		// `GET_ELMT_ITEM()` and `STATE_TO_ELEMENT( pITEM->sSuitOp.sBLOW.emTYPE )`.
+		// Core cannot read legacy item types, so the resolution is pushed out to
+		// the caller, which knows what the caster is holding. When the skill asks
+		// for ArmWeapon and no weapon element is supplied, the result is Spirit -
+		// which is exactly legacy's behaviour, because legacy initialises
+		// `emELMT` to EMELEMENT_SPIRIT at :1504 and only overrides it when a
+		// weapon is actually found.
+		SkillElement weaponElement = SkillElement::Spirit;
+
+		// VERTICAL-013: the skill's own crushing-blow rate.
+		//
+		// GLogixExPC.cpp:1494-1501 adds `EMSPECA_CRUSHING_BLOW` from the skill's
+		// specs in a loop that sits outside the apply switch, so it applies to
+		// magic as well as physical. The caller reads it off the skill's specs;
+		// it is passed as a 0..1 rate and converted with the same `* 100` the
+		// legacy line uses.
+		float skillCrushingBonus = 0.0f;
+
+		// VERTICAL-013: the magic halves of the target's DAMAGE_SPEC, plus the
+		// target's per-school damage decrease. Magic reads these instead of the
+		// psy values (GLogixExPC.cpp:1482-1484, :1546); they are separate fields
+		// in legacy, not aliases.
+		//
+		// `damageDecrease` is GetDecR_DamageMagicSkill, applied to the damage
+		// *range* at :1551-1552, well before the damage reduction at :1734.
+		float targetMagicDamageReduce = 0.0f;
+		float targetMagicDamageReflection = 0.0f;
+		float targetMagicDamageReflectionRate = 0.0f;
+		float targetDamageDecrease = 0.0f;
+
 		// `GLCONST_CHAR::wBASIC_DIS_SP`, from CombatConstants. Named here so a
 		// caller does not have to know that a basic skill's cost has a floor
 		// unrelated to `wUSE_SP`.
@@ -225,6 +258,13 @@ namespace Modern::Skills
 
 		// The resolved combat outcome, when the cast reached damage.
 		Combat::CombatResult combat{};
+
+		// VERTICAL-013: which damage channel actually ran. `CombatResult` does
+		// not carry it, and a caller - or a test - that wants to assert "this was
+		// magic, not melee wearing a magic name" otherwise has to infer it from
+		// the damage number, which is exactly the inference that hid the
+		// VERTICAL-012 bug for three slices.
+		Combat::AttackType attackTypeUsed = Combat::AttackType::Melee;
 
 		constexpr bool Succeeded() const noexcept { return failure == ActiveSkillFailure::None; }
 		constexpr bool IsLowSp() const noexcept { return lowSp == LowSpState::Low; }

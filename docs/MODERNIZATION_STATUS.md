@@ -17,9 +17,9 @@ formula provenance.
 | ---- | ----- |
 | Legacy import | complete |
 | Core foundation | complete |
-| Vertical gameplay slices 001-012 | complete |
+| Vertical gameplay slices 001-013 | complete |
 | Build verification (BUILD-001) | complete |
-| Magic combat | not started (VERTICAL-013) |
+| Buffs, status effects, world targeting | not started |
 | Buffs, status effects, world targeting | not started |
 
 ---
@@ -41,8 +41,9 @@ formula provenance.
 | VERTICAL-009 Build verification + physical combat completion | [x] | `ad99138` |
 | BUILD-001 Tracked build-artifact cleanup | [x] | `1dd36f9` |
 | VERTICAL-010 Required-SP / item integration | [x] | `021be63` |
-| VERTICAL-011 Active skill combat | [x] | this commit |
-| VERTICAL-012 Ranged physical combat | [x] | this commit |
+| VERTICAL-011 Active skill combat | [x] | `df9bf4f` |
+| VERTICAL-012 Ranged physical combat | [x] | `7b86e27` |
+| VERTICAL-013 Magic / elemental combat | [x] | this commit |
 
 ---
 
@@ -144,34 +145,39 @@ multi-config generator; without it every test reports `***Not Run` with
 
 ## Next task
 
-**VERTICAL-012 — Ranged physical combat.** Complete. See
-`docs/reference/client/VERTICAL-012_RANGED_PHYSICAL_INVESTIGATION.md`.
+**VERTICAL-013 — Magic / elemental combat.** Complete. See
+`docs/reference/client/VERTICAL-013_MAGIC_ELEMENTAL_INVESTIGATION.md`.
 
-`SkillApply::PhysicalRanged` is no longer refused with `UnsupportedApply`.
-Ranged is not a second pipeline: it is the physical pipeline with
-`AttackType::Ranged` selecting `shootPower` where melee selects `meleePower`,
-which is the same `m_wSUM_SA` against `m_wSUM_PA` choice legacy makes at
-`GLogixExPC.cpp:1463` against `:1451` (and `:1584` against `:1594` for basic
-attacks).
+`SkillApply::Magic` is no longer refused. Magic is a distinct channel, not the
+physical formula with a flag: it adds **no** weapon item damage, uses
+`m_wSUM_MA`, forces `nDEFENSE`/`nDEFAULT_DEFENSE`/`nITEM_DEFENSE` to zero
+(`GLogixExPC.cpp:1474-1476`), applies resistance to the damage **range** before
+the roll rather than to the rolled value, and reads the magic halves of
+`DAMAGE_SPEC`. So `AttackType::Magic` and `CalculateMagicDamage` were added
+rather than a flag.
 
-The milestone also closed a VERTICAL-009 defect found on the way: both
-`attackerMeleePower` and `attackerShootPower` were being carried through the
-combat boundary and then **ignored**, so attack power had no effect on any
-damage. Legacy adds it to both ends of the range via `VAR_PARAM`
-(`GLDefine.h:364-371`), flooring each end at `1`. That is now implemented, which
-is why three pre-existing melee cases were recalculated rather than relaxed —
-see §6 of the investigation for the arithmetic.
+`DerivedStats::magicAttack` already matched legacy exactly — magic attack has no
+class/level term, unlike PA/SA — and was reused. `ApplyAttackPower` moved to
+`CombatTypes.h`, because legacy uses the identical `VAR_PARAM` for PA, SA and MA.
 
-`ActiveSkillResolver` now refuses `SkillApply::Magic` by name, so VERTICAL-013
-has an obvious seam and the refusal cannot read as an oversight. Ranged
-reflection suppression (`:1468-1469`), written in VERTICAL-009, was unreachable
-until this milestone and is now covered by tests.
+Two further defects were closed on the way: `targetResistElement` had been
+hardcoded to `0` for every active skill since VERTICAL-011, and magic attack
+power would otherwise have reproduced VERTICAL-012's "carried across the
+boundary but never used" defect.
 
-Ranged reach, `ISLONGRANGE_ARMS()` item classification, projectile travel and
-ammo remain deferred: they are spatial and item systems, and no checked-in
-legacy source justified inventing them. The public/forum backread for this
-milestone was negative — it returned no RAN internals at all, which is recorded
-in §2 so future migrations plan on the checked-in legacy tree instead.
+Executed scope is `EMAPPLY_MAGIC + EMFOR_HP + fBASIC_VAR < 0 + TAR_SPEC +
+SIDE_ENEMY`. Heals, `EMFOR_MP`/`EMFOR_SP`, zone/realm targeting, projectiles, a
+weather provider and the item grade term are all explicitly deferred, with
+reasons.
+
+Two legacy bugs are recorded rather than "fixed", because correcting them would
+move behaviour away from RAN: the damage-reduction flag at
+`GLogixExPC.cpp:1740-1741` adds `DAMAGE_TYPE_PSY_REDUCE` in **both** `bPsyDamage`
+branches, and the MP/SP resistance arithmetic at `GLChar.cpp:3099` appears
+inverted. See sections 9 and 10 of the investigation.
+
+**Next:** buffs / status effects / world targeting. The number is deliberately
+left open rather than invented.
 
 ---
 

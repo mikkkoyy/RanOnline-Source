@@ -377,14 +377,20 @@ MODERN_TEST(ActiveSkill_RangedApplyAccepted)
 	CHECK_EQ(result.failure, ActiveSkillFailure::None);
 }
 
-MODERN_TEST(ActiveSkill_MagicApplyRejected)
+// VERTICAL-013: `EMAPPLY_MAGIC` used to be refused here. It is now a supported
+// channel and is covered by the `Magic_*` cases. The refused magic shapes -
+// heal, EMFOR_MP, EMFOR_SP, friendly side - each have their own named test
+// below, so this case no longer asserts a blanket refusal.
+MODERN_TEST(ActiveSkill_MagicApplyNoLongerBlanketRefused)
 {
-	// EMAPPLY_MAGIC needs the elemental pipeline of VERTICAL-013.
 	SkillDefinition definition = MakeDamageSkill();
 	definition.apply = SkillApply::Magic;
 
-	CHECK_EQ(ActiveSkillResolver::Resolve(MakeInput(definition, 1)).failure,
-	         ActiveSkillFailure::UnsupportedApply);
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(MakeInput(definition, 1));
+
+	// MakeDamageSkill's fixture is PhysicalMelee-shaped: a hostile HP skill with
+	// a negative basicVar. That is inside the executed slice, so it succeeds.
+	CHECK(result.Succeeded());
 }
 
 MODERN_TEST(ActiveSkill_ZoneTargetRejected)
@@ -849,4 +855,258 @@ MODERN_TEST(RangedSkill_UsesTheSharedPhysicalResistance)
 	// checking it resolves the same way a melee one does with the same input.
 	CHECK(ActiveSkillResolver::Resolve(plain).Succeeded());
 	CHECK(ActiveSkillResolver::Resolve(resistant).Succeeded());
+}
+
+// ── VERTICAL-013: magic through the resolver ───────────────────────────
+
+namespace
+{
+	// A hostile single-target HP magic skill: the one shape this milestone
+	// executes (EMAPPLY_MAGIC + EMFOR_HP + fBASIC_VAR < 0 + SIDE_ENEMY).
+	SkillDefinition MakeMagicDamageSkill()
+	{
+		SkillDefinition def = MakeDamageSkill();
+		def.name   = "Fireball";
+		def.apply  = SkillApply::Magic;
+		def.element = SkillElement::Fire;
+		def.applyType = PassiveApplyType::Hp;
+		def.impactSide = SkillImpactSide::Enemy;
+		return def;
+	}
+}
+
+MODERN_TEST(MagicSkill_HostileHpDamageIsAccepted)
+{
+	const SkillDefinition definition = MakeMagicDamageSkill();
+
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(MakeInput(definition, 1));
+
+	CHECK(result.Succeeded());
+	// The channel is reported rather than inferred from the damage number.
+	CHECK_EQ(result.attackTypeUsed, Combat::AttackType::Magic);
+	CHECK_GT(result.combat.damageResult.damage, 0u);
+}
+
+// A heal is not negative damage. Legacy GLChar.cpp:3087-3091 reads a positive
+// fBASIC_VAR as a heal capped at the target's missing HP.
+MODERN_TEST(MagicSkill_HealIsRefusedNotConvertedToDamage)
+{
+	SkillDefinition definition = MakeMagicDamageSkill();
+	for (uint8_t lvl = 1; lvl <= definition.maxLevel; ++lvl)
+	{
+		definition.levelData[lvl].basicVar = 10.0f * static_cast<float>(lvl);   // positive
+	}
+
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(MakeInput(definition, 1));
+
+	CHECK(!result.Succeeded());
+	CHECK_EQ(result.failure, ActiveSkillFailure::UnsupportedEffect);
+}
+
+// EMFOR_MP / EMFOR_SP never reach CALCDAMAGE (GLChar.cpp:3094-3122). They are
+// their own arithmetic and would need their own tests.
+MODERN_TEST(MagicSkill_MpAndSpEffectsAreRefused)
+{
+	for (const PassiveApplyType type : { PassiveApplyType::Mp, PassiveApplyType::Sp })
+	{
+		SkillDefinition definition = MakeMagicDamageSkill();
+		definition.applyType = type;
+
+		const ActiveSkillResult result = ActiveSkillResolver::Resolve(MakeInput(definition, 1));
+
+		CHECK(!result.Succeeded());
+		CHECK_EQ(result.failure, ActiveSkillFailure::UnsupportedEffect);
+	}
+}
+
+// A friendly-side magic skill is restorative, not damage.
+MODERN_TEST(MagicSkill_FriendlySideIsRefused)
+{
+	SkillDefinition definition = MakeMagicDamageSkill();
+	definition.impactSide = SkillImpactSide::Our;
+
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(MakeInput(definition, 1));
+
+	CHECK(!result.Succeeded());
+	CHECK_EQ(result.failure, ActiveSkillFailure::UnsupportedEffect);
+}
+
+// Zone and realm targeting still need a world and an entity registry.
+MODERN_TEST(MagicSkill_ZoneTargetIsRefused)
+{
+	SkillDefinition definition = MakeMagicDamageSkill();
+	definition.targetKind = SkillTargetKind::Zone;
+
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(MakeInput(definition, 1));
+
+	CHECK(!result.Succeeded());
+	CHECK_EQ(result.failure, ActiveSkillFailure::UnsupportedTarget);
+}
+
+// ── Element selection ──────────────────────────────────────────────────
+//
+// GLogixExPC.cpp:1504-1513: the skill's own element, except ArmWeapon which
+// resolves through the caster's weapon and falls back to Spirit.
+MODERN_TEST(MagicSkill_ElementSelectsTheMatchingResistance)
+{
+	SkillDefinition definition = MakeMagicDamageSkill();
+	definition.element = SkillElement::Fire;
+
+	ActiveSkillInput plain = MakeInput(definition, 1);
+	ActiveSkillInput resisted = MakeInput(definition, 1);
+	resisted.target.resistances.fire = 50;
+
+	const ActiveSkillResult plainResult    = ActiveSkillResolver::Resolve(plain);
+	const ActiveSkillResult resistedResult = ActiveSkillResolver::Resolve(resisted);
+
+	CHECK(plainResult.Succeeded());
+	CHECK(resistedResult.Succeeded());
+	CHECK_LT(resistedResult.combat.damageResult.damage,
+	         plainResult.combat.damageResult.damage);
+}
+
+// Fire resistance must not blunt an ice spell: the lookup is per element.
+MODERN_TEST(MagicSkill_ResistanceIsPerElementNotGlobal)
+{
+	SkillDefinition definition = MakeMagicDamageSkill();
+	definition.element = SkillElement::Ice;
+
+	ActiveSkillInput mismatched = MakeInput(definition, 1);
+	mismatched.target.resistances.fire = 50;   // wrong axis
+	ActiveSkillInput matched = MakeInput(definition, 1);
+	matched.target.resistances.ice = 50;
+
+	CHECK_EQ(ActiveSkillResolver::Resolve(mismatched).combat.damageResult.damage,
+	         ActiveSkillResolver::Resolve(MakeInput(definition, 1)).combat.damageResult.damage);
+	CHECK_LT(ActiveSkillResolver::Resolve(matched).combat.damageResult.damage,
+	         ActiveSkillResolver::Resolve(mismatched).combat.damageResult.damage);
+}
+
+MODERN_TEST(MagicSkill_ArmWeaponUsesTheCastersWeaponElement)
+{
+	SkillDefinition definition = MakeMagicDamageSkill();
+	definition.element = SkillElement::ArmWeapon;
+
+	// The weapon says Fire and the target resists Fire: the inherited element is
+	// the one that is consulted, so this takes the resistance.
+	ActiveSkillInput armed = MakeInput(definition, 1);
+	armed.weaponElement = SkillElement::Fire;
+	armed.target.resistances.fire = 50;
+
+	// The weapon says Ice and the target resists nothing: no resistance applies,
+	// because the inherited element is Ice and the Fire axis is untouched.
+	ActiveSkillInput icy = MakeInput(definition, 1);
+	icy.weaponElement = SkillElement::Ice;
+
+	ActiveSkillResult armedResult = ActiveSkillResolver::Resolve(armed);
+	ActiveSkillResult icyResult    = ActiveSkillResolver::Resolve(icy);
+
+	CHECK(armedResult.Succeeded());
+	CHECK(icyResult.Succeeded());
+
+	// Fire-resisted is hurt; the Ice-armed one is not.
+	CHECK_LT(armedResult.combat.damageResult.damage,
+	         icyResult.combat.damageResult.damage);
+}
+
+// The converse: with Ice as the weapon element, Fire resistance must not help,
+// and Ice resistance must.
+MODERN_TEST(MagicSkill_ArmWeaponResistanceFollowsTheWeaponNotTheSkill)
+{
+	SkillDefinition definition = MakeMagicDamageSkill();
+	definition.element = SkillElement::ArmWeapon;
+
+	ActiveSkillInput fireOnIce = MakeInput(definition, 1);
+	fireOnIce.weaponElement = SkillElement::Ice;
+	fireOnIce.target.resistances.fire = 50;
+
+	ActiveSkillInput iceOnIce = MakeInput(definition, 1);
+	iceOnIce.weaponElement = SkillElement::Ice;
+	iceOnIce.target.resistances.ice = 50;
+
+	CHECK_LT(ActiveSkillResolver::Resolve(iceOnIce).combat.damageResult.damage,
+	         ActiveSkillResolver::Resolve(fireOnIce).combat.damageResult.damage);
+}
+
+// Legacy initialises the element to Spirit and only overrides it when a weapon
+// is actually found (:1504, :1507-1508), so a missing weapon yields Spirit.
+MODERN_TEST(MagicSkill_ArmWeaponWithoutAWeaponFallsBackToSpirit)
+{
+	SkillDefinition definition = MakeMagicDamageSkill();
+	definition.element = SkillElement::ArmWeapon;
+
+	ActiveSkillInput noWeapon = MakeInput(definition, 1);
+	noWeapon.weaponElement = SkillElement::Spirit;      // nothing to inherit
+	noWeapon.target.resistances.spirit = 50;
+
+	ActiveSkillInput baseline = MakeInput(definition, 1);
+	baseline.weaponElement = SkillElement::Spirit;
+
+	CHECK(ActiveSkillResolver::Resolve(noWeapon).Succeeded());
+	CHECK_LT(ActiveSkillResolver::Resolve(noWeapon).combat.damageResult.damage,
+	         ActiveSkillResolver::Resolve(baseline).combat.damageResult.damage);
+}
+
+// ── Resource costs ─────────────────────────────────────────────────────
+//
+// `wUSE_MP` is the caster paying to cast. `EMFOR_MP` is the target losing MP.
+// This milestone implements the cost through VERTICAL-011's authority and
+// refuses the effect, and the two must not be conflated.
+MODERN_TEST(MagicSkill_MpCostIsChargedButMpEffectIsRefused)
+{
+	SkillDefinition definition = MakeMagicDamageSkill();
+	for (uint8_t lvl = 1; lvl <= definition.maxLevel; ++lvl)
+	{
+		definition.levelData[lvl].useMp = static_cast<uint16_t>(7 * lvl);
+	}
+
+	ActiveSkillInput input = MakeInput(definition, 1);
+	input.currentMp = 500;
+
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(input);
+
+	CHECK(result.Succeeded());
+	// The caster pays MP to cast.
+	CHECK_EQ(result.mpCost, definition.levelData[1].useMp);
+	CHECK_GT(result.mpCost, 0u);
+}
+
+MODERN_TEST(MagicSkill_SpCostIsChargedButSpEffectIsRefused)
+{
+	SkillDefinition definition = MakeMagicDamageSkill();
+	for (uint8_t lvl = 1; lvl <= definition.maxLevel; ++lvl)
+	{
+		definition.levelData[lvl].useSp = static_cast<uint16_t>(6 * lvl);
+	}
+
+	ActiveSkillInput input = MakeInput(definition, 1);
+	input.currentSp = 500;
+
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(input);
+
+	CHECK(result.Succeeded());
+	CHECK_EQ(result.spCost, definition.levelData[1].useSp);
+	CHECK_GT(result.spCost, 0u);
+}
+
+// ── Low SP ─────────────────────────────────────────────────────────────
+MODERN_TEST(MagicSkill_LowSpUsesTheCastersPoolAndHalvesOnce)
+{
+	const SkillDefinition definition = MakeMagicDamageSkill();
+
+	ActiveSkillInput funded = MakeInput(definition, 1);
+	funded.currentSp = 1000;
+	ActiveSkillInput low = MakeInput(definition, 1);
+	low.currentSp = 0;
+
+	const ActiveSkillResult fundedResult = ActiveSkillResolver::Resolve(funded);
+	const ActiveSkillResult lowResult    = ActiveSkillResolver::Resolve(low);
+
+	CHECK(fundedResult.Succeeded());
+	CHECK(lowResult.Succeeded());
+	CHECK_EQ(lowResult.IsLowSp(), true);
+	CHECK_EQ(fundedResult.IsLowSp(), false);
+	CHECK_LT(lowResult.combat.damageResult.damage, fundedResult.combat.damageResult.damage);
+	// Charged nothing, because legacy does not bill a cast it knows is short.
+	CHECK_EQ(lowResult.spCost, static_cast<uint16_t>(0));
 }

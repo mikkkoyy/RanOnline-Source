@@ -3966,3 +3966,61 @@ ammo consumption. These are spatial and item systems, and the damage arithmetic
 does not depend on them.
 
 See docs/reference/client/VERTICAL-012_RANGED_PHYSICAL_INVESTIGATION.md.
+
+---
+
+# VERTICAL-013: Magic / Elemental Combat
+
+Magic is a distinct damage channel, not the physical formula with a flag. The
+two agree from the damage roll onward and disagree completely before it.
+
+## Why a separate calculator
+
+`EMAPPLY_MAGIC` is eight lines of `CALCDAMAGE_20060328`
+(`GLogixExPC.cpp:1473-1487`), and six of them change the channel:
+
+| | Physical | Magic |
+| --- | --- | --- |
+| Weapon item damage into range | yes | **no** |
+| Attack power | `m_wSUM_PA` / `m_wSUM_SA` | `m_wSUM_MA` |
+| Resistance applied to | the rolled value | the **range**, before the roll |
+| Resistance factor | `fRESIST_PHYSIC_G` | `fRESIST_G` |
+| Defense / body / item defense | applied | forced to `0` |
+| Damage reduce | `m_fPsyDamageReduce` | `m_fMagicDamageReduce` |
+| Reflection | psy values; suppressed when ranged | magic values, `DAMAGE_TYPE_MAGIC_REFLECTION` |
+
+Collapsing these into one function with flags would hide exactly the
+distinctions the milestone exists to establish, so `AttackType::Magic` selects
+`CalculateMagicDamage` while `Melee` and `Ranged` select
+`CalculatePhysicalDamage`.
+
+## Shared, not duplicated
+
+`ApplyAttackPower` lives in `CombatTypes.h` because legacy uses the identical
+`VAR_PARAM` for PA, SA and MA. `DamageReduceAmount`, `DamageReflectionAmount`,
+`CriticalBaseRate`, `ApplyStateDamage`, `RandomDamageRange` and
+`ApplyDamageRate` come from `GameCharacterCalculations`; the level, critical,
+crushing and minimum-damage constants come from `CombatConstants`.
+
+## m_wSUM_MA
+
+`GLogixExPC.cpp:319` — magic attack is `DEX`/`SPI`/`INT` weighted only. It has
+**no class or level term**, unlike PA and SA. `DerivedStats::magicAttack`
+already matched and was reused unchanged.
+
+## Element selection
+
+`GLogixExPC.cpp:1504-1513` resolves `EMELEMENT_ARM` through the caster's weapon
+blow element and defaults to Spirit when no weapon is present. Core cannot read
+legacy item types, so the weapon element is an input
+(`ActiveSkillInput::weaponElement`) and resolution lives in the resolver.
+`SkillElement` is a modern enum; Core does not include `EMELEMENT`.
+
+## Deliberately deferred
+
+Heals, `EMFOR_MP`/`EMFOR_SP`, zone and realm targeting, projectiles, a weather
+provider (the injected `weatherElementPower` stays, and `1.0f` is the verified
+no-weather result), the item grade term, and stone/mad/curse/zen resistance,
+which `Stats::Resistances` has no field for.
+
+See `docs/reference/client/VERTICAL-013_MAGIC_ELEMENTAL_INVESTIGATION.md`.

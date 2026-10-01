@@ -268,6 +268,28 @@ namespace Modern
 		Magic          = 2,   // EMAPPLY_MAGIC     (VERTICAL-013)
 	};
 
+	// VERTICAL-013: the elemental channel of a magic skill. Mirrors EMELEMENT
+	// (GLCharDefine.h). Core does not include the legacy enum; this is the
+	// modern translation of the same values.
+	enum class SkillElement : uint8_t
+	{
+		Spirit = 0,   // EMELEMENT_SPIRIT - also legacy's default
+		Fire   = 1,   // EMELEMENT_FIRE
+		Ice    = 2,   // EMELEMENT_ICE
+		Electric = 3, // EMELEMENT_ELECTRIC
+		Stone  = 4,   // EMELEMENT_STONE
+		Mad    = 5,   // EMELEMENT_MAD
+		Poison = 6,   // EMELEMENT_POISON
+		Curse  = 7,   // EMELEMENT_CURSE
+		Zen    = 8,   // EMELEMENT_ZEN
+
+		// EMELEMENT_ARM: "use whatever element the attacker's weapon inflicts".
+		// This is a selector, not an element - GLogixExPC.cpp:1505-1513 resolves
+		// it to a real element from the right-hand item's blow type before the
+		// resistance lookup, falling back to Spirit when there is no weapon.
+		ArmWeapon = 9, // EMELEMENT_ARM
+	};
+
 	// VERTICAL-011: which entity the skill resolves against. Mirrors
 	// SKILL::EMIMPACT_TAR (GLCharDefine.h:859-868).
 	enum class SkillTargetKind : uint8_t
@@ -315,6 +337,10 @@ namespace Modern
 		SkillApply      apply      = SkillApply::PhysicalMelee;
 		SkillTargetKind targetKind = SkillTargetKind::Spec;
 		SkillImpactSide impactSide = SkillImpactSide::Enemy;
+
+		// VERTICAL-013: pSkill->m_sAPPLY.emELEMENT. Only read when `apply` is
+		// Magic, because legacy only consults it inside the skill path.
+		SkillElement element = SkillElement::Spirit;
 
 		// The basic apply type and its per-level values.
 		PassiveApplyType applyType = PassiveApplyType::Hp;
@@ -410,4 +436,5 @@ namespace Modern
 	const char* ToString(SkillApply type) noexcept;
 	const char* ToString(SkillTargetKind type) noexcept;
 	const char* ToString(SkillImpactSide type) noexcept;
+	const char* ToString(SkillElement type) noexcept;
 }

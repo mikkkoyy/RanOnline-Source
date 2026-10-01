@@ -24,7 +24,14 @@ namespace Modern::Combat
 	{
 		// Low SP modifiers (SOURCE-VERIFIED from GLogicData.cpp)
 		float lowSPHitDrop = 0.25f;        // fLOWSP_HIT_DROP
-		float lowSPDamage = 0.50f;         // fLOWSP_DAMAGE (used in legacy as fLOW_SEED_DAMAGE)
+		float lowSPDamage = 0.50f;         // fLOWSP_DAMAGE. VERTICAL-013: this is the
+                                     // attacker's low-SP damage penalty and is
+                                     // NOT the same field as fLOW_SEED_DAMAGE
+                                     // below. Legacy applies fLOWSP_DAMAGE once,
+                                     // either in DamageProc (GLChar.cpp:2489,
+                                     // basic attacks) or SkillProc
+                                     // (GLChar.cpp:3131, skills), and never in
+                                     // CALCDAMAGE.
 
 		// Damage grade scaling (SOURCE-VERIFIED from GLogicData.cpp)
 		float damageGradeK = 10.0f;        // fDAMAGE_GRADE_K
@@ -34,6 +41,14 @@ namespace Modern::Combat
 
 		// Physical resistance scaling (SOURCE-VERIFIED from GLogicData.cpp)
 		float resistPhysicG = 0.5f;        // fRESIST_PHYSIC_G
+  float resistGeneralG = 0.5f;       // fRESIST_G - the general/elemental factor.
+                                     // VERTICAL-013: magic reads this, physical
+                                     // reads resistPhysicG. They are distinct
+                                     // fields in legacy even though
+                                     // GLogicData.cpp:260-261 happens to give
+                                     // them the same value today; keeping them
+                                     // separate means a data fix to one does not
+                                     // silently change the other.
 		float maxResistReduction = 0.8f;   // resistance reduction cap (hardcoded in CALCDAMAGE_20060328)
 
 		// PK damage modifier (SOURCE-VERIFIED from GLogicData.cpp)
