@@ -30,6 +30,7 @@
 #include "stats/Contributions.h"
 #include "stats/DerivedStats.h"
 #include "stats/StatCalculator.h"
+#include "engine/GameCharacterCalculations.h"
 #include "types/Result.h"
 
 #include <cmath>
@@ -136,6 +137,12 @@ namespace
 		d.defenseBody = IntTrunc(static_cast<float>(d.defensePoint) +
 		                           static_cast<float>(s.dex) * cc.defensePerDex);
 		d.defense = d.defenseBody + in.items.defense + in.passives.defense + static_cast<int>(in.codex.defense);
+	d.defense += in.facts.defense;
+
+	// VERTICAL-021: m_fDefenseRate multiplies the summed flat defence, and the
+	// clamp is esult < 0 so a zero defence stays zero.
+	d.defenseRate = 1.0f + in.passives.defenseRate + in.facts.defenseRate;
+	d.defense = Modern::Engine::ApplyDefenseRate(d.defense, d.defenseRate);
 
 		const int damageBase = IntTrunc(static_cast<float>(d.attackPoint) +
 		                                   static_cast<float>(in.passives.damage) +
@@ -855,4 +862,98 @@ MODERN_TEST(Stats_DerivedValueIsIndependentOfInput)
 
 	CHECK_EQ(result.GetValue().maxHp, capturedHp);
 	CHECK_EQ(result.GetValue().totalStats.str, capturedStr);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-021: the defence-rate axis
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace
+{
+	// A minimal, fully specified stat input so only the defence axis can move.
+	StatCalculationInput MakeDefenseInput(int32_t itemDefense, int32_t passiveDefense,
+	                                     int32_t factDefense,
+	                                     float passiveRate, float factRate)
+	{
+		StatCalculationInput in;
+		in.level          = 1;
+		in.characterClass = CharClassIndex::BrawlerMale;
+		in.classConstants.avoidPerDex    = 0.0f;
+		in.classConstants.hitPerDex      = 0.0f;
+		in.classConstants.defensePerDex  = 0.0f;
+		in.classConstants.beginDefensePoint = 0;
+		in.classConstants.levelUpDefensePoint = 0.0f;
+		in.classConstants.defensePointConversion = 1.0f;
+
+		in.items.defense      = itemDefense;
+		in.passives.defense   = passiveDefense;
+		in.facts.defense      = factDefense;
+		in.passives.defenseRate = passiveRate;
+		in.facts.defenseRate    = factRate;
+		return in;
+	}
+
+	int32_t DefenseOf(const StatCalculationInput& in)
+	{
+		const Result<DerivedStats> r = Calculate(in);
+		CHECK(r.IsOk());
+		return r.IsOk() ? r.GetValue().defense : -1;
+	}
+}
+
+// The no-buff baseline must NOT move. VERTICAL-020 deferred this axis on the
+// belief that legacy forced a minimum of 1; that reading was wrong - the clamp
+// is `result < 0`, so zero stays zero.
+MODERN_TEST(DefenseRate_NoBuffBaselineIsUnchanged)
+{
+	CHECK_EQ(DefenseOf(MakeDefenseInput(0, 0, 0, 0.0f, 0.0f)), 0);
+	CHECK_EQ(DefenseOf(MakeDefenseInput(0, 0, 0, 1.0f, 0.0f)), 0);
+}
+
+MODERN_TEST(DefenseRate_NormalDefenseIsUnchangedAtRateOne)
+{
+	CHECK_EQ(DefenseOf(MakeDefenseInput(50, 0, 0, 0.0f, 0.0f)), 50);
+}
+
+MODERN_TEST(DefenseRate_PositiveRateMultipliesTheSummedDefence)
+{
+	// 50 * 1.5 = 75
+	CHECK_EQ(DefenseOf(MakeDefenseInput(50, 0, 0, 0.0f, 0.5f)), 75);
+}
+
+MODERN_TEST(DefenseRate_ZeroDefenceStaysZeroEvenWithAPositiveRate)
+{
+	// The clamp is `result < 0`, not `<= 0`, so 0 * 1.5 is 0 and survives.
+	CHECK_EQ(DefenseOf(MakeDefenseInput(0, 0, 0, 0.0f, 0.5f)), 0);
+}
+
+// ORDERING: the rate multiplies the ALREADY-SUMMED defence including the FACT
+// flat bonus - not the base before the bonuses.
+MODERN_TEST(DefenseRate_RateAppliesAfterFlatBonusesIncludingTheFact)
+{
+	// (50 + 10) * 1.5 = 90. If the rate applied to the base alone and the FACT
+	// were added afterwards it would be 50*1.5 + 10 = 85.
+	CHECK_EQ(DefenseOf(MakeDefenseInput(50, 0, 10, 0.0f, 0.5f)), 90);
+}
+
+MODERN_TEST(DefenseRate_TruncationIsTowardZero)
+{
+// The rate field is the INCREMENT added to 1.0, not the multiplier itself,
+	// so this is a 1.333 multiplier: int(50 * 1.333) = int(66.65) = 66.
+	CHECK_EQ(DefenseOf(MakeDefenseInput(50, 0, 0, 0.0f, 0.333f)), 66);
+}
+
+MODERN_TEST(DefenseRate_NegativeResultBecomesOne)
+{
+// 10 * (1 - 1.5) = -5, which is < 0, so it becomes 1.
+	CHECK_EQ(DefenseOf(MakeDefenseInput(10, 0, 0, 0.0f, -1.5f)), 1);
+	// ...but a result of exactly 0 is NOT below zero and stays 0:
+	// 10 * (1 - 1.0) = 0.
+	CHECK_EQ(DefenseOf(MakeDefenseInput(10, 0, 0, 0.0f, -1.0f)), 0);
+}
+
+MODERN_TEST(DefenseRate_PermanentAndFactRatesSum)
+{
+	// (40 + 4) * (1 + 0.1 + 0.2) = int(44 * 1.3) = int(57.2) = 57
+	CHECK_EQ(DefenseOf(MakeDefenseInput(40, 0, 4, 0.1f, 0.2f)), 57);
 }

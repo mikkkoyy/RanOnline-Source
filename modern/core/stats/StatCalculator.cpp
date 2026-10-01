@@ -4,6 +4,7 @@
 // function below names the legacy line it reproduces.
 
 #include "stats/StatCalculator.h"
+#include "engine/GameCharacterCalculations.h"
 
 #include <cmath>
 #include <limits>
@@ -390,6 +391,28 @@ meleePower  = VariationClamped(pa, WrapAdd(input.items.meleePower,
 		// positive one. The unsigned sources above cannot go negative, so their
 		// wrap behaviour stays.
 		stats.defense += input.facts.defense;
+
+		// VERTICAL-021: `m_fDefenseRate` and its single application point.
+		//
+		// Legacy (GLogixExPC.cpp:2220, :2341, :2975-2976):
+		//   m_fDefenseRate = 1.0f + m_sSUM_PASSIVE.m_fDEFENSE_RATE;   (seed)
+		//   m_fDefenseRate += fADDON_VAR;                            (skill FACT)
+		//   m_nDEFENSE_SKILL = ApplyDefenseRate(m_nDEFENSE_SKILL, m_fDefenseRate);
+		//
+		// ORDERING: the rate multiplies the ALREADY-SUMMED flat defence,
+		// including the FACT flat contribution - it is not applied to the base
+		// before the bonuses, and the FACT rate is not a separate multiplier.
+		//
+		// Sources proven to contribute here: the permanent passive rate and the
+		// timed FACT rate. Equipment and codex contribute FLAT defence, not a
+		// rate (m_sSUMITEM has no fDEFENSE_RATE, and m_dwDefenseIncrease is
+		// folded into m_nDEFENSE at :376). The pet, land-effect, item-FACT and
+		// system-buff rates are DEFERRED with their subsystems.
+		stats.defenseRate = 1.0f + input.passives.defenseRate + input.facts.defenseRate;
+
+		// The clamp is `result < 0`, so a zero defence STAYS zero - which is
+		// what V006/V009 assume and why the no-buff baseline does not move.
+		stats.defense = Modern::Engine::ApplyDefenseRate(stats.defense, stats.defenseRate);
 
 		// GLogixExPC.cpp:380-389. RAN chooses melee or shoot power here from
 		// the equipped weapon's range; with no equipment the melee branch is

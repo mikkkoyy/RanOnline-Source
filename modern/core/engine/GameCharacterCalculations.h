@@ -137,6 +137,43 @@ namespace Modern::Engine
     }
 
     // ---------------------------------------------------------------------------
+    // ApplyDefenseRate
+    //
+    // Legacy: GameCharacterCalculations.cpp (the SUM_ADDITION port of
+    // GLogixExPC.cpp:2975-2976)
+    //
+    //   GameInt32 result = (GameInt32)( (float)defense * defenseRate );
+    //   if ( result < 0 )  result = 1;
+    //
+    // VERTICAL-021. Two details matter and neither is "obvious":
+    //
+    // 1. The clamp is `result < 0`, NOT `result <= 0`. A zero result therefore
+    //    STAYS ZERO. A level-1 character with no defence and no rate keeps a
+    //    defence of 0, which is what V006/V009 already assumed. An earlier note
+    //    in VERTICAL-020 read this as an unconditional minimum of 1 and deferred
+    //    the axis on that basis; that reading was wrong.
+    //
+    // 2. `defenseRate` is a multiplier around 1.0, not a percentage. The legacy
+    //    accumulator is seeded `m_fDefenseRate = 1.0f + ...` (GLogixExPC.cpp:2220),
+    //    so 1.0f means "unchanged". Sources are added raw and are NOT
+    //    normalised, because legacy does not normalise them either - the pet
+    //    path divides by 100 (:2585) while the passive and FACT paths do not.
+    // ---------------------------------------------------------------------------
+    inline GameInt32 ApplyDefenseRate(
+        GameInt32 defense,
+        float defenseRate)
+    {
+        GameInt32 result =
+            static_cast<GameInt32>(
+                static_cast<float>(defense) * defenseRate);
+
+        if ( result < 0 )
+            result = 1;
+
+        return result;
+    }
+
+    // ---------------------------------------------------------------------------
     // Damage reduce amount.
     //
     // Legacy: GLogixExPC.cpp:1728

@@ -214,6 +214,11 @@ namespace Modern::Stats
 		float mpRate = 0.0f;
 		float spRate = 0.0f;
 
+    // VERTICAL-021: m_sSUM_PASSIVE.m_fDEFENSE_RATE. A multiplier around 1.0,
+    // not a percentage - legacy seeds m_fDefenseRate = 1.0f + this
+    // (GLogixExPC.cpp:2220). Sourced from EMIMPACTA_DEFENSE_RATE at :1046.
+    float defenseRate = 0.0f;
+
 		// m_fINCR_HP, m_fINCR_MP, m_fINCR_SP: flat additions to the recovery
 		// rate, on top of the class constant and the item contribution.
 		float hpRecoveryRate = 0.0f;
@@ -249,6 +254,7 @@ namespace Modern::Stats
 		{
 			return hp == other.hp && mp == other.mp && sp == other.sp &&
 			       hpRate == other.hpRate && mpRate == other.mpRate && spRate == other.spRate &&
+			       defenseRate == other.defenseRate &&
 			       hpRecoveryRate == other.hpRecoveryRate && mpRecoveryRate == other.mpRecoveryRate &&
 			       spRecoveryRate == other.spRecoveryRate && meleePower == other.meleePower &&
 			       shootPower == other.shootPower && magicAttack == other.magicAttack &&
@@ -339,17 +345,24 @@ int32_t hit = 0;
 		int32_t defense = 0;
 		int32_t resist = 0;
 
+		// VERTICAL-021: the EMIMPACTA_DEFENSE_RATE accumulator,
+		// m_fDefenseRate += fADDON_VAR (GLogixExPC.cpp:2341). A float, SUM,
+		// added RAW - legacy does not normalise it to a percentage.
+		float defenseRate = 0.0f;
+
 		constexpr bool operator==(const FactContribution& other) const noexcept
 		{
 			return meleePower == other.meleePower && shootPower == other.shootPower &&
 			       magicAttack == other.magicAttack && hit == other.hit && avoid == other.avoid &&
-			       damage == other.damage && defense == other.defense && resist == other.resist;
+			       damage == other.damage && defense == other.defense && resist == other.resist &&
+			       defenseRate == other.defenseRate;
 		}
 
 		constexpr bool IsEmpty() const noexcept
 		{
 			return meleePower == 0 && shootPower == 0 && magicAttack == 0 &&
-			       hit == 0 && avoid == 0 && damage == 0 && defense == 0 && resist == 0;
+			       hit == 0 && avoid == 0 && damage == 0 && defense == 0 && resist == 0 &&
+			       defenseRate == 0.0f;
 		}
 	};
 

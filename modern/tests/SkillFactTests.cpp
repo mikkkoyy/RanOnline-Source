@@ -1064,3 +1064,47 @@ MODERN_TEST(SkillFactV020_DefenseAndResistExpireIndependently)
 	CHECK_EQ(after.defense, 0);
 	CHECK_EQ(after.resist, 3);
 }
+// ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-021: defence-rate FACT stacking and expiry
+// ═══════════════════════════════════════════════════════════════════════
+
+MODERN_TEST(SkillFactV021_DefenseRateStacksAcrossSources)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::DefenseRate, 0.10f));
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 2), 10.0f,
+		SkillFactImpactType::DefenseRate, 0.20f));
+
+	// SUM of floats, added RAW. Legacy does not normalise this to a percentage:
+	// GLogixExPC.cpp:2341 is a plain `m_fDefenseRate += fADDON_VAR`.
+	const float rate = AdvanceSkillFacts(container, 1.0f).modifiers.defenseRate;
+	CHECK_EQ(rate, 0.10f + 0.20f);
+}
+
+MODERN_TEST(SkillFactV021_DefenseRateIsRemovedOnExpiry)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 5.0f,
+		SkillFactImpactType::DefenseRate, 0.25f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.defenseRate, 0.25f);
+
+	// Expiry returns the accumulator to exactly zero, never to a residual.
+	// The call that crosses the expiry boundary still reports the fact, so the
+	// value is read on the following advance - the same shape as the V020 tests.
+	AdvanceSkillFacts(container, 6.0f);
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.defenseRate, 0.0f);
+}
+
+// A negative rate is legal and must be carried faithfully so the clamp in
+// ApplyDefenseRate sees the true (negative) result rather than a sanitised one.
+MODERN_TEST(SkillFactV021_NegativeDefenseRateIsCarriedFaithfully)
+{
+	SkillFactContainer container;
+	(void) container.Apply(MakeHitAvoidDamageFact(FactSkill(1, 1), 10.0f,
+		SkillFactImpactType::DefenseRate, -1.5f));
+
+	CHECK_EQ(AdvanceSkillFacts(container, 1.0f).modifiers.defenseRate, -1.5f);
+}

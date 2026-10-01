@@ -201,6 +201,11 @@ Status ServerCharacter::Recalculate()
 		input.facts.defense = m_factModifiers.defense;
 		input.facts.resist  = m_factModifiers.resist;
 
+		// VERTICAL-021: the defence RATE. A float, added RAW, exactly as legacy
+		// does - it is a multiplier around 1.0, not a percentage
+		// (GLogixExPC.cpp:2220, :2341).
+		input.facts.defenseRate = m_factModifiers.defenseRate;
+
 		const Result<Stats::DerivedStats> result = Stats::Calculate(input);
 		if (result.IsError())
 		{
@@ -1206,7 +1211,8 @@ namespace Modern::Server
 		    m_factStatsPowersApplied.hit         != m_factModifiers.hit ||
 		    m_factStatsPowersApplied.avoid       != m_factModifiers.avoid ||
 		    m_factStatsPowersApplied.defense      != m_factModifiers.defense ||
-		    m_factStatsPowersApplied.resist       != m_factModifiers.resist)
+		    m_factStatsPowersApplied.resist       != m_factModifiers.resist ||
+		    m_factStatsPowersApplied.defenseRate  != m_factModifiers.defenseRate)
 		{
 			m_factStatsPowersApplied.meleePower  = m_factModifiers.meleePower;
 			m_factStatsPowersApplied.shootPower  = m_factModifiers.shootPower;
@@ -1215,6 +1221,7 @@ namespace Modern::Server
 			m_factStatsPowersApplied.avoid       = m_factModifiers.avoid;
 			m_factStatsPowersApplied.defense     = m_factModifiers.defense;
 			m_factStatsPowersApplied.resist      = m_factModifiers.resist;
+			m_factStatsPowersApplied.defenseRate = m_factModifiers.defenseRate;
 			(void) Recalculate();
 		}
 	}

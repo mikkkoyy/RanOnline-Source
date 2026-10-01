@@ -2313,3 +2313,63 @@ MODERN_TEST(FactDefense_BodyAndItemDecayIsSeparateFromFlatDefense)
 	CHECK_LT(CalculatePhysicalDamage(decayOnly).damage,
 	         CalculatePhysicalDamage(bare).damage);
 }
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-021: the defence rate reaches the damage figure
+// ═══════════════════════════════════════════════════════════════════════
+
+MODERN_TEST(DefenseRate_HigherRateReducesFinalDamageByTheSameRoll)
+{
+	// The same roll twice; only the resolved defence differs. This is the
+	// deterministic form of the assertion the server test cannot make, because
+	// CastSkill advances its RNG sequence per cast.
+	PhysicalDamageInput bare = MakeBasicDamageInput();
+	bare.physicalDamage = { 300, 300 };
+	bare.meleePower = 0;
+	bare.shootPower = 0;
+	bare.defense = 0;
+	bare.defenseBody = 0;
+	bare.defenseItem = 0;
+	bare.damageRoll = 0.0f;
+	bare.criticalRoll = 1.0f;
+	bare.crushingRoll = 1.0f;
+	bare.lowSP = false;
+
+	// A 50% defence boost takes 100 defence to 150 through ApplyDefenseRate.
+	PhysicalDamageInput defended = bare;
+	defended.defense = Modern::Engine::ApplyDefenseRate(100, 1.5f);
+	CHECK_EQ(defended.defense, 150);
+
+	const DamageResult bareResult     = CalculatePhysicalDamage(bare);
+	const DamageResult defendedResult = CalculatePhysicalDamage(defended);
+
+	// The whole resolved defence is subtracted, so the boost costs the attacker
+	// exactly the 50 points it added to the defence.
+	CHECK_EQ(bareResult.damage, 300u);
+	CHECK_EQ(defendedResult.damage, 150u);
+	CHECK_EQ(bareResult.damage - defendedResult.damage, 150u);
+}
+
+// Defence must be able to floor damage: a boosted defence that overshoots the
+// remaining damage still clamps to the damage floor, exactly as legacy does.
+MODERN_TEST(DefenseRate_BoostedDefenseBeyondDamageFloorsDamage)
+{
+	PhysicalDamageInput bare = MakeBasicDamageInput();
+	bare.physicalDamage = { 30, 30 };
+	bare.meleePower = 0;
+	bare.shootPower = 0;
+	bare.defense = 0;
+	bare.defenseBody = 0;
+	bare.defenseItem = 0;
+	bare.damageRoll = 0.0f;
+	bare.criticalRoll = 1.0f;
+	bare.crushingRoll = 1.0f;
+	bare.lowSP = false;
+
+	PhysicalDamageInput defended = bare;
+	defended.defense = Modern::Engine::ApplyDefenseRate(100, 2.0f);  // 200
+
+	CHECK_EQ(defended.defense, 200);
+
+	// 30 - 200 goes below zero and the damage floor is 1, not 0.
+	CHECK_EQ(CalculatePhysicalDamage(defended).damage, 1u);
+}

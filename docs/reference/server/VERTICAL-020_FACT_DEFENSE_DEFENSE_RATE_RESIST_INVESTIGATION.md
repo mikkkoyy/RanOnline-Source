@@ -114,6 +114,16 @@ passive counterpart, where the `min 1` semantic can be introduced deliberately
 rather than as a side effect. **Not** "consumer not proven" — the consumer is
 proven and recorded above; the blocker is that modern lacks the surrounding rule.
 
+> **SUPERSEDED BY VERTICAL-021 - reason 2 above was wrong.**
+>
+> Point 2 asserted an "unconditional `min 1`". It is not unconditional. The guard
+> is `if ( result < 0 )`, so a **zero result stays zero** — the exact case point 2
+> relied on does not occur. Reason 1 (modern has no rate axis) was correct and did
+> on its own justify the deferral.
+>
+> VERTICAL-021 implemented the axis and pinned the boundary with
+> `DefenseRate_NoBuffBaselineIsUnchanged`.
+
 ## 6. EMIMPACTA_RESIST — IMPLEMENTED
 
 ### Accumulation and the crucial detail
@@ -170,7 +180,7 @@ My first attempt added `ClampNonNegative()` immediately after the FACT fold,
 mirroring a clamp near the end of the existing fold. That was **wrong** and the
 stat oracle caught it: legacy floors each element once, at
 `m_sSUMRESIST_SKILL.LIMIT()` (`:2979`), *after* every contribution including the
-codex one. Clamping mid-fold raised a negative intermediate that a later positive
+| `EMIMPACTA_DEFENSE_RATE` | `m_fDefenseRate` | SUM, float | `ApplyDefenseRate` → `m_nDEFENSE_SKILL` | none | **SUPERSEDED** - implemented in VERTICAL-021 |
 codex term was meant to offset, producing `3` where the oracle produced `0` on the
 ice and spirit axes. The mid-fold clamp was removed; a comment now records why it
 must not return.

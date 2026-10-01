@@ -199,9 +199,14 @@ namespace Modern
 					// Not in PassiveContribution — legacy has m_fDAMAGE_RATE but
 					// it's not in the stat pipeline.
 					break;
-				case PassiveImpactType::DefenseRate:
-					// Not in PassiveContribution.
-					break;
+case PassiveImpactType::DefenseRate:
+				// VERTICAL-021: GLogixExPC.cpp:1046
+				//   m_sSUM_PASSIVE.m_fDEFENSE_RATE += fADDON;
+				// Added raw. Legacy seeds the accumulator at 1.0f, so this is a
+				// multiplier around 1.0 rather than a percentage, and legacy does
+				// not normalise it.
+				c.defenseRate += value;
+				break;
 				case PassiveImpactType::Pa:
 					c.meleePower += static_cast<int32_t>(value);
 					break;

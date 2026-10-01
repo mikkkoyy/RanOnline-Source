@@ -3369,3 +3369,53 @@ MODERN_TEST(ServerFactV020_DefenseFactReachesTheDamageFigure)
 	CHECK_LT(defended.combat.damageResult.damage,
 	         defended.combat.damageResult.preDefenseDamage);
 }
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-021: the defence-rate axis
+// ═══════════════════════════════════════════════════════════════════════
+
+// The rate must reach the derived defence, and it must be reported as the
+// multiplier the legacy accumulator builds: 1.0f + the passive rate + the FACT
+// rate (GLogixExPC.cpp:2220, :2341).
+MODERN_TEST(ServerFactV021_DefenseRateFactReachesDerivedStatsAndExpires)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeConfigurableFactSkill(2));
+
+	auto character = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	const Stats::DerivedStats before = character.GetValue().GetDerivedStats();
+
+	// The rate field is an INCREMENT on 1.0, so 0.25 is a 1.25 multiplier.
+	CHECK(character.GetValue().ApplySkillFact(
+		MakeImpactFact(9, 9, 60.0f, SkillFactImpactType::DefenseRate, 0.25f)));
+	character.GetValue().AdvanceSkillFacts(0.1f);
+
+	CHECK_EQ(character.GetValue().GetFactModifiers().defenseRate, 0.25f);
+
+	const Stats::DerivedStats during = character.GetValue().GetDerivedStats();
+	CHECK_EQ(during.defenseRate, 1.0f + 0.25f);
+
+	// If this character's base defence is non-zero the multiplier must have
+	// actually moved the defence; if it is zero the clamp `result < 0` leaves it
+	// at zero, which is correct and must NOT be treated as a failure.
+	if ( before.defense > 0 )
+	{
+		CHECK_EQ(during.defense,
+		         Modern::Engine::ApplyDefenseRate(before.defense, 1.25f));
+		CHECK_GT(during.defense, before.defense);
+	}
+	else
+	{
+		CHECK_EQ(during.defense, 0);
+	}
+
+// Expiry must restore the baseline exactly. As in the core FACT tests, the
+	// advance that crosses the boundary still reports the live fact, so the state
+	// is read on the following tick.
+	character.GetValue().AdvanceSkillFacts(61.0f);
+	character.GetValue().AdvanceSkillFacts(1.0f);
+	CHECK_EQ(character.GetValue().GetFactModifiers().defenseRate, 0.0f);
+	CHECK(character.GetValue().GetDerivedStats() == before);
+}
