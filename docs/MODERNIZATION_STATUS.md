@@ -44,7 +44,8 @@ formula provenance.
 | VERTICAL-012 Ranged physical combat | [x] | `7b86e27` |
 | VERTICAL-013 Magic / elemental combat | [x] | `27d0ade` |
 | VERTICAL-014 Status effect foundation | [x] | `24b5f65` |
-| VERTICAL-015 Skill FACT / buff foundation | [x] | this commit |
+| VERTICAL-015 Skill FACT / buff foundation | [x] | `d05cc2d` |
+| VERTICAL-016 FACT consumer investigation | [x] | this commit |
 
 ---
 
@@ -250,8 +251,48 @@ them here would duplicate an existing authoritative calculation. Deferred with
 reasons in §9 and §12, along with `TAR_BUFF`, world targeting, networking and
 `prohibitSkill` plumbing into `CastSkill`.
 
-**Next:** impact/addon modifiers and world targeting. The number is deliberately
-left open rather than invented.
+**VERTICAL-016 — FACT consumer / impact integration investigation.** Complete,
+documentation only. See
+`docs/reference/server/VERTICAL-016_FACT_CONSUMER_INVESTIGATION.md`.
+
+No production code changed. The milestone exists to establish where RAN actually
+*consumes* FACT data after creation, so the next vertical can attach to systems
+that already exist rather than inventing new ones.
+
+Every `EMIMPACTA_*` consumer was traced with its exact operation. Three findings
+matter most:
+
+- **PA/SA/MA must not be folded into `PassiveContribution`.** Legacy keeps
+  `nSUM_MA` separate from `m_sSUM_PASSIVE.m_nMA` and sums them only at the point
+  of use (`:2970-2972`), and modern already mirrors that with three distinct
+  contribution structs. A timed buff needs a **fourth** input; putting it in the
+  passive bucket would make it survive expiry.
+- **Damage reduction and reflection already have owners.** VERTICAL-013 added the
+  four psy/magic pairs to `CombatInput`, and the FACT aggregator already produces
+  the values. No new combat formula is needed.
+- **A pre-existing gap surfaced:** `PhysicalDamageInput` has no `damageRate`
+  field, although legacy applies `ApplyDamageRate` to the range for every channel
+  (`:1600-1603`). Only the magic calculator has it. Recorded, not fixed, since
+  changing it would alter V009 physical expectations.
+
+Two hand-offs that VERTICAL-015 proved in unit tests were found **not to be wired
+into the real cast path**: `CastSkill` populates neither `skillProhibited` nor
+`targetDisorderMask`, so today a `PROHIBIT_SKILL` or `NONBLOW` FACT has no effect
+on an actual cast. Both are pure wiring gaps and are the first two items of the
+recommended next vertical.
+
+One open question is recorded rather than guessed: the reduction and reflection
+specs max-accumulate into the member struct `m_sDamageSpec`, and no reset of
+those fields is visible in the per-tick reset block. The next vertical must prove
+that reset before wiring those four fields.
+
+`MOVEVELO` is aggregated on the server but consumed **only by the client**;
+`ATTACKVELO` has a single server use (an attack-interval timer) whose formula
+could not be read. `PROHIBIT_POTION` is read only by inventory and storage
+paths, and `TAR_BUFF` needs an entity registry. All DEFERRED.
+
+**Next:** FACT combat/skill consumer wiring. The number is deliberately left open
+rather than invented.
 
 ---
 
