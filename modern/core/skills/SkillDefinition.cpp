@@ -226,4 +226,50 @@ namespace Modern
 		}
 		return "Unknown";
 	}
+
+	// VERTICAL-011: active-skill enum names.
+	const char* ToString(SkillRole type) noexcept
+	{
+		switch (type)
+		{
+			case SkillRole::Normal:  return "Normal";
+			case SkillRole::Passive: return "Passive";
+		}
+		return "Unknown";
+	}
+
+	const char* ToString(SkillApply type) noexcept
+	{
+		switch (type)
+		{
+			case SkillApply::PhysicalMelee:  return "PhysicalMelee";
+			case SkillApply::PhysicalRanged: return "PhysicalRanged";
+			case SkillApply::Magic:          return "Magic";
+		}
+		return "Unknown";
+	}
+
+	const char* ToString(SkillTargetKind type) noexcept
+	{
+		switch (type)
+		{
+			case SkillTargetKind::Self:       return "Self";
+			case SkillTargetKind::Spec:       return "Spec";
+			case SkillTargetKind::SelfToSpec: return "SelfToSpec";
+			case SkillTargetKind::Zone:       return "Zone";
+			case SkillTargetKind::Specific:   return "Specific";
+		}
+		return "Unknown";
+	}
+
+	const char* ToString(SkillImpactSide type) noexcept
+	{
+		switch (type)
+		{
+			case SkillImpactSide::Our:     return "Our";
+			case SkillImpactSide::Enemy:   return "Enemy";
+			case SkillImpactSide::Anybody: return "Anybody";
+		}
+		return "Unknown";
+	}
 }

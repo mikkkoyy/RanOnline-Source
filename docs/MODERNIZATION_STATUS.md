@@ -17,10 +17,10 @@ formula provenance.
 | ---- | ----- |
 | Legacy import | complete |
 | Core foundation | complete |
-| Vertical gameplay slices 001-010 | complete |
+| Vertical gameplay slices 001-011 | complete |
 | Build verification (BUILD-001) | complete |
-| Ranged / magic combat | not started |
-| Active skill combat | not started (VERTICAL-011) |
+| Ranged / magic combat | not started (VERTICAL-012 / 013) |
+| Buffs, status effects, world targeting | not started |
 
 ---
 
@@ -40,8 +40,9 @@ formula provenance.
 | VERTICAL-008 Combat events + reflection | [x] | `7ffa8d6` |
 | VERTICAL-009 Build verification + physical combat completion | [x] | `ad99138` |
 | BUILD-001 Tracked build-artifact cleanup | [x] | `1dd36f9` |
-| VERTICAL-010 Required-SP / item integration | [x] | this commit |
-| VERTICAL-011 Active skill combat | [ ] | — |
+| VERTICAL-010 Required-SP / item integration | [x] | `021be63` |
+| VERTICAL-011 Active skill combat | [x] | this commit |
+| VERTICAL-012 Ranged physical combat | [ ] | — |
 
 ---
 
@@ -143,21 +144,98 @@ multi-config generator; without it every test reports `***Not Run` with
 
 ## Next task
 
-**VERTICAL-011 — Active skill combat.** Not started.
+**VERTICAL-012 — Ranged physical combat.** Not started.
 
-VERTICAL-010 closed the equipment half of the required-SP calculation and left
-the item model ready for the skill half: a future skill milestone computes
-`skill required SP = ItemContribution::requiredSP + SkillDefinition::useSP`
-(legacy `GLogixExPC.cpp:4254-4258`) with no further change to the item model.
+VERTICAL-011 left `SkillApply::PhysicalRanged` refusing with
+`UnsupportedApply` rather than faking a melee calculation under a ranged name.
+That is the seam VERTICAL-012 fills: `EMAPPLY_PHY_LONG` selects `m_wSUM_SA`
+instead of `m_wSUM_PA` (`GLogixExPC.cpp:1462`), and VERTICAL-009 already
+suppresses reflection for it (`:1468-1469`).
 
 Still deferred, with reasons in
-`docs/reference/client/VERTICAL-010_REQUIRED_SP_INVESTIGATION.md` §10:
-`m_wACCEPTP` (needs per-item `sReqStats`/`wReqLevelDW`; excluded from the legacy
-low-SP gate as well, so it belongs with SP deduction), the `EMR_OPT_DIS_SP`
-refine option, SP consumption, `wStrikeNum`, and skill `wUSE_SP`.
+`docs/reference/client/VERTICAL-011_ACTIVE_SKILL_INVESTIGATION.md` §13: magic
+and elemental damage (VERTICAL-013), zone/realm targeting and range, buffs and
+status effects, heals, `EMFOR_MP`/`EMFOR_SP` skill drains, strike counts,
+inventory item costs, combat points and party costs, and the item damage grade
+that scales a skill's contribution.
 
-VERTICAL-011 must begin with a fresh repository check and fresh legacy
+VERTICAL-012 must begin with a fresh repository check and fresh legacy
 investigation.
+
+---
+
+## VERTICAL-011 — Active skill combat
+
+**State: complete. Verified, not assumed.**
+
+Full derivation:
+`docs/reference/client/VERTICAL-011_ACTIVE_SKILL_INVESTIGATION.md`.
+
+### Active and passive are separate systems
+
+VERTICAL-003's `PassiveContributionAggregator` reads a definition when a skill
+is *learned*. Nothing there is cast, costs anything, hits anything, or has a
+cooldown, and pushing active execution through it would conflate the two. RAN
+keeps them apart as well - `SUM_PASSIVE` (`GLogixExPC.cpp:918-1002`) versus
+`CHECHSKILL` -> `ACCOUNTSKILL` -> `SkillProc`, with no shared function.
+
+So VERTICAL-011 adds a third thing:
+
+| Piece | Where |
+| --- | --- |
+| Active-skill data on the definition | `ItemStatBlock`-parallel: `SkillDefinition` / `SkillLevelData` |
+| `ActiveSkillResolver` - the rules | `modern/core/skills/ActiveSkill.h/.cpp` |
+| `ServerCharacter::CastSkill` - authority | `modern/server/character/ServerCharacter.cpp` |
+
+The resolver is pure: it takes a definition, a resolved level and a description
+of the situation, and returns a verdict plus the costs. It fetches nothing, so
+a test reaches every branch - including refusals for systems the server does not
+have - without building a world, and it has no clock.
+
+### The server owns the level
+
+`CastSkill(id, target, requestedLevel)` accepts a level and ignores it. The
+level comes from the character's own `SkillState`, as in RAN
+(`GLogixExPC.cpp:4075`). A caller that could set the cast level could cast a
+skill above what it has learned.
+
+### Low SP degrades, it does not refuse
+
+RAN's server-side first check rejects `EMSKILL_NOTSP`
+(`GLCharSkillMsg.cpp:358`, the tolerance commented out) while the running-cast
+re-check tolerates it (`GLChar.cpp:4798`). The tolerated path is the one that
+produces the cast, so that is the one followed: a short SP pool halves the
+damage and charges nothing (`GLChar.cpp:3005`), exactly as a basic attack does.
+
+The pool is the caster's, per VERTICAL-010's locked correction.
+
+### Verification
+
+| Check | Result |
+| ----- | ------ |
+| Debug build | PASS - 0 errors, 0 warnings |
+| Release build | PASS - 0 errors, 0 warnings |
+| CTest Debug | PASS - 14/14 |
+| CTest Release | PASS - 14/14 |
+| Core tests | 293/293 (was 259), Debug and Release |
+| Server tests | 70/70 (was 58), Debug and Release |
+| Client tests | 12/12 suites, Debug and Release |
+
+### Departures from legacy, all deliberate
+
+Five are listed in the investigation. The two that matter most: the SP charge
+omits `m_wACCEPTP` (so gate and charge agree, where legacy's do not), and the
+skill damage omits the item grade term (modern items have no grade field).
+
+### Noted, not fixed
+
+`Resources::ResourceState` was used by nothing before this milestone -
+`ServerCharacter` holds raw `m_currentHp/Mp/Mp` and `Attack` subtracts from them
+directly. `CastSkill` routes its own costs through `ResourceState` for the
+saturating `GLDWDATA::DECREASE` semantics, but migrating the whole character
+onto it is a separate change that would touch VERTICAL-005 through 009 and
+their tests.
+
 
 ---
 
@@ -222,6 +300,11 @@ no field for. It is also absent from the legacy low-SP gate
 (`GLogixExPC.cpp:3492-3494` rebuilds `wDisSP` from `wBASIC_DIS_SP` and the two
 hands without reading it), so excluding it is faithful rather than a shortcut.
 It belongs to whichever milestone implements SP deduction.
+
+VERTICAL-011 implemented the skill SP charge and is that milestone for the
+skill path. The term is still absent from it, for the same reason; the charge
+and the gate are equal there, where legacy's are not. See
+`docs/reference/client/VERTICAL-011_ACTIVE_SKILL_INVESTIGATION.md` §13.
 
 ### Noted, not fixed
 

@@ -39,6 +39,7 @@
 #include "progression/CodexContributionAggregator.h"
 #include "progression/CodexDefinitionProvider.h"
 #include "progression/CodexState.h"
+#include "skills/ActiveSkill.h"
 #include "skills/PassiveContributionAggregator.h"
 #include "skills/SkillDefinitionProvider.h"
 #include "skills/SkillState.h"
@@ -48,6 +49,7 @@
 #include "types/Result.h"
 
 #include <cstdint>
+#include <map>
 #include <string>
 
 namespace Modern::Server
@@ -297,6 +299,49 @@ size_t GetContributingCodexCount() const noexcept { return m_contributingCodex; 
 		// Transactional: a refused attack leaves both characters unchanged.
 		Status Attack(ServerCharacter& target);
 
+		// ---- Active skills (VERTICAL-011) ----
+		//
+		// Casts a learned active skill against another server character.
+		//
+		// The authoritative flow, in this order, is:
+		//
+		//   1. resolve the definition from this character's own provider
+		//   2. resolve the level from this character's own learned set
+		//   3. hand both, plus both characters' committed state, to the core
+		//      resolver, which returns a verdict and the costs
+		//   4. apply the costs to this character and the damage to the target
+		//   5. start the cooldown
+		//
+		// The client's idea of the level is never used. A `requestedLevel` of
+		// 0 - or anything at all - is ignored, because a caller that could set
+		// the cast level could cast a skill above what it has learned.
+		//
+		// Transactional: a refused cast leaves both characters unchanged and
+		// starts no cooldown. See the result for why a refusal is not a
+		// generic failure.
+		Skills::ActiveSkillResult CastSkill(const SkillId& id, ServerCharacter& target,
+		                                    uint16_t requestedLevel = 0);
+
+		// Whether this skill is on cooldown, and how much of its delay is left.
+		// The map and its tick are the server's; core only ever sees the
+		// question, so core has no clock.
+		bool IsSkillOnCooldown(const SkillId& id) const noexcept;
+		float GetSkillCooldownRemaining(const SkillId& id) const noexcept;
+
+		// Advances every cooldown by elapsed seconds and retires the finished
+		// ones. Legacy `GLCHARLOGIC::UPDATESKILLDELAY`
+		// (GLogixExPC.cpp:3864-3879): decrement, erase at or below zero.
+		//
+		// Time is passed in rather than read, so a test can drive a cooldown to
+		// expiry deterministically and core stays free of a clock.
+		void AdvanceSkillCooldowns(float elapsedSeconds) noexcept;
+
+		// The cooldown map, for inspection and tests. Keyed by SkillId.
+		const std::map<SkillId, float>& GetSkillCooldowns() const noexcept
+		{
+			return m_skillCooldowns;
+		}
+
 	private:
 		ServerCharacter() = default;
 
@@ -314,6 +359,13 @@ size_t GetContributingCodexCount() const noexcept { return m_contributingCodex; 
 		SkillState                      m_skills;
 		const SkillDefinitionProvider*  m_skillDefinitions = nullptr;
 		Stats::PassiveContribution      m_passives;
+
+		// VERTICAL-011: per-skill cooldown, in seconds remaining.
+		//
+		// Legacy `DELAY_MAP m_SKILLDELAY` (GLogicEx.h:334), keyed by
+		// `skill_id.dwID`; here the key is the SkillId itself. Written by
+		// CastSkill, read by CastSkill, retired by AdvanceSkillCooldowns.
+		std::map<SkillId, float>       m_skillCooldowns;
 
 		// VERTICAL-004: codex state and its contribution.
 		CodexState                     m_codex;

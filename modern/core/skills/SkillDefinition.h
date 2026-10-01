@@ -223,7 +223,70 @@ namespace Modern
 	struct SkillLevelData
 	{
 		// The basic value for this level. Meaning depends on PassiveApplyType.
+		//
+		// VERTICAL-011: for an *active* skill the meaning of the same field
+		// differs and the sign carries it. Legacy GLChar.cpp:3077-3090:
+		//
+		//   case SKILL::EMFOR_HP:
+		//     if ( sSKILL_DATA.fBASIC_VAR < 0.0f )   -> deal damage
+		//     else                                    -> heal
+		//
+		// A passive ignores the sign and reads the magnitude as a stat delta
+		// (GLogixExPC.cpp:921-1000). One field, two readings, selected by role.
 		float basicVar = 0.0f;
+
+		// VERTICAL-011: per-level resource costs. Mirrors SKILL::CDATA_LVL
+		// (GLSkillApply.h:259-261) `wUSE_SP` / `wUSE_HP` / `wUSE_MP`.
+		//
+		// Only the cost is carried. The arrow, talisman and bullet counts
+		// (wUSE_ARROWNUM, wUSE_CHARMNUM, wUSE_BULLETNUM) need an inventory and
+		// are not part of this slice.
+		uint16_t useSp = 0;
+		uint16_t useHp = 0;
+		uint16_t useMp = 0;
+
+		// VERTICAL-011: base cooldown. Mirrors SKILL::CDATA_LVL.fDELAYTIME
+		// (GLSkillApply.h:247). The real delay is derived from it together with
+		// `grade` and the caster's level; see ActiveSkillResolver.
+		float delayTime = 0.0f;
+	};
+
+	// VERTICAL-011: what a skill does. Mirrors SKILL::EMROLE
+	// (GLSkillBasic.h:130-135).
+	enum class SkillRole : uint8_t
+	{
+		Normal  = 0,   // EMROLE_NORMAL - castable
+		Passive = 1,   // EMROLE_PASSIVE - learned, never cast
+	};
+
+	// VERTICAL-011: the damage channel. Mirrors SKILL::EMAPPLY
+	// (GLSkillBasic.h:137-144). Only PhysicalMelee is executed by this slice.
+	enum class SkillApply : uint8_t
+	{
+		PhysicalMelee  = 0,   // EMAPPLY_PHY_SHORT
+		PhysicalRanged = 1,   // EMAPPLY_PHY_LONG  (VERTICAL-012)
+		Magic          = 2,   // EMAPPLY_MAGIC     (VERTICAL-013)
+	};
+
+	// VERTICAL-011: which entity the skill resolves against. Mirrors
+	// SKILL::EMIMPACT_TAR (GLCharDefine.h:859-868).
+	enum class SkillTargetKind : uint8_t
+	{
+		Self      = 0,   // TAR_SELF
+		Spec      = 1,   // TAR_SPEC
+		SelfToSpec = 2,  // TAR_SELF_TOSPEC - pierce line, needs a world
+		Zone      = 3,   // TAR_ZONE       - needs a world
+		Specific  = 4,   // TAR_SPECIFIC
+	};
+
+	// VERTICAL-011: which side the skill lands on. Mirrors SKILL::EMIMPACT_SIDE
+	// (GLCharDefine.h:880-887). Note there is no SIDE_SELF in legacy; the
+	// friendly case is SIDE_OUR.
+	enum class SkillImpactSide : uint8_t
+	{
+		Our      = 0,   // SIDE_OUR
+		Enemy    = 1,   // SIDE_ENEMY
+		Anybody  = 2,   // SIDE_ANYBODY
 	};
 
 	// A passive skill definition: the immutable data that determines what
@@ -239,6 +302,19 @@ namespace Modern
 		// Matches SSKILLBASIC.emUSE_LITEM / emUSE_RITEM.
 		SkillWeaponType leftWeapon  = SkillWeaponType::NoCare;
 		SkillWeaponType rightWeapon = SkillWeaponType::NoCare;
+
+		// VERTICAL-011: whether the skill is castable or learned-only.
+		//
+		// Legacy CHECHSKILL refuses anything that is not EMROLE_NORMAL with
+		// EMSKILL_UNKNOWN (GLogixExPC.cpp:4092-4093), so this gates execution
+		// rather than being documentation.
+		SkillRole role = SkillRole::Normal;
+
+		// VERTICAL-011: the damage channel, the entity the skill resolves
+		// against, and the side it lands on. See the enums above.
+		SkillApply      apply      = SkillApply::PhysicalMelee;
+		SkillTargetKind targetKind = SkillTargetKind::Spec;
+		SkillImpactSide impactSide = SkillImpactSide::Enemy;
 
 		// The basic apply type and its per-level values.
 		PassiveApplyType applyType = PassiveApplyType::Hp;
@@ -294,6 +370,18 @@ namespace Modern
 		{
 			return (slot == SkillWeaponSlot::LeftHand) ? leftWeapon : rightWeapon;
 		}
+
+		// VERTICAL-011: the per-level record for a cast level.
+		//
+		// Legacy indexes `m_sAPPLY.sDATA_LVL[wLevel]` raw, with no bounds check
+		// (GLogixExPC.cpp:4088, :4292), because the array is a fixed 9 entries
+		// and the level was already validated. This returns the level-0 record
+		// for a level outside 1..kMaxSkillLevel so a caller that skipped
+		// validation reads a zeroed record instead of another skill's level.
+		const SkillLevelData& GetLevelData(uint8_t level) const noexcept
+		{
+			return levelData[(level >= 1 && level <= kMaxSkillLevel) ? level : 0];
+		}
 	};
 
 	// Convert legacy weapon type to modern enum.
@@ -316,4 +404,10 @@ namespace Modern
 	const char* ToString(PassiveApplyType type) noexcept;
 	const char* ToString(PassiveImpactType type) noexcept;
 	const char* ToString(PassiveSpecType type) noexcept;
+
+	// VERTICAL-011: names for the active-skill enums.
+	const char* ToString(SkillRole type) noexcept;
+	const char* ToString(SkillApply type) noexcept;
+	const char* ToString(SkillTargetKind type) noexcept;
+	const char* ToString(SkillImpactSide type) noexcept;
 }

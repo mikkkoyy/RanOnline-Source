@@ -8,6 +8,7 @@
 #include "equipment/ItemContributionAggregator.h"
 #include "progression/CodexContributionAggregator.h"
 #include "resources/ResourceState.h"
+#include "skills/ActiveSkill.h"
 #include "skills/PassiveContributionAggregator.h"
 #include "stats/StatCalculator.h"
 
@@ -825,5 +826,213 @@ namespace Modern::Server
 		if (targetRecalc.IsError()) return targetRecalc;
 
 		return Ok();
+	}
+
+	// ── VERTICAL-011: active skills ─────────────────────────────────────
+
+	Skills::ActiveSkillResult ServerCharacter::CastSkill(const SkillId& id,
+	                                                     ServerCharacter& target,
+	                                                     uint16_t requestedLevel)
+	{
+		// `requestedLevel` is accepted for call-site compatibility and then
+		// ignored. GLogixExPC.cpp:4074-4076 takes the level from
+		// `m_ExpSkills.find(skill_id.dwID)`, the character's own learned set -
+		// never from the message. Honouring the caller's number would let a
+		// caller cast a level it has not learned.
+		(void)requestedLevel;
+
+		Skills::ActiveSkillResult result;
+
+		if (this == &target)
+		{
+			result.failure = Skills::ActiveSkillFailure::UnsupportedTarget;
+			return result;
+		}
+
+		// ---- 1. The definition, from this character's own provider ----
+		//
+		// GLogixExPC.cpp:4085-4086: no definition is EMSKILL_UNKNOWN.
+
+		if (m_skillDefinitions == nullptr)
+		{
+			result.failure = Skills::ActiveSkillFailure::UnknownSkill;
+			return result;
+		}
+
+		const SkillDefinition* definition = m_skillDefinitions->Find(id);
+		if (definition == nullptr)
+		{
+			result.failure = Skills::ActiveSkillFailure::UnknownSkill;
+			return result;
+		}
+
+		// ---- 2. The level, from this character's own learned set ----
+		//
+		// GLogixExPC.cpp:4074-4076.
+
+		const uint8_t level = m_skills.GetSkillLevel(id);
+		if (level == 0)
+		{
+			result.failure = Skills::ActiveSkillFailure::NotLearned;
+			return result;
+		}
+
+		// ---- 3. Build the situation and let core rule on it ----
+		//
+		// Everything below is a read of authoritative state. The resolver is
+		// pure: it decides, and this function applies.
+
+		Skills::ActiveSkillInput input;
+		input.definition  = definition;
+		input.level       = level;
+		input.attacker    = m_derived;
+		input.target      = target.m_derived;
+		input.hasTarget   = true;
+		input.targetCurrentHp = target.m_currentHp;
+		input.targetLevel  = target.m_definition.level;
+		input.attackerLevel = m_definition.level;
+		input.currentHp   = m_currentHp;
+		input.currentMp   = m_currentMp;
+		input.currentSp   = m_currentSp;
+
+		// VERTICAL-010's contribution, reused rather than recomputed.
+		input.equipmentRequiredSP = m_items.requiredSP;
+		input.basicAttackSP = Combat::CombatConstants().basicDisSP;
+
+		input.onCooldown = IsSkillOnCooldown(id);
+
+		input.hitRoll        = DeterministicRandom();
+		input.damageRoll     = DeterministicRandom();
+		input.criticalRoll   = DeterministicRandom();
+		input.crushingRoll   = DeterministicRandom();
+		input.reflectionRoll = DeterministicRandom();
+
+		// No map weather exists yet; WEATHER_ELEMENT_POW returns 1.0f when
+		// weather is inactive (GameCharacterCalculations.cpp:118-126).
+		input.weatherElementPower = 1.0f;
+
+		result = Skills::ActiveSkillResolver::Resolve(input);
+
+		if (!result.Succeeded())
+		{
+			// Transactional: nothing was read that changes state, so a refusal
+			// needs no rollback and starts no cooldown.
+			return result;
+		}
+
+		// ---- 4. Apply the costs, through the resource domain ----
+		//
+		// The costs are drawn here rather than inside the resolver, because the
+		// resolver does not own the pools. Going through ResourceState rather
+		// than subtracting by hand is what gives RAN's `GLDWDATA::DECREASE`
+		// saturation (`if (dwNow >= dwValue) dwNow -= dwValue; else dwNow = 0;`)
+		// for free.
+		//
+		// HP and MP come from ACCOUNTSKILL (GLogixExPC.cpp:4296-4299); SP comes
+		// from SkillProc (GLChar.cpp:3003-3009) and is zero whenever the cast
+		// was low-SP.
+
+		Resources::ResourceState pool;
+		(void) pool.SyncFrom(m_derived);
+		(void) pool.SetCurrent(Resources::ResourceKind::Hp, m_currentHp);
+		(void) pool.SetCurrent(Resources::ResourceKind::Mp, m_currentMp);
+		(void) pool.SetCurrent(Resources::ResourceKind::Sp, m_currentSp);
+
+		if (result.spCost > 0) { (void) pool.Spend(Resources::ResourceKind::Sp, result.spCost); }
+		if (result.mpCost > 0) { (void) pool.Spend(Resources::ResourceKind::Mp, result.mpCost); }
+		if (result.hpCost > 0) { (void) pool.Spend(Resources::ResourceKind::Hp, result.hpCost); }
+
+		m_currentSp = pool.GetCurrent(Resources::ResourceKind::Sp);
+		m_currentMp = pool.GetCurrent(Resources::ResourceKind::Mp);
+		m_currentHp = pool.GetCurrent(Resources::ResourceKind::Hp);
+
+		// ---- 5. Apply the damage, and any reflection, to the same pools ----
+		//
+		// The combat half of the result was produced by the same pipeline
+		// `Attack` uses, so the application matches: saturating, and applied
+		// once.
+
+		Resources::ResourceState targetPool;
+		(void) targetPool.SyncFrom(target.m_derived);
+		(void) targetPool.SetCurrent(Resources::ResourceKind::Hp, target.m_currentHp);
+
+		if (result.combat.IsHit())
+		{
+			(void) targetPool.ApplyDamage(result.combat.damageResult.damage);
+			target.m_currentHp = targetPool.GetCurrent(Resources::ResourceKind::Hp);
+		}
+
+		// VERTICAL-008 reflection, same rule as `Attack`.
+		if (result.combat.IsReflection() && result.combat.damageResult.reflectionDamage > 0)
+		{
+			(void) pool.ApplyDamage(result.combat.damageResult.reflectionDamage);
+			m_currentHp = pool.GetCurrent(Resources::ResourceKind::Hp);
+		}
+
+		// ---- 6. Start the cooldown ----
+		//
+		// GLogixExPC.cpp:4304 inserts into `m_SKILLDELAY`; the value is
+		// `SKILLDELAY(...) * m_fSTATE_DELAY`, and RAN's server-side path then
+		// subtracts the 0.3f `NET_MSGDELAY` network compensation. Neither the
+		// state multiplier nor the network term has a modern counterpart, so
+		// the base value is stored as computed by the resolver.
+		//
+		// A zero delay is not inserted, matching legacy's map semantics: an
+		// entry with a zero value would be erased on the next tick anyway, and
+		// `CHECHSKILL` only asks whether a key exists.
+
+		if (result.cooldownSeconds > 0.0f)
+		{
+			m_skillCooldowns[id] = result.cooldownSeconds;
+		}
+
+		// Recalculate so the published snapshot cannot lag the state behind it.
+		// Resource maxima did not change, so this cannot fail on a stat ground,
+		// but a failure here must not be swallowed.
+		const Status selfRecalc = Recalculate();
+		if (selfRecalc.IsError())
+		{
+			return result;
+		}
+		const Status targetRecalc = target.Recalculate();
+		if (targetRecalc.IsError())
+		{
+			return result;
+		}
+
+		return result;
+	}
+
+	bool ServerCharacter::IsSkillOnCooldown(const SkillId& id) const noexcept
+	{
+		// GLogixExPC.cpp:4082-4083: the gate is `find() != end()`, i.e. the
+		// presence of an entry, not whether the remaining time is positive. A
+		// zero-delay skill is therefore never inserted at all.
+		return m_skillCooldowns.find(id) != m_skillCooldowns.end();
+	}
+
+	float ServerCharacter::GetSkillCooldownRemaining(const SkillId& id) const noexcept
+	{
+		const auto it = m_skillCooldowns.find(id);
+		return (it == m_skillCooldowns.end()) ? 0.0f : it->second;
+	}
+
+	void ServerCharacter::AdvanceSkillCooldowns(float elapsedSeconds) noexcept
+	{
+		// GLogixExPC.cpp:3864-3879:
+		//   fDelay -= fElapsedTime;
+		//   if ( fDelay <= 0.0f )  m_SKILLDELAY.erase ( iter_del );
+		for (auto it = m_skillCooldowns.begin(); it != m_skillCooldowns.end(); )
+		{
+			it->second -= elapsedSeconds;
+			if (it->second <= 0.0f)
+			{
+				it = m_skillCooldowns.erase(it);
+			}
+			else
+			{
+				++it;
+			}
+		}
 	}
 }

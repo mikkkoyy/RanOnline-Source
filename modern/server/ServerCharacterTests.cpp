@@ -1886,10 +1886,10 @@ MODERN_TEST(ServerRequiredSP_UnequipDropsTheCost)
 	         static_cast<uint16_t>(0));
 }
 
-// Low SP degrades an attack, it does not refuse it. Legacy returns
-// EMBEGINA_SP from BEGIN_ATTACK and the swing still happens
-// (GLCharMsg.cpp:606-612), so a 0-SP attacker with an expensive weapon must
-// still deal damage.
+	// Low SP degrades an attack, it does not refuse it. Legacy returns
+	// EMBEGINA_SP from BEGIN_ATTACK and the swing still happens
+	// (GLCharMsg.cpp:606-612), so a 0-SP attacker with an expensive weapon must
+	// still deal damage.
 MODERN_TEST(ServerRequiredSP_LowSPAttackerStillAttacks)
 {
 	InMemoryItemDefinitions provider;
@@ -1915,6 +1915,407 @@ MODERN_TEST(ServerRequiredSP_LowSPAttackerStillAttacks)
 	CHECK(target.GetValue().GetDerivedStats().maxHp <= before);
 }
 
+// ---------------------------------------------------------------------------
+// VERTICAL-011: active skills
+//
+// The rules are tested in modern/tests/ActiveSkillTests.cpp, which drives the
+// core resolver directly and deterministically. What is left here is the part
+// only the server can prove: that the level comes from the character's own
+// learned set rather than from the caller, that a refused cast changes nothing,
+// and that a successful one moves real resources.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+	// A castable physical melee damage skill. A negative `basicVar` is the
+	// legacy damage encoding (GLChar.cpp:3077-3085).
+	SkillDefinition MakeActiveDamageSkill(uint16_t skillIndex, uint8_t maxLevel = 3)
+	{
+		SkillDefinition def;
+		def.id         = SkillId{ 1, skillIndex };
+		def.name       = "Cleave";
+		def.maxLevel   = maxLevel;
+		def.grade      = 2;
+		def.role       = SkillRole::Normal;
+		def.apply      = SkillApply::PhysicalMelee;
+		def.targetKind = SkillTargetKind::Spec;
+		def.impactSide = SkillImpactSide::Enemy;
+		def.applyType  = PassiveApplyType::Hp;
+
+		for (uint8_t level = 1; level <= maxLevel; ++level)
+		{
+			def.levelData[level].basicVar  = -10.0f * static_cast<float>(level);
+			def.levelData[level].useSp     = static_cast<uint16_t>(5 * level);
+			def.levelData[level].useMp     = static_cast<uint16_t>(2 * level);
+			def.levelData[level].useHp     = 0;
+			def.levelData[level].delayTime = 0.5f;
+		}
+		return def;
+	}
+
+	// Both characters wired to a provider holding the castable skill, with the
+	// attacker already holding it at `level`.
+	// Registers the castable physical melee damage skill in a provider. The
+	// provider must outlive every character built from it, so each test owns one
+	// locally rather than sharing a fixture that would need to be copyable.
+	void RegisterActiveSkill(InMemorySkillDefinitions& provider, uint16_t skillIndex = 1)
+	{
+		provider.Add(MakeActiveDamageSkill(skillIndex));
+	}
+
+	// Teaches a character the castable skill and fills its pools. Mirrors what
+	// a server does when a character learns and is standing idle.
+	void PrepareCaster(Result<ServerCharacter>& character, uint8_t level = 1)
+	{
+		if (!character.IsOk() || level == 0)
+		{
+			return;
+		}
+		(void) character.GetValue().LearnSkill(SkillId{ 1, 1 });
+		(void) character.GetValue().SetSkillLevel(SkillId{ 1, 1 }, level);
+		character.GetValue().RestoreResources();
+	}
+}
+
+MODERN_TEST(ServerActiveSkill_CastSucceedsAndDamagesTarget)
+{
+	InMemorySkillDefinitions provider;
+	RegisterActiveSkill(provider);
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	PrepareCaster(attacker, 1);
+	target.GetValue().RestoreResources();
+
+	const auto before = target.GetValue().BuildSnapshot();
+	CHECK(before.IsOk());
+	const uint32_t hpBefore = before.GetValue().hp.current;
+	CHECK_GT(hpBefore, 0u);
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 1, 1 }, target.GetValue());
+
+	CHECK(result.Succeeded());
+	CHECK_EQ(result.failure, Skills::ActiveSkillFailure::None);
+	CHECK_EQ(result.level, static_cast<uint8_t>(1));
+
+	const auto after = target.GetValue().BuildSnapshot();
+	CHECK(after.IsOk());
+	CHECK_LT(after.GetValue().hp.current, hpBefore);
+}
+
+MODERN_TEST(ServerActiveSkill_UnlearnedSkillRejected)
+{
+	InMemorySkillDefinitions provider;
+	RegisterActiveSkill(provider);
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+
+	const auto before = target.GetValue().BuildSnapshot();
+	const uint32_t hpBefore = before.GetValue().hp.current;
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 1, 1 }, target.GetValue());
+
+	CHECK_EQ(result.failure, Skills::ActiveSkillFailure::NotLearned);
+
+	// Transactional: a refusal touches nothing.
+	const auto after = target.GetValue().BuildSnapshot();
+	CHECK_EQ(after.GetValue().hp.current, hpBefore);
+	CHECK_EQ(attacker.GetValue().IsSkillOnCooldown(SkillId{ 1, 1 }), false);
+}
+
+MODERN_TEST(ServerActiveSkill_UnknownSkillRejected)
+{
+	InMemorySkillDefinitions provider;
+	RegisterActiveSkill(provider);
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+	PrepareCaster(attacker, 1);
+	target.GetValue().RestoreResources();
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 9, 9 }, target.GetValue());
+
+	CHECK_EQ(result.failure, Skills::ActiveSkillFailure::UnknownSkill);
+}
+
+MODERN_TEST(ServerActiveSkill_LevelComesFromLearnedStateNotTheCaller)
+{
+	// The learned level is 2. A caller asking for level 1, and one asking for
+	// level 3 which was never learned, must both get level 2.
+	InMemorySkillDefinitions provider;
+	RegisterActiveSkill(provider);
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	PrepareCaster(attacker, 2);
+	target.GetValue().RestoreResources();
+
+	const Skills::ActiveSkillResult askedLow =
+		attacker.GetValue().CastSkill(SkillId{ 1, 1 }, target.GetValue(), 1);
+	CHECK(askedLow.Succeeded());
+	CHECK_EQ(askedLow.level, static_cast<uint8_t>(2));
+
+	attacker.GetValue().AdvanceSkillCooldowns(10.0f);
+
+	const Skills::ActiveSkillResult askedHigh =
+		attacker.GetValue().CastSkill(SkillId{ 1, 1 }, target.GetValue(), 3);
+	CHECK(askedHigh.Succeeded());
+	CHECK_EQ(askedHigh.level, static_cast<uint8_t>(2));
+	// Level 2 costs wUSE_SP = 10, not level 1's 5 or level 3's 15.
+	CHECK_EQ(askedHigh.requiredSP, static_cast<uint16_t>(10));
+}
+
+MODERN_TEST(ServerActiveSkill_SelfCastRejected)
+{
+	InMemorySkillDefinitions provider;
+	RegisterActiveSkill(provider);
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	PrepareCaster(attacker, 1);
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 1, 1 }, attacker.GetValue());
+
+	CHECK_EQ(result.failure, Skills::ActiveSkillFailure::UnsupportedTarget);
+}
+
+MODERN_TEST(ServerActiveSkill_CastSpendsResources)
+{
+	InMemorySkillDefinitions provider;
+	RegisterActiveSkill(provider);
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	PrepareCaster(attacker, 1);
+	target.GetValue().RestoreResources();
+
+	const auto before = attacker.GetValue().BuildSnapshot();
+	CHECK(before.IsOk());
+	CHECK_GT(before.GetValue().sp.current, 0u);
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 1, 1 }, target.GetValue());
+	CHECK(result.Succeeded());
+	CHECK_EQ(result.spCost, static_cast<uint16_t>(5));
+
+	const auto after = attacker.GetValue().BuildSnapshot();
+	CHECK(after.IsOk());
+	// A funded cast pays wUSE_SP (5) and wUSE_MP (2) at level 1.
+	CHECK_EQ(after.GetValue().sp.current, before.GetValue().sp.current - 5u);
+	CHECK_EQ(after.GetValue().mp.current, before.GetValue().mp.current - 2u);
+}
+
+MODERN_TEST(ServerActiveSkill_LowSpCastsWithoutSpendingSp)
+{
+	InMemorySkillDefinitions provider;
+	RegisterActiveSkill(provider);
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	PrepareCaster(attacker, 1);
+	target.GetValue().RestoreResources();
+
+	// Below the level-1 cost of 5, so the cast is low-SP.
+	CHECK(attacker.GetValue().SetCurrentSp(0).IsOk());
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 1, 1 }, target.GetValue());
+
+	CHECK(result.Succeeded());
+	CHECK_EQ(result.IsLowSp(), true);
+	CHECK_EQ(result.spCost, static_cast<uint16_t>(0));
+
+	const auto after = attacker.GetValue().BuildSnapshot();
+	CHECK(after.IsOk());
+	CHECK_EQ(after.GetValue().sp.current, 0u);
+}
+
+MODERN_TEST(ServerActiveSkill_CooldownBlocksTheSecondCast)
+{
+	InMemorySkillDefinitions provider;
+	RegisterActiveSkill(provider);
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	PrepareCaster(attacker, 1);
+	target.GetValue().RestoreResources();
+
+	const Skills::ActiveSkillResult first =
+		attacker.GetValue().CastSkill(SkillId{ 1, 1 }, target.GetValue());
+	CHECK(first.Succeeded());
+	CHECK_GT(first.cooldownSeconds, 0.0f);
+	CHECK_EQ(attacker.GetValue().IsSkillOnCooldown(SkillId{ 1, 1 }), true);
+
+	const Skills::ActiveSkillResult second =
+		attacker.GetValue().CastSkill(SkillId{ 1, 1 }, target.GetValue());
+	CHECK_EQ(second.failure, Skills::ActiveSkillFailure::InCooldown);
+}
+
+MODERN_TEST(ServerActiveSkill_CooldownExpiresAndCastResumes)
+{
+	InMemorySkillDefinitions provider;
+	RegisterActiveSkill(provider);
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	PrepareCaster(attacker, 1);
+	target.GetValue().RestoreResources();
+
+	(void) attacker.GetValue().CastSkill(SkillId{ 1, 1 }, target.GetValue());
+	CHECK_EQ(attacker.GetValue().IsSkillOnCooldown(SkillId{ 1, 1 }), true);
+
+	// GLogixExPC.cpp:3864-3879: decrement, erase at or below zero.
+	attacker.GetValue().AdvanceSkillCooldowns(0.25f);
+	CHECK_EQ(attacker.GetValue().IsSkillOnCooldown(SkillId{ 1, 1 }), true);
+	CHECK_GT(attacker.GetValue().GetSkillCooldownRemaining(SkillId{ 1, 1 }), 0.0f);
+
+	attacker.GetValue().AdvanceSkillCooldowns(10.0f);
+	CHECK_EQ(attacker.GetValue().IsSkillOnCooldown(SkillId{ 1, 1 }), false);
+	CHECK_EQ(attacker.GetValue().GetSkillCooldownRemaining(SkillId{ 1, 1 }), 0.0f);
+
+	const Skills::ActiveSkillResult again =
+		attacker.GetValue().CastSkill(SkillId{ 1, 1 }, target.GetValue());
+	CHECK(again.Succeeded());
+}
+
+MODERN_TEST(ServerActiveSkill_UnsupportedSkillIsRefusedNotFaked)
+{
+	InMemorySkillDefinitions provider;
+
+	// A magic skill: VERTICAL-013 territory.
+	SkillDefinition magic = MakeActiveDamageSkill(2);
+	magic.name = "Fireball";
+	magic.apply = SkillApply::Magic;
+	provider.Add(magic);
+
+	// A zone skill: needs a world.
+	SkillDefinition zone = MakeActiveDamageSkill(3);
+	zone.name = "Shockwave";
+	zone.targetKind = SkillTargetKind::Zone;
+	provider.Add(zone);
+
+	// A learned-only passive.
+	SkillDefinition passive = MakeActiveDamageSkill(4);
+	passive.name = "InnerPower";
+	passive.role = SkillRole::Passive;
+	provider.Add(passive);
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+
+	for (const SkillId& id : { SkillId{ 1, 2 }, SkillId{ 1, 3 }, SkillId{ 1, 4 } })
+	{
+		(void) attacker.GetValue().LearnSkill(id);
+		(void) attacker.GetValue().SetSkillLevel(id, 1);
+	}
+
+	const uint32_t hpBefore = target.GetValue().BuildSnapshot().GetValue().hp.current;
+
+	// Each is refused with its own reason, and none of them damages anything.
+	const Skills::ActiveSkillResult magicResult =
+		attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue());
+	CHECK_EQ(magicResult.failure, Skills::ActiveSkillFailure::UnsupportedApply);
+
+	const Skills::ActiveSkillResult zoneResult =
+		attacker.GetValue().CastSkill(SkillId{ 1, 3 }, target.GetValue());
+	CHECK_EQ(zoneResult.failure, Skills::ActiveSkillFailure::UnsupportedTarget);
+
+	const Skills::ActiveSkillResult passiveResult =
+		attacker.GetValue().CastSkill(SkillId{ 1, 4 }, target.GetValue());
+	CHECK_EQ(passiveResult.failure, Skills::ActiveSkillFailure::NotCastable);
+
+	CHECK_EQ(target.GetValue().BuildSnapshot().GetValue().hp.current, hpBefore);
+}
+
+MODERN_TEST(ServerActiveSkill_NoProviderRefused)
+{
+	// A character built without a skill provider has nothing to resolve
+	// against. That is an absence, not a zero-damage cast.
+	auto attacker = ServerCharacter::Create(StandardDefinition());
+	auto target   = ServerCharacter::Create(StandardDefinition());
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 1, 1 }, target.GetValue());
+
+	CHECK_EQ(result.failure, Skills::ActiveSkillFailure::UnknownSkill);
+}
+
+MODERN_TEST(ServerActiveSkill_RequiredSpIncludesEquipmentContribution)
+{
+	// The equipment term is VERTICAL-010's hand sum, reused rather than
+	// recomputed. A weapon costing 20 SP in the right hand raises the skill's
+	// own 5 to 25.
+	InMemorySkillDefinitions skillProvider;
+	RegisterActiveSkill(skillProvider);
+
+	InMemoryItemDefinitions itemProvider;
+	ItemStatBlock weaponStats;
+	weaponStats.requiredSP = 20;
+	weaponStats.meleePower = 10;
+	ItemDefinition weapon;
+	weapon.id = ItemId(20101);
+	weapon.kind = ItemKind::Weapon;
+	weapon.name = "HeavySword";
+	weapon.maxStack = 1;
+	weapon.stats = weaponStats;
+	itemProvider.Add(weapon);
+
+	ServerCharacterDefinition definition =
+		StandardDefinitionWithItemsAndSkills(itemProvider, skillProvider);
+
+	auto attacker = ServerCharacter::Create(definition);
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(skillProvider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	CHECK(attacker.GetValue().Equip(EquipmentSlot::RightHand, TestItem(20101)).IsOk());
+	PrepareCaster(attacker, 1);
+	target.GetValue().RestoreResources();
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 1, 1 }, target.GetValue());
+
+	CHECK(result.Succeeded());
+	// 20 from the hand, 5 from the skill.
+	CHECK_EQ(result.requiredSP, static_cast<uint16_t>(25));
+}
 
 int main()
 {

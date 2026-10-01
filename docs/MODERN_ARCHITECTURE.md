@@ -3688,7 +3688,202 @@ testing integer rounding instead of the rule.
 | Low-SP comparison | IMPLEMENTED | Strict `<`, attacker's own pool, resolved in Core |
 | `m_wACCEPTP` | DEFERRED | Needs `sReqStats`/`wReqLevelDW`; also absent from the legacy gate |
 | `EMR_OPT_DIS_SP` refine | DEFERRED | Per-copy stats; `SUM_ITEM` does not use `GETREQ_SP()` |
-| SP consumption | DEFERRED | No system deducts SP yet |
-| Skill `wUSE_SP` | DEFERRED | VERTICAL-011; `requiredSP` is the reusable half |
+| SP consumption | PARTIAL | Basic attacks and skills spend; VERTICAL-011 added skill costs |
+| Skill `wUSE_SP` | IMPLEMENTED | VERTICAL-011; `requiredSP` was the reusable half |
 | `wStrikeNum` | DEFERRED | Single-strike combat |
 | `ItemStatBlock::IsZero()` vs `*RecoveryFlat` | REPORTED | Pre-existing gap, not a required-SP dependency |
+---
+
+# VERTICAL-011: Active Skill Combat
+
+VERTICAL-010 left the item model ready for skills. This milestone makes a skill
+castable, and it is a separate system from the passive one that already existed.
+
+Full derivation:
+`docs/reference/client/VERTICAL-011_ACTIVE_SKILL_INVESTIGATION.md`.
+
+## Why it is not the passive pipeline
+
+VERTICAL-003's `PassiveContributionAggregator` reads a definition when a skill
+is learned and produces a stat delta. Nothing in it is cast, costs a resource,
+hits anything, or has a cooldown. RAN itself keeps the two apart: `SUM_PASSIVE`
+(`GLogixExPC.cpp:918-1002`) runs at learn time, while casting runs
+`CHECHSKILL` (`:4056`) -> `ACCOUNTSKILL` (`:4270`) -> `PreStrikeProc`
+(`GLChar.cpp:2355`) -> `SkillProc` (`GLChar.cpp:2960`). No function is shared.
+
+Three pieces therefore:
+
+| Piece | Where | Role |
+| --- | --- | --- |
+| `SkillDefinition` / `SkillLevelData` | `modern/core/skills/SkillDefinition.h` | immutable data |
+| `Skills::ActiveSkillResolver` | `modern/core/skills/ActiveSkill.h/.cpp` | the rules, pure |
+| `ServerCharacter::CastSkill` | `modern/server/character/ServerCharacter.cpp` | authority over state |
+
+The resolver fetches nothing and reads no clock. Every number it needs is a
+field on `ActiveSkillInput`, so a test can drive every branch - including
+refusals for systems the server does not have - without building a world, and
+the same input always produces the same result.
+
+## The definition gained four fields and four per-level costs
+
+`SkillLevelData` gained `useSp`, `useHp`, `useMp` (`GLSkillApply.h:259-261`) and
+`delayTime` (`:247`). `SkillDefinition` gained `role`, `apply`, `targetKind`
+and `impactSide`, mirroring `EMROLE` (`GLSkillBasic.h:531`), `EMAPPLY` (`:530`),
+`EMIMPACT_TAR` (`GLCharDefine.h:859`) and `EMIMPACT_SIDE` (`:880`).
+
+`emBASIC_TYPE` and `emELEMENT` are **not** in `SSKILLBASIC`; they live in
+`SKILL::SAPPLY` (`GLSkillApply.h:578-579`). The modern type reuses the existing
+`PassiveApplyType` for `emBASIC_TYPE`, which is the same enum and the same
+values for the three resource types.
+
+## `fBASIC_VAR` means different things by role
+
+This is the one field both halves share, and it does not mean the same thing in
+each. `GLChar.cpp:3077-3090`:
+
+```cpp
+case SKILL::EMFOR_HP:
+    if ( sSKILL_DATA.fBASIC_VAR < 0.0f )   // damage
+    else                                   // heal
+```
+
+A passive reads the magnitude and ignores the sign
+(`GLogixExPC.cpp:921-1000`). One `float`, two readings, selected by role.
+
+## The damage magnitude
+
+`GLogixExPC.cpp:1521-1530`:
+
+```cpp
+float fSKILL_VAR = sSKILL_DATA.fBASIC_VAR;
+int nVAR = abs ( int(fSKILL_VAR*fPOWER) );
+float fGrade = (float) wGRADE / GLCONST_CHAR::fDAMAGE_GRADE_K;
+gdDamage.dwLow  += DWORD (nVAR + ((float) gdDamage.dwLow  * fGrade));
+gdDamage.dwHigh += DWORD (nVAR + ((float) gdDamage.dwHigh * fGrade));
+```
+
+`nVAR` is added to the attacker's damage range and the result is run through
+`Combat::ResolveCombat`, so a physical skill reuses VERTICAL-006 through
+VERTICAL-009 wholesale: defence, critical, crushing, damage reduction,
+reflection, and the low-SP penalties. That is the reuse legacy already implies -
+`CALCDAMAGE_20060328` switches on `emAPPLY` and treats a `PHY_SHORT` skill the
+same way it treats a basic attack.
+
+The `fGrade` term is absent: `wGRADE` is the right-hand item's
+`GET_GRADE(EMGRINDING_DAMAGE)` and the modern item model has no grade field.
+
+## SP: the gate and the charge differ in legacy
+
+`GLogixExPC.cpp:4254-4258` measures `wUSE_SP` plus the two hand `wReqSP` terms,
+with no `m_wACCEPTP`. `GLChar.cpp:3003-3009` charges
+`m_wSUM_DisSP + wUSE_SP`, which *does* contain `m_wACCEPTP`, and skips the
+charge entirely when low SP.
+
+The modern charge is `ItemContribution::requiredSP + wUSE_SP` - the same value
+the gate measured. That differs from legacy by the `m_wACCEPTP` term, which the
+modern item model has no field for (VERTICAL-010) and which the legacy *gate*
+also ignores. Gate and charge agreeing is worth more than matching a term the
+gate does not use.
+
+## Low SP degrades a cast rather than refusing it
+
+RAN is inconsistent here, and both halves were checked before choosing:
+
+- `GLCharSkillMsg.cpp:357-365`, the server's first check, rejects anything but
+  `EMSKILL_OK`; the `EMSKILL_NOTSP` tolerance is **commented out**.
+- `GLChar.cpp:4797-4798`, the running-cast re-check, explicitly tolerates it:
+  `if ( emCHECK != EMSKILL_OK && emCHECK != EMSKILL_NOTSP )` followed by
+  `bLowSP = (emCHECK==EMSKILL_NOTSP)`.
+
+The tolerated path is the one that produces the cast, so that is the one
+followed. `LowSpState` is a flag on a *successful* result, not a failure code,
+and a low-SP cast still lands.
+
+The pool is the caster's, per VERTICAL-010's locked correction.
+
+## Resource validation keeps legacy's operator asymmetry
+
+`GLogixExPC.cpp:4240-4241`:
+
+```cpp
+if ( m_sHP.dwNow <= sSKILL_DATA.wUSE_HP*wStrikeNum )   return EMSKILL_NOTHP;
+if ( m_sMP.dwNow <  sSKILL_DATA.wUSE_MP*wStrikeNum )   return EMSKILL_NOTMP;
+```
+
+HP is refused at `<=`, MP at `<`. Both are reproduced, and both boundaries are
+pinned by tests.
+
+## Cooldown without a clock
+
+`GLOGICEX::SKILLDELAY` (`GameCharacterCalculations.cpp:118-126`):
+
+```cpp
+return static_cast<float>(dwSKILL_GRADE * wSKILL_LEV)
+     / static_cast<float>(wCHAR_LEVEL) + fDelay;
+```
+
+The legacy product is integer before the cast to float, and that is reproduced
+rather than "fixed". RAN's `m_fSTATE_DELAY` multiplier and the 0.3f
+`NET_MSGDELAY` network compensation are not applied; one is a NUMB debuff, the
+other is transport.
+
+`ServerCharacter` owns `std::map<SkillId,float>` and ticks it through
+`AdvanceSkillCooldowns(elapsedSeconds)`, which mirrors
+`GLogixExPC.cpp:3864-3879` - decrement, erase at or below zero. Time is passed
+in rather than read, so core has no clock and expiry is testable. The gate is
+`find() != end()`, presence rather than a positive remaining time, matching
+`:4082-4083`; a zero-delay skill is therefore never inserted.
+
+## Unsupported means refused, not faked
+
+Every capability this slice lacks is a named failure, never a zero result:
+
+| Refusal | For |
+| --- | --- |
+| `UnknownSkill` | no definition (`:4085`) |
+| `NotLearned` | not in the learned set (`:4074`) |
+| `InvalidLevel` | level 0, or beyond `maxLevel` |
+| `NotCastable` | `emROLE` is not `EMROLE_NORMAL` (`:4092`), or prohibited/stunned (`:4058`, `:4062`) |
+| `InCooldown` | `EMSKILL_DELAYTIME` (`:4082`) |
+| `InsufficientHp` / `InsufficientMp` | `:4240` / `:4241` |
+| `UnsupportedApply` | `EMAPPLY_PHY_LONG` is VERTICAL-012, `EMAPPLY_MAGIC` is VERTICAL-013 |
+| `UnsupportedTarget` | `TAR_ZONE`, `TAR_SELF_TOSPEC`, `TAR_SPECIFIC` - all need positions |
+| `UnsupportedSide` | `SIDE_OUR` / `SIDE_ANYBODY` are buffs |
+| `UnsupportedEffect` | a heal, or the `EMFOR_MP`/`EMFOR_SP` drain branch |
+| `NoDamageMagnitude` | `abs(int(fBASIC_VAR))` is zero |
+| `NonFiniteData` | NaN in the definition |
+
+## Resources go through ResourceState
+
+`CastSkill` builds a `Resources::ResourceState`, spends through `Spend()` and
+applies damage through `ApplyDamage()`, which is what gives RAN's
+`GLDWDATA::DECREASE` saturation for free. The resolver itself mutates nothing -
+it returns costs and the owner applies them.
+
+## Tests
+
+Core 259 to 293, Server 58 to 70. All 14 CTest suites pass in Debug and
+Release, 0 errors and 0 warnings. Every roll is injected, so the resolver's
+tests are reproducible and the server's casts take their rolls from the same
+seeded generator `Attack` already used.
+
+## Limitations
+
+| Behavior | Status | Notes |
+|----------|--------|-------|
+| Active skill validation | IMPLEMENTED | definition, level, role, resources, cooldown |
+| Skill SP cost | IMPLEMENTED | `requiredSP + wUSE_SP`, VERTICAL-010's contribution reused |
+| Low-SP skill cast | IMPLEMENTED | Degrades, does not refuse; caster's own pool |
+| HP / MP cost | IMPLEMENTED | Once per cast, matching `ACCOUNTSKILL` |
+| Physical skill damage | IMPLEMENTED | Reuses the VERTICAL-006..009 pipeline |
+| Cooldown | IMPLEMENTED | Legacy formula; no clock in core |
+| `m_wACCEPTP` in the charge | DEVIATION | No modern field; the legacy gate ignores it too |
+| Item damage grade (`fGrade`) | DEVIATION | Modern items have no grade field |
+| Ranged skill damage | DEFERRED | VERTICAL-012 |
+| Magic / elemental skill damage | DEFERRED | VERTICAL-013 |
+| Zone, realm, angle, range | DEFERRED | Need positions and an entity registry |
+| Buffs and status effects | DEFERRED | Need a status system |
+| Heals, `EMFOR_MP`/`EMFOR_SP` drains | DEFERRED | `UnsupportedEffect` |
+| Strike count, per-division hit and charge | DEFERRED | Client animation data |
+| Item costs, combat points, party costs | DEFERRED | Need an inventory, a CP and a party system |
+| `ResourceState` migration of `ServerCharacter` | DEFERRED | Separate change; would touch VERTICAL-005..009 |

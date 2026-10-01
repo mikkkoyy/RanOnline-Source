@@ -27,6 +27,7 @@ set(MODERN_SOURCES
     skills/SkillState.cpp
     skills/SkillDefinitionProvider.cpp
     skills/PassiveContributionAggregator.cpp
+    skills/ActiveSkill.cpp
     stats/StatCalculator.cpp
     types/Result.cpp
     resources/ResourceState.cpp
