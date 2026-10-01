@@ -35,7 +35,11 @@ CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 build/
-build-*/  <-- added for VERTICAL-005
+# build-<config> output trees; rule added for VERTICAL-005, fixed for BUILD-001.
+# It must be a bare pattern: git has no inline comments, so a trailing
+# "<-- added for ..." on the same line becomes part of the pattern and
+# matches nothing.
+build-*/
 out/
 install_manifest.txt
 CTestTestfile.cmake
