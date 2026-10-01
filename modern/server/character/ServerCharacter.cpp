@@ -946,6 +946,21 @@ namespace Modern::Server
 		m_currentMp = pool.GetCurrent(Resources::ResourceKind::Mp);
 		m_currentHp = pool.GetCurrent(Resources::ResourceKind::Hp);
 
+		// ---- 4b. Apply the status blow to the target ----
+		//
+		// VERTICAL-014. The resolver already decided whether the blow lands; this
+		// stores it on the target, which is the authority for status state.
+		//
+		// Legacy puts the resolved SSTATEBLOW on the SKILLACTEX payload and the
+		// target's own STATEBLOW writes the slot (GLChar.cpp:3396 then
+		// GLChar.cpp:6200). There is no transport in this milestone, so the store
+		// happens directly against the target - the same two-step, with the
+		// network leg absent rather than faked.
+		if (result.hasStatusApplication && result.statusApplication.Applied())
+		{
+			(void) target.ApplyStatus(result.statusApplication.state);
+		}
+
 		// ---- 5. Apply the damage, and any reflection, to the same pools ----
 		//
 		// The combat half of the result was produced by the same pipeline
@@ -1034,5 +1049,25 @@ namespace Modern::Server
 				++it;
 			}
 		}
+	}
+
+	// VERTICAL-014: status wrappers. All three delegate to
+	// `StatusEffectContainer`, which owns the rules; nothing is reimplemented
+	// here, and in particular the server does not decide whether a blow lands -
+	// `StatusEffectResolver` does, and this only stores the verdict.
+
+	bool ServerCharacter::ApplyStatus(const StatusEffect::StatusEffectState& state) noexcept
+	{
+		return m_status.Apply(state);
+	}
+
+	uint32_t ServerCharacter::TickStatus(float elapsedSeconds) noexcept
+	{
+		return m_status.Tick(elapsedSeconds);
+	}
+
+	uint32_t ServerCharacter::CureStatus(StatusEffect::StatusDisorder mask) noexcept
+	{
+		return m_status.Cure(mask);
 	}
 }

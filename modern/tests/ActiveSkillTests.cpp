@@ -1110,3 +1110,127 @@ MODERN_TEST(MagicSkill_LowSpUsesTheCastersPoolAndHalvesOnce)
 	// Charged nothing, because legacy does not bill a cast it knows is short.
 	CHECK_EQ(lowResult.spCost, static_cast<uint16_t>(0));
 }
+// ── VERTICAL-014: status blows through the resolver ────────────────────
+//
+// The resolver reports the verdict; it never owns status state. These cases
+// pin that it reports correctly and that "no blow" is distinguishable from
+// "blow refused".
+
+namespace
+{
+	// A melee skill that also inflicts a stun.
+	SkillDefinition MakeStunSkill()
+	{
+		SkillDefinition def = MakeDamageSkill();
+		def.stateBlow = StatusEffect::StatusEffectType::Stun;
+		for (uint8_t lvl = 1; lvl <= def.maxLevel; ++lvl)
+		{
+			def.levelData[lvl].blowRate = 30.0f;
+			def.levelData[lvl].life     = 10.0f;
+			def.levelData[lvl].blowVar1 = 1.5f;
+			def.levelData[lvl].blowVar2 = -2.5f;
+		}
+		return def;
+	}
+
+	ActiveSkillInput MakeStatusInput(const SkillDefinition& definition, uint8_t level = 1)
+	{
+		ActiveSkillInput input = MakeInput(definition, level);
+		input.statusRandomRoll = 0.0f;   // always beats the threshold
+		return input;
+	}
+}
+
+MODERN_TEST(StatusSkill_NoBlowReportsNoStatusApplication)
+{
+	const SkillDefinition definition = MakeDamageSkill();   // stateBlow stays None
+
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(MakeInput(definition, 1));
+
+	CHECK(result.Succeeded());
+	// Absence, not a refusal - the two are different facts.
+	CHECK_EQ(result.hasStatusApplication, false);
+}
+
+MODERN_TEST(StatusSkill_AppliedBlowIsReported)
+{
+	const SkillDefinition definition = MakeStunSkill();
+
+	const ActiveSkillResult result =
+		ActiveSkillResolver::Resolve(MakeStatusInput(definition));
+
+	CHECK(result.Succeeded());
+	CHECK_EQ(result.hasStatusApplication, true);
+	CHECK(result.statusApplication.Applied());
+	CHECK_EQ(result.statusApplication.refusal, StatusEffect::StatusRefusal::None);
+	CHECK_EQ(result.statusApplication.state.type, StatusEffect::StatusEffectType::Stun);
+	CHECK_EQ(result.statusApplication.state.remainingLifetime, 10.0f);
+	CHECK_EQ(result.statusApplication.state.var1, 1.5f);
+	CHECK_EQ(result.statusApplication.state.var2, -2.5f);
+}
+
+// A blow that fails its roll is still a status application - it happened, and
+// it was refused. Reporting it as an absence would lose the reason.
+MODERN_TEST(StatusSkill_ProbabilityRefusalIsReportedWithItsReason)
+{
+	const SkillDefinition definition = MakeStunSkill();
+
+	ActiveSkillInput input = MakeStatusInput(definition);
+	input.statusRandomRoll = 0.99f;   // 99 is not < 38
+
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(input);
+
+	CHECK(result.Succeeded());   // the cast itself still happened
+	CHECK_EQ(result.hasStatusApplication, true);
+	CHECK(!result.statusApplication.Applied());
+	CHECK_EQ(result.statusApplication.refusal, StatusEffect::StatusRefusal::Probability);
+}
+
+MODERN_TEST(StatusSkill_ImmuneTargetIsReportedAsImmune)
+{
+	const SkillDefinition definition = MakeStunSkill();
+
+	ActiveSkillInput input = MakeStatusInput(definition);
+	input.targetDisorderMask = static_cast<uint32_t>(StatusEffect::DisorderStun);
+
+	const ActiveSkillResult result = ActiveSkillResolver::Resolve(input);
+
+	CHECK_EQ(result.hasStatusApplication, true);
+	CHECK(!result.statusApplication.Applied());
+	CHECK_EQ(result.statusApplication.refusal, StatusEffect::StatusRefusal::TargetImmune);
+}
+
+// The attacker/target level difference feeds the threshold, so a level gap
+// changes the verdict through the resolver exactly as it does standalone.
+MODERN_TEST(StatusSkill_LevelDifferenceFlowsIntoTheThreshold)
+{
+	const SkillDefinition definition = MakeStunSkill();
+
+	ActiveSkillInput strong = MakeStatusInput(definition);
+	strong.attackerLevel = 15;
+	strong.targetLevel   = 10;
+	strong.statusRandomRoll = 0.30f;   // 30 < 38 (stronger attacker, +8)
+
+	ActiveSkillInput weak = MakeStatusInput(definition);
+	weak.attackerLevel = 10;
+	weak.targetLevel   = 15;
+	weak.statusRandomRoll = 0.30f;     // 30 is not < 35 (weaker, -2)
+
+	CHECK(ActiveSkillResolver::Resolve(strong).statusApplication.Applied());
+	CHECK(!ActiveSkillResolver::Resolve(weak).statusApplication.Applied());
+}
+
+// The resolver must not hold status state: two casts do not accumulate here.
+MODERN_TEST(StatusSkill_ResolverHoldsNoStatusState)
+{
+	const SkillDefinition definition = MakeStunSkill();
+
+	const ActiveSkillResult first  = ActiveSkillResolver::Resolve(MakeStatusInput(definition));
+	const ActiveSkillResult second = ActiveSkillResolver::Resolve(MakeStatusInput(definition));
+
+	CHECK(first.statusApplication.Applied());
+	CHECK(second.statusApplication.Applied());
+	// Both report the same fresh duration - no accumulation, no carry-over.
+	CHECK_EQ(first.statusApplication.state.remainingLifetime,
+	         second.statusApplication.state.remainingLifetime);
+}

@@ -46,6 +46,7 @@
 #include "stats/BaseStats.h"
 #include "stats/Contributions.h"
 #include "stats/DerivedStats.h"
+#include "status/StatusEffectContainer.h"
 #include "types/Result.h"
 
 #include <cstdint>
@@ -342,6 +343,37 @@ size_t GetContributingCodexCount() const noexcept { return m_contributingCodex; 
 			return m_skillCooldowns;
 		}
 
+		// ── VERTICAL-014: authoritative status effects ──────────────────────
+		//
+		// The server owns status state. The client never computes whether a blow
+		// landed and never ticks a duration; at most it will eventually receive
+		// a snapshot, and no networking is part of this milestone.
+		//
+		// These are thin wrappers over `StatusEffectContainer` rather than a
+		// second implementation: the slot map, the expiry boundary and the cure
+		// mask all live in core and are the same rules legacy applies.
+
+		// Applies an already-resolved status state. This does NOT run the
+		// probability rule - `StatusEffectResolver` does that and the caller
+		// passes its verdict in, so the decision and the storage stay
+		// separable. Returns false for an unstorable state.
+		bool ApplyStatus(const StatusEffect::StatusEffectState& state) noexcept;
+
+		// Advances every active status by elapsed seconds and expires what has
+		// run out. Legacy `sSTATEBLOW.fAGE -= fElapsedTime`
+		// (GLCharClient.cpp:3772) with the `<= 0` test at GLFactEffect.cpp:156.
+		// Returns how many expired.
+		uint32_t TickStatus(float elapsedSeconds) noexcept;
+
+		// Clears every status whose disorder intersects the mask. Legacy
+		// `GLChar::CURE_STATEBLOW` (GLChar.cpp:6228-6243).
+		uint32_t CureStatus(StatusEffect::StatusDisorder mask) noexcept;
+
+		const StatusEffect::StatusEffectContainer& GetStatus() const noexcept
+		{
+			return m_status;
+		}
+
 	private:
 		ServerCharacter() = default;
 
@@ -366,6 +398,10 @@ size_t GetContributingCodexCount() const noexcept { return m_contributingCodex; 
 		// `skill_id.dwID`; here the key is the SkillId itself. Written by
 		// CastSkill, read by CastSkill, retired by AdvanceSkillCooldowns.
 		std::map<SkillId, float>       m_skillCooldowns;
+
+		// VERTICAL-014: the authoritative status slots. Legacy
+		// `SSTATEBLOW m_sSTATEBLOWS[EMBLOW_MULTI]` (GLCharClient.h:106).
+		StatusEffect::StatusEffectContainer m_status;
 
 		// VERTICAL-004: codex state and its contribution.
 		CodexState                     m_codex;

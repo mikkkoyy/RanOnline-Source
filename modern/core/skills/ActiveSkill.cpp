@@ -450,6 +450,32 @@ namespace Modern::Skills
 			result.combat = Combat::ResolveCombat(combat);
 		result.attackTypeUsed = combat.attackType;
 
+		// VERTICAL-014: the state blow verdict.
+		//
+		// GLChar.cpp:3355-3397 decides `bBLOW` and, if it landed, fills
+		// `sSKILLACTEX.sSTATEBLOW` for the target to store. It does not store it
+		// locally, and neither does this: the resolver reports the verdict and
+		// `ServerCharacter` applies it to the target. That split is what keeps
+		// status lifetime out of the cast path.
+		if (definition.stateBlow != StatusEffect::StatusEffectType::None)
+		{
+			StatusEffect::StatusApplicationInput statusInput;
+			statusInput.type             = definition.stateBlow;
+			statusInput.actRate         = level.blowRate;
+			statusInput.lifetime        = level.life;
+			statusInput.weatherPower    = input.weatherBlowPower;
+			statusInput.var1            = level.blowVar1;
+			statusInput.var2            = level.blowVar2;
+			statusInput.attackerLevel   = input.attackerLevel;
+			statusInput.targetLevel     = input.targetLevel;
+			statusInput.targetResist    = input.targetBlowResist;
+			statusInput.targetDisorderMask = input.targetDisorderMask;
+			statusInput.randomRoll      = input.statusRandomRoll;
+
+			result.statusApplication = StatusEffect::ResolveStatusApplication(statusInput);
+			result.hasStatusApplication = true;
+		}
+
 			return result;
 		}
 	}

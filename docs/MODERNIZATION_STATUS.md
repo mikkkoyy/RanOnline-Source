@@ -17,10 +17,9 @@ formula provenance.
 | ---- | ----- |
 | Legacy import | complete |
 | Core foundation | complete |
-| Vertical gameplay slices 001-013 | complete |
+| Vertical gameplay slices 001-014 | complete |
 | Build verification (BUILD-001) | complete |
-| Buffs, status effects, world targeting | not started |
-| Buffs, status effects, world targeting | not started |
+| Buff / FACT system, world targeting | not started |
 
 ---
 
@@ -43,7 +42,8 @@ formula provenance.
 | VERTICAL-010 Required-SP / item integration | [x] | `021be63` |
 | VERTICAL-011 Active skill combat | [x] | `df9bf4f` |
 | VERTICAL-012 Ranged physical combat | [x] | `7b86e27` |
-| VERTICAL-013 Magic / elemental combat | [x] | this commit |
+| VERTICAL-013 Magic / elemental combat | [x] | `27d0ade` |
+| VERTICAL-014 Status effect foundation | [x] | this commit |
 
 ---
 
@@ -176,7 +176,41 @@ move behaviour away from RAN: the damage-reduction flag at
 branches, and the MP/SP resistance arithmetic at `GLChar.cpp:3099` appears
 inverted. See sections 9 and 10 of the investigation.
 
-**Next:** buffs / status effects / world targeting. The number is deliberately
+**VERTICAL-014 — Status effect foundation.** Complete. See
+`docs/reference/client/VERTICAL-014_STATUS_EFFECT_FOUNDATION.md`.
+
+`SkillDefinition::stateBlow` now reaches a real path. Status effects live in
+their own domain, `modern/core/status/`, and `ActiveSkillResolver` holds no
+status state: it reports the application verdict and `ServerCharacter` stores it
+on the target, mirroring legacy's two-step of deciding `bBLOW` in `SkillProc`
+and storing through the target's `STATEBLOW`.
+
+The central finding is that status effects are **a four-slot pool with shared
+occupancy**, not one slot per ailment. `EMBLOW_SINGLE` (5) is an alias of
+`EMBLOW_FROZEN`, and `GLChar.cpp:6204-6205` routes everything at or below it to
+slot 0 — so Numb, Stun, Stone, Burn and Frozen overwrite one another. Applying
+Burn to a stunned target **ends the stun early**. There is no refresh, no merge
+and no "keep the stronger": re-applying resets the duration.
+
+Also corrected a natural misreading: `GETHOLDBLOW()` is an **immunity mask**
+built from `EMSPECA_NONBLOW` specs, not a record of active states, so a target
+already stunned can be stunned again.
+
+One verified legacy bug is **reproduced rather than fixed**:
+`GLChar.cpp:3369` clamps status resistance against `fRESIST_G` (`0.5f`) instead
+of `fMAX_RESIST` (`99.0f`), so assigning it to a `short` truncates to 0 and
+resistance never affects the threshold or duration. Correcting it would diverge
+from the client players play. The ceiling is a named parameter
+(`StatusConstants::resistClampCeiling`) so adopting the intended clamp is a
+one-line change, and both behaviours are tested. **This is the decision most
+worth a second opinion.**
+
+Damage-over-time, movement/attack-speed effects, the `SSKILLFACT` buff system
+(`SKILLFACT_SIZE = 14`), zone/area targeting, projectiles, weather, healing,
+`EMFOR_MP`/`EMFOR_SP` and networking are all deferred, with reasons in §12 and §14
+of the investigation.
+
+**Next:** the buff/FACT system and world targeting. The number is deliberately
 left open rather than invented.
 
 ---

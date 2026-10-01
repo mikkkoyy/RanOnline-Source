@@ -32,6 +32,9 @@ set(MODERN_SOURCES
     types/Result.cpp
     resources/ResourceState.cpp
     combat/CombatCalculator.h
+    status/StatusEffectTypes.h
+    status/StatusEffectResolver.h
+    status/StatusEffectContainer.h
     engine/GameCharacterCalculations.cpp
 )
 

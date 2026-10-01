@@ -27,6 +27,7 @@
 #include "combat/CombatTypes.h"
 #include "skills/SkillDefinition.h"
 #include "stats/DerivedStats.h"
+#include "status/StatusEffectResolver.h"
 
 #include <cstdint>
 
@@ -174,6 +175,20 @@ namespace Modern::Skills
 		// legacy line uses.
 		float skillCrushingBonus = 0.0f;
 
+		// ── VERTICAL-014: status application inputs ─────────────────────────
+		//
+		// `ActiveSkillResolver` does not own status state; it reports the
+		// verdict that `StatusEffectResolver` produced, exactly as legacy's
+		// SkillProc decides `bBLOW` and puts the result on the wire for the
+		// target's own STATEBLOW to store. Applying it is the server's job.
+		//
+		// All of these are injected. The resolver never rolls, never reads a
+		// clock and never fetches character state.
+		float statusRandomRoll = 1.0f;       // RANDOM_POS for the blow check
+		uint32_t targetDisorderMask = 0;     // GETHOLDBLOW() & STATE_TO_DISORDER
+		int32_t targetBlowResist = 0;        // resistance to the blow's element
+		float weatherBlowPower = 1.0f;       // GLOGICEX::WEATHER_BLOW_POW
+
 		// VERTICAL-013: the magic halves of the target's DAMAGE_SPEC, plus the
 		// target's per-school damage decrease. Magic reads these instead of the
 		// psy values (GLogixExPC.cpp:1482-1484, :1546); they are separate fields
@@ -265,6 +280,15 @@ namespace Modern::Skills
 		// the damage number, which is exactly the inference that hid the
 		// VERTICAL-012 bug for three slices.
 		Combat::AttackType attackTypeUsed = Combat::AttackType::Melee;
+
+		// VERTICAL-014: the status application verdict.
+		//
+		// `hasStatusApplication` distinguishes "this skill inflicts no blow"
+		// from "this skill inflicts a blow that did not land" - the second is a
+		// real outcome with a reason (`statusRefusal`) and must not be reported
+		// as an absence.
+		bool hasStatusApplication = false;
+		StatusEffect::StatusApplicationResult statusApplication{};
 
 		constexpr bool Succeeded() const noexcept { return failure == ActiveSkillFailure::None; }
 		constexpr bool IsLowSp() const noexcept { return lowSp == LowSpState::Low; }

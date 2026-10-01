@@ -4024,3 +4024,60 @@ no-weather result), the item grade term, and stone/mad/curse/zen resistance,
 which `Stats::Resistances` has no field for.
 
 See `docs/reference/client/VERTICAL-013_MAGIC_ELEMENTAL_INVESTIGATION.md`.
+
+---
+
+# VERTICAL-014: Status Effect Foundation
+
+## A pool of four slots, not one slot per ailment
+
+`EMSTATE_BLOW` looks like eight independent states. It is not. Legacy stores
+state blows in `SSTATEBLOW m_sSTATEBLOWS[EMBLOW_MULTI]` - four entries
+(`GLCharClient.h:106`) - and `GLChar.cpp:6204-6205` picks the index:
+
+```cpp
+if ( emBLOW <= EMBLOW_SINGLE )  nIndex = 0;
+else                            nIndex = emBLOW - EMBLOW_SINGLE;
+```
+
+`EMBLOW_SINGLE` is **5**, an alias of `EMBLOW_FROZEN`. So Numb, Stun, Stone,
+Burn and Frozen all share slot 0 and overwrite each other; Mad, Poison and Curse
+take slots 1, 2 and 3.
+
+## Three pieces, deliberately separate
+
+| File | Responsibility |
+| --- | --- |
+| `status/StatusEffectTypes.h` | Modern `EMSTATE_BLOW` / `EMDISORDER` / `STATE_TO_ELEMENT` and the slot map |
+| `status/StatusEffectResolver.h` | Pure probability and duration. Roll injected, no clock, no character |
+| `status/StatusEffectContainer.h` | The four slots: apply, tick, cure, query |
+
+Keeping the resolver separate from the container is what lets the probability
+rule be tested without a character, and keeps lifetime out of the cast path.
+
+## Rules preserved exactly
+
+- **Probability** - `fACTRATE - fACTRATE*0.01*wRESIST*0.6 + nSTATEBLOW_LEVEL[clamped(target-attacker)+1]`, compared as `(roll*100) < threshold`. Strict, roll on the left, table added in raw percentage points.
+- **Duration** - `fLIFE * fPOWER`, reduced by resistance, stored as the **remaining** lifetime and decremented each tick, expiring at `<= 0`.
+- **Stacking** - plain assignment. Re-applying resets; a different single-slot state destroys the previous one.
+- **Cure** - `dwCUREFLAG` is a disorder **bitmask**; every intersecting slot is cleared.
+
+## Two names that mislead
+
+- `GETHOLDBLOW()` is an **immunity mask** from `EMSPECA_NONBLOW` specs, not a list of active states.
+- `fAGE` holds the **remaining** lifetime, not an elapsed age.
+
+## Verified legacy bug, reproduced
+
+`GLChar.cpp:3369` clamps status resistance against `fRESIST_G` (`0.5f`) where it
+means `fMAX_RESIST` (`99.0f`); assigning `0.5f` to a `short` truncates to `0`, so
+resistance never applies. Reproduced rather than corrected - this migration
+matches RAN - with the ceiling exposed as
+`StatusConstants::resistClampCeiling` so the intended clamp is a one-line change.
+
+## Integration
+
+`ActiveSkillResolver` gains a verdict (`hasStatusApplication`), never state.
+`ServerCharacter` owns the container and stores the verdict on the target.
+
+See `docs/reference/client/VERTICAL-014_STATUS_EFFECT_FOUNDATION.md`.

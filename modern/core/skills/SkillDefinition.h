@@ -17,6 +17,7 @@
 
 #include "item/ItemDefinition.h"
 #include "stats/Contributions.h"
+#include "status/StatusEffectTypes.h"
 #include "types/Ids.h"
 
 #include <array>
@@ -249,6 +250,23 @@ namespace Modern
 		// (GLSkillApply.h:247). The real delay is derived from it together with
 		// `grade` and the caster's level; see ActiveSkillResolver.
 		float delayTime = 0.0f;
+
+		// VERTICAL-014: the state blow ("ailment") this level applies. Mirrors
+		// SKILL::CDATA_LVL::fLIFE (GLSkillApply.h) and the per-level
+		// SSTATE_BLOW entry `sAPPLY.sSTATE_BLOW[level]`
+		// (GLChar.cpp:3355-3361):
+		//
+		//   sBLOW.fRATE = sSKILL_BLOW.fRATE;
+		//   sBLOW.fLIFE = pSkill->m_sAPPLY.sDATA_LVL[lev].fLIFE;
+		//   sBLOW.fVAR1 = sSKILL_BLOW.fVAR1;
+		//   sBLOW.fVAR2 = sSKILL_BLOW.fVAR2;
+		//
+		// The blow TYPE itself is per-skill, not per-level, and lives on
+		// SkillDefinition::stateBlow.
+		float blowRate = 0.0f;   // fRATE
+		float blowVar1 = 0.0f;   // fVAR1 -> fSTATE_VAR1
+		float blowVar2 = 0.0f;   // fVAR2 -> fSTATE_VAR2
+		float life     = 0.0f;   // fLIFE, in seconds
 	};
 
 	// VERTICAL-011: what a skill does. Mirrors SKILL::EMROLE
@@ -341,6 +359,14 @@ namespace Modern
 		// VERTICAL-013: pSkill->m_sAPPLY.emELEMENT. Only read when `apply` is
 		// Magic, because legacy only consults it inside the skill path.
 		SkillElement element = SkillElement::Spirit;
+
+		// VERTICAL-014: the state blow this skill inflicts. Mirrors
+		// `pSkill->m_sAPPLY.emSTATE_BLOW`, read at GLChar.cpp:3357 and guarded
+		// on at :3364.
+		//
+		// It is per-skill rather than per-level in legacy; the per-level numbers
+		// are `SkillLevelData::blowRate` / `blowVar1` / `blowVar2` / `life`.
+		StatusEffect::StatusEffectType stateBlow = StatusEffect::StatusEffectType::None;
 
 		// The basic apply type and its per-level values.
 		PassiveApplyType applyType = PassiveApplyType::Hp;

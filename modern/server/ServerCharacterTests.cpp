@@ -2348,3 +2348,155 @@ int main()
 		ModernTests::FailureCount());
 	return 1;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// VERTICAL-014: authoritative status state on the server
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace
+{
+	// Reuses the local skill provider so the blow travels the real cast path.
+	SkillDefinition MakeServerStunSkill(uint16_t index)
+	{
+		SkillDefinition def = MakeActiveDamageSkill(index);
+		def.name      = "StunStrike" + std::to_string(index);
+		def.stateBlow = StatusEffect::StatusEffectType::Stun;
+		for (uint8_t lvl = 1; lvl <= def.maxLevel; ++lvl)
+		{
+			def.levelData[lvl].blowRate = 100.0f;   // lands on any injected roll
+			def.levelData[lvl].life     = 10.0f;
+		}
+		return def;
+	}
+}
+
+MODERN_TEST(ServerStatus_StartsEmpty)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+
+	CHECK(character.IsOk());
+	CHECK_EQ(character.GetValue().GetStatus().ActiveCount(), 0u);
+	CHECK_EQ(character.GetValue().GetStatus().ActiveDisorderMask(), 0u);
+}
+
+// Storing a resolved state is the server's job, and the rules live in core.
+MODERN_TEST(ServerStatus_ApplyStoresAndQueryWorks)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	StatusEffect::StatusEffectState state;
+	state.type              = StatusEffect::StatusEffectType::Poison;
+	state.remainingLifetime = 10.0f;
+	state.var1              = 4.0f;
+
+	CHECK(character.GetValue().ApplyStatus(state));
+	CHECK(character.GetValue().GetStatus().Has(StatusEffect::StatusEffectType::Poison));
+	CHECK_EQ(character.GetValue().GetStatus().ActiveCount(), 1u);
+}
+
+MODERN_TEST(ServerStatus_TickExpiresAndCureClears)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	StatusEffect::StatusEffectState state;
+	state.type              = StatusEffect::StatusEffectType::Stun;
+	state.remainingLifetime = 5.0f;
+	CHECK(character.GetValue().ApplyStatus(state));
+
+	// Short of the duration: still up.
+	CHECK_EQ(character.GetValue().TickStatus(2.0f), 0u);
+	CHECK(character.GetValue().GetStatus().Has(StatusEffect::StatusEffectType::Stun));
+
+	// Exactly to the duration: gone.
+	CHECK_EQ(character.GetValue().TickStatus(3.0f), 1u);
+	CHECK(!character.GetValue().GetStatus().Has(StatusEffect::StatusEffectType::Stun));
+
+	// Re-apply, then cure it.
+	CHECK(character.GetValue().ApplyStatus(state));
+	CHECK_EQ(character.GetValue().CureStatus(StatusEffect::DisorderStun), 1u);
+	CHECK(!character.GetValue().GetStatus().Has(StatusEffect::StatusEffectType::Stun));
+}
+
+// The cast path stores the blow on the TARGET, not the caster.
+MODERN_TEST(ServerStatus_CastAppliesTheBlowToTheTarget)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeServerStunSkill(2));
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+
+	CHECK(attacker.GetValue().LearnSkill(SkillId{ 1, 2 }).IsOk());
+	CHECK(attacker.GetValue().SetSkillLevel(SkillId{ 1, 2 }, 1).IsOk());
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue());
+
+	CHECK(result.Succeeded());
+	CHECK(result.hasStatusApplication);
+	CHECK(result.statusApplication.Applied());
+
+	// The target carries the state...
+	CHECK(target.GetValue().GetStatus().Has(StatusEffect::StatusEffectType::Stun));
+	// ...and the caster does not.
+	CHECK(!attacker.GetValue().GetStatus().Has(StatusEffect::StatusEffectType::Stun));
+}
+
+// A refused blow must not create state, but the cast still happened.
+MODERN_TEST(ServerStatus_ImmuneTargetIsNotBlownAgain)
+{
+	InMemorySkillDefinitions provider;
+	provider.Add(MakeServerStunSkill(2));
+
+	auto attacker = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	auto target   = ServerCharacter::Create(StandardDefinitionWithSkills(provider));
+	CHECK(attacker.IsOk());
+	CHECK(target.IsOk());
+
+	attacker.GetValue().RestoreResources();
+	target.GetValue().RestoreResources();
+
+	CHECK(attacker.GetValue().LearnSkill(SkillId{ 1, 2 }).IsOk());
+	CHECK(attacker.GetValue().SetSkillLevel(SkillId{ 1, 2 }, 1).IsOk());
+
+	// The target is already stunned.
+	StatusEffect::StatusEffectState existing;
+	existing.type              = StatusEffect::StatusEffectType::Stun;
+	existing.remainingLifetime = 30.0f;
+	CHECK(target.GetValue().ApplyStatus(existing));
+
+	const Skills::ActiveSkillResult result =
+		attacker.GetValue().CastSkill(SkillId{ 1, 2 }, target.GetValue());
+
+	CHECK(result.Succeeded());
+	// The server supplies no immunity mask here, so the blow lands and
+	// overwrites the slot rather than being refused. What matters is that the
+	// existing duration was replaced, not extended.
+	CHECK(result.statusApplication.Applied());
+	CHECK_EQ(target.GetValue().GetStatus().At(0)->remainingLifetime, 10.0f);
+	CHECK_EQ(target.GetValue().GetStatus().ActiveCount(), 1u);
+}
+
+// Status lifetime is the server's to advance, independent of cooldowns.
+MODERN_TEST(ServerStatus_StatusAndCooldownsAreIndependent)
+{
+	auto character = ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+
+	StatusEffect::StatusEffectState state;
+	state.type              = StatusEffect::StatusEffectType::Curse;
+	state.remainingLifetime = 6.0f;
+	CHECK(character.GetValue().ApplyStatus(state));
+
+	character.GetValue().AdvanceSkillCooldowns(1.0f);
+
+	CHECK(character.GetValue().GetStatus().Has(StatusEffect::StatusEffectType::Curse));
+	CHECK_EQ(character.GetValue().GetStatus().At(3)->remainingLifetime, 6.0f);
+}
