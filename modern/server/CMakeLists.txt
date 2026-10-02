@@ -17,6 +17,10 @@ set(MODERN_SERVER_SOURCES
     login/LoginReceiver.h
     login/LoginResponder.cpp
     login/LoginResponder.h
+    # LOGIN-001: Login Server game-server-list response. A sibling of LoginResponder,
+    # not a stage after it - separate connection, separate protocol, separate phase.
+    login/LoginServerResponder.cpp
+    login/LoginServerResponder.h
 )
 
 add_library(ModernServer STATIC ${MODERN_SERVER_SOURCES})
@@ -45,6 +49,8 @@ add_executable(ModernServerTests
     ServerCharacterTests.cpp
     LoginReceiverTests.cpp
     LoginResponderTests.cpp
+    # LOGIN-001: Login Server responder + client end-to-end and fragmentation tests.
+    LoginServerTests.cpp
 )
 
 target_include_directories(ModernServerTests PRIVATE

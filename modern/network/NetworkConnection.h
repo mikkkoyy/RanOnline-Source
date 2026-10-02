@@ -121,6 +121,15 @@ namespace Modern::Network
 		// Bytes buffered but not yet forming a whole message.
 		std::size_t Buffered() const noexcept { return m_buffer.size(); }
 
+	// Total buffer capacity chosen at construction.
+	//
+	// Exposed so a caller that receives large bursts can feed in slices bounded by
+	// the room actually left, draining between them, instead of handing over a
+	// chunk larger than capacity and having Feed() report Oversized. Capacity
+	// bounds BUFFERED PARTIAL DATA, not total stream length, so a peer may legally
+	// send far more than this overall.
+	std::size_t Capacity() const noexcept { return m_capacity; }
+
 		void Reset() noexcept
 		{
 			m_buffer.clear();

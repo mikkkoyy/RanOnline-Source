@@ -39,6 +39,9 @@ set(MODERN_NETWORK_SOURCES
     # WORLD-002: NET_MSG_LOGIN_FB response codec (120 bytes, NOT minTea encrypted).
     LoginResponseProtocol.h
     LoginResponseProtocol.cpp
+    # LOGIN-001: Login Server game-server list (REQ/SND_GAME_SVR, SND_GAME_SVR_END).
+    GameServerListProtocol.h
+    GameServerListProtocol.cpp
     # Vendored miniLZO 2.10, unmodified. Provenance and the open licensing
     # question are recorded in third_party/minilzo/VENDOR.md. Compiled as C
     # because that is what upstream ships; ModernNetwork itself stays C++17.

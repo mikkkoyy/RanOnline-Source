@@ -22,6 +22,9 @@ add_library(ModernClientLogin STATIC
     World001LoginClient.h
     LoginResponseClient.h
     LoginResponseClient.cpp
+    # LOGIN-001: Login Server client (pre-login phase, separate from Agent login).
+    LoginServerClient.h
+    LoginServerClient.cpp
 )
 
 target_include_directories(ModernClientLogin PUBLIC

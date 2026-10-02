@@ -38,6 +38,8 @@ add_executable(ModernNetworkTests
     LoginProtocolTests.cpp
     # WORLD-002: NET_MSG_LOGIN_FB response codec (120 bytes, unencrypted).
     LoginResponseProtocolTests.cpp
+    # LOGIN-001: Login Server game-server list (REQ/SND_GAME_SVR, SND_GAME_SVR_END).
+    GameServerListProtocolTests.cpp
 )
 
 target_link_libraries(ModernNetworkTests PRIVATE ModernNetwork)
