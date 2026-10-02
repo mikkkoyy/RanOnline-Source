@@ -290,16 +290,33 @@ shifts the buffer.
 Legacy documents this itself in the comment block at `RcvMsgBuffer.cpp:59-82` and `:84-87`
 (`| Type1 | Size1 | Data1 | Type2 | Size2 | Data2 | ...`).
 
-### C.3 Transformation order
+### C.3 Transformation order — and it is DIRECTIONAL, not symmetric
 
-**Outbound:** TEA-encrypt message fields → serialize → batch → LZO → wrap in
-`NET_COMPRESS` → `WSASend`.
-**Inbound:** receive → unwrap/decompress → peel message → TEA-decrypt fields → dispatch.
+> **Corrected by VERTICAL-029.** The two directions differ. Everything below describing
+> batching, LZO and the `NET_COMPRESS` wrapper applies to **server → client only**.
+> See `ASURA_CLIENT_LOGIN_AUTHORITY.md` §7.
 
-TEA is **inside** compression. Confirmed structurally: `m_Tea.decrypt` runs inside message
-handlers on an already-received struct, while `SendClient` only queues (`s_CNetUser.cpp:1047`
-→ `addMsg`), and compression happens later at flush time (`SendClientFinal`). Encrypting the
-outer envelope instead would have been the opposite order and is not what the code does.
+**Server → client (outbound from a server):**
+TEA-encrypt message fields → serialize → batch → LZO → wrap in `NET_COMPRESS` → `WSASend`.
+
+**Client → server (outbound from the game client):**
+TEA-encrypt message fields → serialize → *(optional garbage token)* → `::send()`.
+**No batching, no LZO, no `NET_COMPRESS` envelope.**
+
+`CNetClient::SendBuffer2` (`s_NetClient.cpp:815-831`) reads `nmg->dwSize` from its own send
+buffer and passes it straight to `::send`, one message per call. Contrast
+`CClientManager::SendClientFinal` (`s_CClientManager.cpp:420-433`), which is what batches and
+compresses. The client still *receives* through the same `CRcvMsgBuffer` and so does handle
+the envelope inbound (`s_NetClient.cpp:1110`).
+
+TEA is **inside** compression where compression applies. Confirmed structurally: `m_Tea.decrypt`
+runs inside message handlers on an already-received struct, while `SendClient` only queues
+(`s_CNetUser.cpp:1047` → `addMsg`), and compression happens later at flush time
+(`SendClientFinal`). Encrypting the outer envelope instead would have been the opposite order
+and is not what the code does.
+
+Practical consequence: a capture of a **client login** packet needs no LZO decompression and
+no envelope unwrapping. It is a flat `NET_MSG_GENERIC`.
 
 ### C.4 Legacy quirks a faithful implementation must know
 
@@ -308,10 +325,21 @@ outer envelope instead would have been the opposite order and is not what the co
   payload is exactly the concatenated messages.
 - **Header-first reads.** The server issues `WSARecv` for exactly `sizeof(NET_MSG_GENERIC)`
   = 8 bytes on accept, setting `NET_PACKET_HEAD` mode (`s_CAgentServerThread.cpp:216-227`).
-- **`GARBAGE_DATA` anti-tamper is client-side only.** `getMsg(bool bClient)` applies it only
-  when `bClient` is true (`RcvMsgBuffer.cpp:229-249`, `SetGarbageNum` at `:187-211`), matching
-  the comment that the server-side path deliberately omits it. It shifts `dwSize` by a
-  detected prefix length; a modern client must not receive server traffic through that path.
+- **`GARBAGE_DATA` obfuscation: the client INSERTS it, the server REMOVES it.**
+  > **Corrected by VERTICAL-029 — V028 had this backwards.** V028 read
+  > `getMsg(bool bClient)` as "client-side only". `bClient` means *"this slot is a game
+  > client"*; `CNetUser::GetMsg` sets it for any slot that is not a server-to-server slot
+  > (`s_CNetUser.cpp:552-577`). So the **server** strips and validates it
+  > (`RcvMsgBuffer.cpp:229-249`, `SetGarbageNum` at `:187-211`), and the client program
+  > calls `getMsg(FALSE)` (`s_NetClient.cpp:1110`) and does not strip.
+  >
+  > The client inserts the token in `CNetClient::SendNormal` (`s_NetClient.cpp:936-942`,
+  > `SendMsgAddGarbageValue` at `:893-922`) whenever the connection state is not
+  > `NET_STATE_LOGIN`, and inflates `dwSize` by its length. **This applies to the login
+  > packet itself**, because login goes to the Agent with state `NET_STATE_AGENT`
+  > (`s_NetClient.cpp:387`). Stripping must happen **before** any size validation, or
+  > `CAgentServer::MsgLogIn`'s `sizeof(NET_LOGIN_DATA) != dwSize` check
+  > (`s_CAgentServerMsgLogin.cpp:618`) rejects every real login.
 - **Validation guards** (`RcvMsgBuffer.cpp:100-106`, repeated at `:216-224`): reject
   `dwSize == 0`, `dwSize > NET_DATA_BUFSIZE` (2048), `dwSize < sizeof(NET_MSG_GENERIC)`.
   `NET_DATA_CLIENT_MSG_BUFSIZE` is 16384 — a **larger** receive buffer than the 2048 guard,
@@ -384,23 +412,35 @@ client must already be connected and have registered.
 WORLD-001's first message cannot be fixed until the client→Agent variant is settled. See
 *Unresolved* item 1.
 
+> **RESOLVED by VERTICAL-029.** The variant is `NET_MSG_LOGIN_2` (2049), struct
+> `NET_LOGIN_DATA`, 76 bytes, minTea per-field, and it is the same for both `KR_PARAM` and
+> `PH_PARAM`. See `docs/reference/network/ASURA_CLIENT_LOGIN_AUTHORITY.md`. Note also that
+> V028's premise was wrong: the login-send routine is **not** absent — it is
+> `legacy/Lib_Network/s_NetClientMsgLogin.cpp`, which V028 never searched. It also matters
+> that the client sends this **raw and uncompressed**, not wrapped (§C.3).
+
 ---
 
 ## Unresolved — do not guess
 
-1. **Which login variant the ASURA client sends.** The server accepts all nine at runtime,
-   so the protocol is fully mapped, but choosing what a modern client emits requires either a
-   packet capture of ASURA traffic or the `MiniA.exe`/`GameClient2` login-send routine. That
-   routine is **not present** in `legacy/Lib_Client/` — searched for `NET_LOGIN_DATA`,
-   `szRandomPassword`, `Login(`, with no construction site found. Highest-value next step.
+1. ~~**Which login variant the ASURA client sends.**~~ **RESOLVED in VERTICAL-029:**
+   `NET_MSG_LOGIN_2` = 2049, `NET_LOGIN_DATA`, 76 bytes. The original reasoning here was
+   wrong — it claimed the send routine was "**not present** in `legacy/Lib_Client/`,
+   searched for `NET_LOGIN_DATA`, `szRandomPassword`, `Login(`, with no construction site
+   found". It exists, at `legacy/Lib_Network/s_NetClientMsgLogin.cpp` (V028 searched the
+   wrong library). Selection is a runtime `switch` on `RANPARAM::emSERVICE_TYPE`
+   (`LoginPage.cpp:239-260`); `EMSERVICE_KOREA` and `EMSERVICE_PHILIPPINES` both fall to
+   `default` → `CNetClient::SndLogin`. Still outstanding: no packet capture.
 2. **Extent of nProtect interposition.** `nProtect`/`GameGuard` strings are in the ASURA
    servers and a full `Hackshield\` payload ships, but the integrating source is absent from
    `legacy/`. Whether GameGuard gates *before* `NET_MSG_LOGIN_2` and whether any traffic is
-   additionally transformed by it is **unknown**.
-3. **`TCHAR` vs `CHAR` in the DAUM/TERRA/GSP structs.** Those handlers read credential
-   fields declared `TCHAR`. Under the project's Unicode configuration their wire size differs
-   from the `CHAR`-based `NET_LOGIN_DATA`. The default server `dwSize` for those variants is
-   therefore **unverified**, and a fixed-width implementation must not assume they match.
+   additionally transformed by it is **unknown**. V029 established that `MiniA.exe` calls
+   `hs_start()`/`hs_start_service()` and exits on failure (`GameClient2.cpp:110-119`), so it
+   gates at process start rather than mid-protocol.
+3. ~~**`TCHAR` vs `CHAR` in the DAUM/TERRA/GSP structs.**~~ **Answered in VERTICAL-029:** all
+   29 original `.vcproj` specify `CharacterSet="2"` (MBCS), so `TCHAR` == `char` == 1 byte and
+   the single-byte sizes in V029 §1 are correct. The original wording above was wrong in
+   asserting the project was "Unicode". The hazard remains real for any future Unicode port.
 4. **`RANPARAM::bFeatureRegisterUseMD5` value for ASURA.** It changes the encrypted password
    byte count (`+1`, see B.3), so it is wire-visible. `RANPARAM.cpp` reads it from an
    encrypted `config.ini`/`param.ini`; the ASURA `config.ini` is obfuscated and was not
