@@ -17,9 +17,9 @@ formula provenance.
 | ---- | ----- |
 | Legacy import | complete |
 | Core foundation | complete |
-| Vertical gameplay slices 001-025 | complete |
+| Vertical gameplay slices 001-026 | complete |
 | Build verification (BUILD-001) | complete |
-| Impact/addon modifiers, world targeting | partial — damage, defence and resource FACT axes through VERTICAL-024; physical resistance ordering corrected in VERTICAL-025; enum 19-23 proven unreferenced in VERTICAL-023; velocity, status, range and world targeting still deferred |
+| Impact/addon modifiers, world targeting | partial — damage, defence and resource FACT axes through VERTICAL-024; physical resistance ordering corrected in VERTICAL-025; legacy damage variant authority RESOLVED in VERTICAL-026; enum 19-23 proven unreferenced in VERTICAL-023; velocity, status, range and world targeting still deferred |
 
 ---
 
@@ -55,6 +55,7 @@ formula provenance.
 | VERTICAL-023 Recovery VAR / CP consumer investigation | [x] complete — investigated, no proven runtime consumers | see `docs/reference/server/VERTICAL-023_RECOVERY_VAR_CP_INVESTIGATION.md` |
 | VERTICAL-024 DAMAGE_RATE FACT axis | [x] | see `docs/reference/server/VERTICAL-024_DAMAGE_RATE_INVESTIGATION.md` |
 | VERTICAL-025 Physical resistance ordering | [x] corrected | see `docs/reference/server/VERTICAL-025_PHYSICAL_RESISTANCE_ORDERING.md` |
+| VERTICAL-026 CALCDAMAGE variant authority | [x] RESOLVED - CALCDAMAGE_20060328 | see `docs/reference/server/VERTICAL-026_CALCDAMAGE_VARIANT_AUTHORITY.md` |
 
 ---
 
@@ -636,6 +637,59 @@ the roll and **not at all** on basic attacks.
 discriminator (76 against 75), and the wide-range case is recorded as agreeing by
 coincidence rather than presented as proof. Magic resistance untouched.
 Debug and Release both 0 errors / 0 warnings, CTest 14/14, core 526, server 114.
+**VERTICAL-026 - CALCDAMAGE variant authority.** Complete, investigation-only.
+See `docs/reference/server/VERTICAL-026_CALCDAMAGE_VARIANT_AUTHORITY.md`.
+
+**RESOLVED - CALCDAMAGE_20060328.** The question VERTICAL-025 left open is
+closed, and V025's implementation stands unchanged.
+
+The repository holds **two generations of Visual Studio project files**, and
+VERTICAL-025 read only the newer one. RAN's own `.vcproj` (VS2003 format, Korean
+`ks_c_5601-1987` encoding) defines **`KR_PARAM` in Debug and Release in every
+single gameplay project** - Lib_Client, Lib_ClientUI, Lib_Engine, Lib_Network,
+all four servers, GameClient2, GameEmulator, GameViewer, GMTool and all twelve
+editors. `KR_PARAM` is dispatch member #2, so RAN's own build selects
+`CALCDAMAGE_20060328`.
+
+The committed `.vcxproj` (VS2010+/v143) defines **no** dispatch macro and would
+select `CALCDAMAGE_2004` - the trap. It is an MSBuild conversion that dropped
+`KR_PARAM`, and it is otherwise faithful: **zero `.cpp` files are missing**, so it
+really would compile `GLogixExPC.cpp`. My first hypothesis here was that it was a
+sloppy partial conversion that could not build; testing that hypothesis is what
+surfaced the real finding. It is modernization scaffolding - the `.sln` references
+`legacy\` paths that exist only in the reorganised repo, and its output layout
+does not match ASURA's - and no modern code builds from it.
+
+Three independent primary-evidence lines select `CALCDAMAGE_20060328`:
+
+1. RAN's own unanimous `KR_PARAM` configuration.
+2. ASURA's `LauncherConfig.json` declares `"Region": "Philippines"`; `PH_PARAM` is
+   also a dispatch member.
+3. **Behavioural, and decisive**: `m_sSUMITEM.fIncR_Critical` is read at exactly
+   one place in the entire file - `:1620`, inside `CALCDAMAGE_20060328`.
+   `CALCDAMAGE_2004` never reads it, so **a critical item is completely inert
+   under 2004**. Modern's `attackerCriticalBonus` already depends on that term,
+   so choosing 2004 would make modern's critical-item feature dead by
+   construction.
+
+The fourth line is the RaGEZONE thread already flagged, and it turned out to be
+behaviourally precise rather than merely suggestive: a user reported a critical
+item producing no criticals, was told to use `CALCDAMAGE_20060328`, and
+confirmed it worked. That is exactly asymmetry #3, observed independently in
+2020. Recorded as corroboration, not as proof of the ASURA build.
+
+**Binary inspection is inconclusive and recorded as such.** Neither variant
+leaves a distinctive string; the executables are stripped. A string sweep found
+only a *runtime* `Service Provider:` list in `[2]ServerField.exe` enumerating
+KOREA / TAIWAN / CHINA / JAPAN / Philippines-Vietnam / THAILAND / MALAYSIA /
+Global - which evidences a multi-region build and says nothing about the
+compile-time macro. Also recorded: ASURA's output path
+(`RanOnline-Build\ASURA CLIENT\`) does not match what any committed project
+produces, so its literal `/D` line is not in the repository. That gap does not
+weaken the verdict, since none of the three lines above depends on it.
+
+No code changed. Debug and Release both 0 errors / 0 warnings, CTest 14/14,
+core 526, server 114 - unchanged from V025.
 **Next:** the remaining deferred FACT impacts. Damage rate deferred with
 subsystems: item FACT, system buff, pet skill FACT, QITEM, GM event, land effect.
 Recovery deferred with subsystems: pet, land effect, item FACT, system buff.
