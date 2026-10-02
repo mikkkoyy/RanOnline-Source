@@ -12,7 +12,7 @@ add_executable(ModernCoreTests
     ActiveSkillTests.cpp
     CodexTests.cpp
     CombatTests.cpp
-  StatusEffectTests.cpp
+    StatusEffectTests.cpp
 SkillFactTests.cpp
 )
 
@@ -23,6 +23,26 @@ target_compile_features(ModernCoreTests PRIVATE cxx_std_17)
 if(MSVC)
     target_compile_options(ModernCoreTests PRIVATE /W4 /permissive- /utf-8)
 endif()
+
+# VERTICAL-027: network boundary tests.
+#
+# A separate executable rather than more files in ModernCoreTests, because it
+# links ModernNetwork. ModernCoreTests deliberately links Modern alone, and
+# loosening that to reach one header would weaken a rule the whole project
+# depends on: core is free of transport and protocol concerns.
+add_executable(ModernNetworkTests
+    NetworkTests.cpp
+)
+
+target_link_libraries(ModernNetworkTests PRIVATE ModernNetwork)
+
+target_compile_features(ModernNetworkTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernNetworkTests PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+add_test(NAME ModernNetworkTests COMMAND ModernNetworkTests)
 
 # enable_testing() is called by the top-level CMakeLists.txt, which is where
 # CTest needs it in order to reach this directory.

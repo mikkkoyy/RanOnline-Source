@@ -17,8 +17,9 @@ formula provenance.
 | ---- | ----- |
 | Legacy import | complete |
 | Core foundation | complete |
-| Vertical gameplay slices 001-026 | complete |
+| Vertical gameplay slices 001-027 | complete |
 | Build verification (BUILD-001) | complete |
+| Modern network boundary | foundation complete (VERTICAL-027) — transport, framing, codec, routing, session. Login/Agent/Field/Session servers, world, movement and networked combat are not started |
 | Impact/addon modifiers, world targeting | partial — damage, defence and resource FACT axes through VERTICAL-024; physical resistance ordering corrected in VERTICAL-025; legacy damage variant authority RESOLVED in VERTICAL-026; enum 19-23 proven unreferenced in VERTICAL-023; velocity, status, range and world targeting still deferred |
 
 ---
@@ -56,6 +57,7 @@ formula provenance.
 | VERTICAL-024 DAMAGE_RATE FACT axis | [x] | see `docs/reference/server/VERTICAL-024_DAMAGE_RATE_INVESTIGATION.md` |
 | VERTICAL-025 Physical resistance ordering | [x] corrected | see `docs/reference/server/VERTICAL-025_PHYSICAL_RESISTANCE_ORDERING.md` |
 | VERTICAL-026 CALCDAMAGE variant authority | [x] RESOLVED - CALCDAMAGE_20060328 | see `docs/reference/server/VERTICAL-026_CALCDAMAGE_VARIANT_AUTHORITY.md` |
+| VERTICAL-027 Modern network boundary foundation | [x] | see `docs/reference/server/VERTICAL-027_NETWORK_BOUNDARY_FOUNDATION.md` |
 
 ---
 
@@ -690,7 +692,80 @@ weaken the verdict, since none of the three lines above depends on it.
 
 No code changed. Debug and Release both 0 errors / 0 warnings, CTest 14/14,
 core 526, server 114 - unchanged from V025.
-**Next:** the remaining deferred FACT impacts. Damage rate deferred with
+**VERTICAL-027 - Modern network boundary investigation + foundation.** Complete.
+See `docs/reference/server/VERTICAL-027_NETWORK_BOUNDARY_FOUNDATION.md`.
+
+The first milestone outside the gameplay core, and deliberately the smallest
+useful one: a **new `ModernNetwork` target** holding transport, framing, codec,
+routing and session, plus a deterministic in-memory transport. No Login, Agent,
+Field or Session server, no database, no world, no movement, no networked combat.
+
+It is a separate target rather than a directory inside core because
+`modern/core/CMakeLists.txt` states core "must stay free of Windows UI, DirectX,
+sockets, PostgreSQL and any legacy RAN type". Putting a transport behind that
+rule would have quietly broken it. For the same reason `ModernNetworkTests` is a
+separate executable rather than more files in `ModernCoreTests` - loosening that
+target to reach one header would weaken the rule the whole project rests on.
+ModernCoreTests still links Modern alone.
+
+**Legacy, verified from source.** TCP over Winsock with **IOCP**
+(`s_CServer.h` owns recv/send overlapped, `MAX_WORKER_THREAD` workers, an accept
+thread); `s_NetGlobal.h:120-122` states outright that this version does not
+support UDP. The header is 8 bytes, `NET_MSG_GENERIC { DWORD dwSize; EMNET_MSG
+nType; }` (`:2635`), and **`dwSize` includes the header** - every legacy
+constructor sets it from `sizeof`, and `RcvMsgBuffer.cpp:96` compares against it
+to decide whether a whole message has arrived. `RcvMsgBuffer.cpp:112-118` is the
+reference validation, and carries the comment `//packet crash fix`.
+
+Message ids are `NET_MSG_BASE = 992` plus `LGIN +450`, `LOBBY +950`,
+`LOBBY_MAX +1450`, `GCTRL +1900`. Worth noting: **every branch of the country
+`#if` chain assigns 992**, so ids do NOT vary by region - which means V026's
+`KR_PARAM` question does not reach the protocol constants at all.
+
+**One decision worth defending.** Legacy memcpys native structs, which is
+little-endian on x86 by accident of one compiler on one CPU. The modern codec
+encodes and decodes field by field with fixed-width types. **The bytes are
+identical on x86, so wire compatibility is preserved - but the guarantee is now
+explicit and testable rather than accidental**, and pinned byte by byte.
+
+**Security foundation.** Decode refuses size zero, size below the header, size
+above `kMaxPacketSize`, truncation, and (as modern hardening legacy does not
+perform) a zero message id. The framer **latches** on an invalid header rather
+than guessing where to resynchronise, and bounds its buffer so a peer that never
+finishes a message cannot make it grow without limit.
+
+**Two bugs found by tests, not inspection, both recorded in the document.** The
+first `LoopbackTransport` held a raw back-pointer set inside `CreatePair`; the
+pair is returned by value, so the copies pointed at dead locals - an immediate
+access violation with no output at all. And the direction semantics were wrong
+after that fix: `Send` and `Receive` used the same queue, so bytes never crossed
+and three transport tests reported zeros. Both were invisible to review and
+obvious to a test that asserts something observable.
+
+47 tests, deterministic: no socket, no clock, no RNG. The framing tests feed
+one byte at a time and split header from body, because that is the case a real
+socket produces and a naive test never sees. Core 526 and Server 114 are
+UNCHANGED - no regression - and CTest is 15/15 (ModernNetworkTests is new).
+
+**Three UNRESOLVED items are recorded rather than deferred silently**, and all
+three must be settled before any wire-compatible client exists: which platform
+login variant is active for ASURA/PH (`DAUM_`/`CHINA_`/`GSP_`/`TERRA_`); which
+crypt is active and whether the DH exchange completes before gameplay traffic;
+and whether `NET_MSG_COMPRESS` batching is negotiated or unconditional. The
+third could change the framing layer, so it is called out specifically.
+**Next milestone: WORLD-001 — Login -> character list -> character select ->
+enter world -> spawn**, built on the VERTICAL-027 boundary. Then WORLD-002
+(movement + server validation + synchronisation), COMBAT-ONLINE-001, INVENTORY-001,
+PERSISTENCE-001.
+
+Before any wire-compatible client is written, three VERTICAL-027 items must be
+settled by investigation, not code: which platform login variant is active for
+ASURA/PH (`DAUM_`/`CHINA_`/`GSP_`/`TERRA_`/`NET_MSG_LOGIN_2`); which crypt is
+active and whether the Diffie-Hellman exchange in `Lib_Network/dhkey.cpp`
+completes before gameplay traffic; and whether `NET_MSG_COMPRESS` batching is
+negotiated or unconditional. The third could change the framing layer.
+
+**Next (gameplay):** the remaining deferred FACT impacts. Damage rate deferred with
 subsystems: item FACT, system buff, pet skill FACT, QITEM, GM event, land effect.
 Recovery deferred with subsystems: pet, land effect, item FACT, system buff.
 Also open: velocity, potion, invisibility, pierce, range, stun, continuous
