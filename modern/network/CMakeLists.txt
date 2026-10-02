@@ -19,6 +19,24 @@ set(MODERN_NETWORK_SOURCES
     LoopbackTransport.h
     MessageRouter.h
     ServerSession.h
+    # VERTICAL-030: server->client NET_COMPRESS + LZO1X layer. CompressionCodec
+    # owns the only LZO dependency in the modern tree; NetCompressCodec owns the
+    # 12-byte envelope; ServerBatchEncoder owns the 1000-byte flush trigger.
+    CompressionCodec.h
+    CompressionCodec.cpp
+    NetCompressCodec.h
+    NetCompressCodec.cpp
+    ServerBatchEncoder.h
+    ServerBatchEncoder.cpp
+    # Vendored miniLZO 2.10, unmodified. Provenance and the open licensing
+    # question are recorded in third_party/minilzo/VENDOR.md. Compiled as C
+    # because that is what upstream ships; ModernNetwork itself stays C++17.
+    third_party/minilzo/minilzo.c
+    third_party/minilzo/minilzo.h
+    third_party/minilzo/lzoconf.h
+    third_party/minilzo/lzodefs.h
+    third_party/minilzo/README.LZO
+    third_party/minilzo/VENDOR.md
 )
 
 add_library(ModernNetwork STATIC ${MODERN_NETWORK_SOURCES})
@@ -29,4 +47,10 @@ target_compile_features(ModernNetwork PUBLIC cxx_std_17)
 
 if(MSVC)
     target_compile_options(ModernNetwork PRIVATE /W4 /permissive- /utf-8)
+    # The vendored C is upstream code we must not "fix"; it is compiled at its
+    # own warning level and excluded from ours so /W4 stays meaningful for code
+    # this project owns.
+    set_source_files_properties(third_party/minilzo/minilzo.c PROPERTIES
+        LANGUAGE C
+        COMPILE_OPTIONS "/W0")
 endif()

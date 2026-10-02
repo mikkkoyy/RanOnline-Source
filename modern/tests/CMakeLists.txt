@@ -32,6 +32,8 @@ endif()
 # depends on: core is free of transport and protocol concerns.
 add_executable(ModernNetworkTests
     NetworkTests.cpp
+    # VERTICAL-030: server->client NET_COMPRESS + LZO1X layer.
+    NetworkCompressTests.cpp
 )
 
 target_link_libraries(ModernNetworkTests PRIVATE ModernNetwork)
