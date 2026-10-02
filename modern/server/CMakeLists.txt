@@ -15,6 +15,8 @@ set(MODERN_SERVER_SOURCES
     # ILoginAuthenticator is the seam a real account store will implement.
     login/LoginReceiver.cpp
     login/LoginReceiver.h
+    login/LoginResponder.cpp
+    login/LoginResponder.h
 )
 
 add_library(ModernServer STATIC ${MODERN_SERVER_SOURCES})
@@ -42,6 +44,7 @@ endif()
 add_executable(ModernServerTests
     ServerCharacterTests.cpp
     LoginReceiverTests.cpp
+    LoginResponderTests.cpp
 )
 
 target_include_directories(ModernServerTests PRIVATE

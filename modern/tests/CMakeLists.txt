@@ -36,6 +36,8 @@ add_executable(ModernNetworkTests
     NetworkCompressTests.cpp
     # WORLD-001: client -> server login protocol (minTea, garbage token, framing).
     LoginProtocolTests.cpp
+    # WORLD-002: NET_MSG_LOGIN_FB response codec (120 bytes, unencrypted).
+    LoginResponseProtocolTests.cpp
 )
 
 target_link_libraries(ModernNetworkTests PRIVATE ModernNetwork)
