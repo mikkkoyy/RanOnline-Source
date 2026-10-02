@@ -28,6 +28,14 @@ set(MODERN_NETWORK_SOURCES
     NetCompressCodec.cpp
     ServerBatchEncoder.h
     ServerBatchEncoder.cpp
+    # WORLD-001: the client -> server login protocol. MinTeaCodec reproduces the
+    # legacy field cipher; LoginProtocol owns NET_MSG_LOGIN_2 framing, the garbage
+    # token, and field encode/decode. Login is RAW and is never routed through the
+    # V030 compression layer above - see LoginProtocol.h.
+    MinTeaCodec.h
+    MinTeaCodec.cpp
+    LoginProtocol.h
+    LoginProtocol.cpp
     # Vendored miniLZO 2.10, unmodified. Provenance and the open licensing
     # question are recorded in third_party/minilzo/VENDOR.md. Compiled as C
     # because that is what upstream ships; ModernNetwork itself stays C++17.

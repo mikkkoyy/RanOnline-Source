@@ -34,6 +34,8 @@ add_executable(ModernNetworkTests
     NetworkTests.cpp
     # VERTICAL-030: server->client NET_COMPRESS + LZO1X layer.
     NetworkCompressTests.cpp
+    # WORLD-001: client -> server login protocol (minTea, garbage token, framing).
+    LoginProtocolTests.cpp
 )
 
 target_link_libraries(ModernNetworkTests PRIVATE ModernNetwork)

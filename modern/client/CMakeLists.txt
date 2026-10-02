@@ -10,7 +10,7 @@
 # Slices built so far: application (CLIENT-002), input (CLIENT-003),
 # rendering (CLIENT-004 renderer, CLIENT-009 asset upload boundary),
 # resources (CLIENT-005, CLIENT-006), assets (CLIENT-007 images, CLIENT-008
-# meshes, CLIENT-011 real DDS decoder).
+# meshes, CLIENT-011 real DDS decoder), login (WORLD-001).
 
 add_subdirectory(input)
 add_subdirectory(resources)
@@ -18,4 +18,5 @@ add_subdirectory(assets)
 add_subdirectory(rendering)
 add_subdirectory(gameplay)
 add_subdirectory(application)
+add_subdirectory(login)
 
