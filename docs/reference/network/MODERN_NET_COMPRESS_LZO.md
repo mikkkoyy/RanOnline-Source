@@ -308,7 +308,8 @@ work buffer and is not internally synchronised.
 
 `legacy/Tik/Library/lzo2.lib` is RAN's own prebuilt LZO2 library and was **rejected**:
 
-1. It is a VC7.1 (VS2003) binary. Under MSVC 14.x it fails with
+1. It is a VC7.1 (VS2003) binary — x86 COFF, 74 members built from `src/*.c`. Under
+   MSVC 14.x it fails with
    `LNK2019: unresolved external symbol __except_handler4_common` unless
    `/NODEFAULTLIB:MSVCRT` suppresses the legacy CRT. A feasibility probe confirmed the
    override produces a working round-trip, but a build-wide CRT override is a poor trade.
@@ -316,12 +317,34 @@ work buffer and is not internally synchronised.
 3. It would make `ModernNetwork` depend on `legacy/`, which that target's own header
    comment forbids and which the root `CMakeLists.txt` deliberately avoids.
 
+> **Corrected by VERTICAL-030-A.** Two errors in the reasoning above.
+>
+> **Scope.** This was originally justified by citing `GameClient2.vcproj`, which implied
+> `lzo2.lib` is a *client-side* concern. It is not. **25 projects** link it: all four
+> servers, `GameEmulator`, `GameViewer`, `GMTool`, every editor, plus the three small
+> tools. `Lib_Network` does not link it directly — it compiles `MinLzo.cpp`, leaving
+> `lzo1x_*` unresolved in `Lib_Network.lib`, and each executable resolves it at final
+> link. So `lzo2.lib` is a **transitive dependency of the entire RAN tree**, and the
+> `/NODEFAULTLIB:MSVCRT` problem would have applied to every one of those 25 links.
+>
+> **Rationale.** The toolchain arguments above are correct but incomplete, and the
+> decisive fact was not available to V030: **no LZO implementation source exists anywhere
+> in the repository.** `legacy/Lib_Network/MinLzo.cpp:2` includes `"minlzo.h"`, and no file
+> of that name exists — so `Lib_Network` cannot compile its own LZO wrapper as committed.
+> Vendoring LZO source was the only option available, not merely the tidiest one. See
+> `docs/reference/source/RAN_CLIENT_TOOLS_SOURCE_INVENTORY.md` §1 and §5.
+
 Vendored instead: **miniLZO 2.10** from `oberhumer.com`, archive SHA-1
 `c7432708d49017a3f0b4f44c99d336f8a1be84f5`, **verified against the hash upstream
 publishes**. Same `lzo1x_1_compress` / `lzo1x_decompress_safe` entry points legacy calls,
 so the wire format is unaffected.
 
-> **Open legal question.** miniLZO is distributed under **GPL-2.0-or-later** per the header
+This also matches existing repository practice: `legacy/Lib_ZLib` already vendors
+complete **zlib + minizip source** with a prepared `CMakeLists.txt`, currently disabled
+behind the commented-out `add_subdirectory` calls at the root `CMakeLists.txt:46-56`.
+
+> **Open legal question — unchanged by V030-A.** miniLZO is distributed under
+> **GPL-2.0-or-later** per the header
 > of `minilzo.c`. LZO has a history of also being offered under terms permitting non-GPL
 > use, but that allowance is **not** stated in the distributed headers, and this repository
 > ships no project-level licence or `COPYING`. Whether embedding it here is compatible with
@@ -441,5 +464,6 @@ forum implementation.
 | `lzo_init`, work memory | `legacy/Lib_Network/MinLzo.cpp:62`, `:78` |
 | `CAN_NOT_COMPRESS` rule | `legacy/Lib_Network/MinLzo.cpp:118-131` |
 | `packet crash fix` on safe decompress | `legacy/Lib_Network/MinLzo.cpp:157` |
-| `lzo2.lib` link (and modern incompatibility) | `legacy/GameClient2/GameClient2.vcproj` `AdditionalDependencies`; V030 feasibility probe |
+| `lzo2.lib` link (and modern incompatibility) | `legacy/GameClient2/GameClient2.vcproj` `AdditionalDependencies`; V030 feasibility probe; **25 consumers enumerated in V030-A §5.4** |
+| no LZO source in tree; absent `minilzo.h` | V030-A §1, §5.1 (whole-tree search, 3,580 files) |
 | vendored source hash | `modern/network/third_party/minilzo/VENDOR.md` |

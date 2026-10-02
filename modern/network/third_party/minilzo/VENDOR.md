@@ -83,6 +83,30 @@ LZO2 static library. It was rejected as the modern backend:
 3. A binary blob with no auditable source is a worse dependency than the ~30 KiB of
    source that upstream distributes for this exact purpose.
 
+### Scope, corrected by VERTICAL-030-A
+
+This file originally justified the rejection by citing `GameClient2.vcproj`, which
+implied `lzo2.lib` is a client-side concern. **It is not.** VERTICAL-030-A enumerated
+**25 consuming projects** — all four servers, `GameEmulator`, `GameViewer`, `GMTool`
+and every editor. `Lib_Network` does not link it directly; it compiles `MinLzo.cpp`,
+leaving `lzo1x_*` unresolved inside `Lib_Network.lib`, and each executable resolves the
+dependency at final link. `lzo2.lib` is therefore a **transitive dependency of the entire
+RAN tree**, and the `/NODEFAULTLIB:MSVCRT` problem would have applied to all 25 links.
+
+### The decisive fact, established by VERTICAL-030-A
+
+**No LZO implementation source exists anywhere in the repository.** A whole-tree search
+of 3,580 files found LZO only in project files (as `lzo2.lib` dependency entries), the
+`Lib_Network` wrapper, and the `Tik/Include` header set. There is no LZO `.c` file in
+the tree at all, and no file named `minilzo.h` — even though
+`legacy/Lib_Network/MinLzo.cpp:2` does `#include "minilzo.h"`.
+
+So `Lib_Network` cannot compile its own LZO wrapper as committed, and vendoring LZO
+*source* was the only option available rather than merely the tidiest one. `lzo2.lib` is
+itself built from 74 `src/*.c` files that are not in the tree.
+
+Full findings: `docs/reference/source/RAN_CLIENT_TOOLS_SOURCE_INVENTORY.md` §1, §5.
+
 miniLZO implements the same `lzo1x_1_compress` and `lzo1x_decompress_safe` entry
 points that legacy `CMinLzo` calls (`legacy/Lib_Network/MinLzo.cpp:112`, `:158`), so
 the wire format is unaffected by the substitution.
