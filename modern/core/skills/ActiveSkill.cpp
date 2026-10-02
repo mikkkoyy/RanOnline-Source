@@ -407,6 +407,11 @@ namespace Modern::Skills
 			// attack power.
 			combat.attackerDamageRate = input.attackerDamageRate;
 
+			// VERTICAL-025: this path is by definition a cast skill, which is
+			// exactly legacy's `if (pSkill)` discriminator. Without it a physical
+			// skill would silently lose its resistance.
+			combat.skillCast = true;
+
 			combat.targetHit                 = input.target.hit;
 			combat.targetAvoid               = input.target.avoid;
 			combat.targetDefense             = input.target.defense;

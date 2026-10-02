@@ -17,9 +17,9 @@ formula provenance.
 | ---- | ----- |
 | Legacy import | complete |
 | Core foundation | complete |
-| Vertical gameplay slices 001-024 | complete |
+| Vertical gameplay slices 001-025 | complete |
 | Build verification (BUILD-001) | complete |
-| Impact/addon modifiers, world targeting | partial — damage, defence and resource FACT axes through VERTICAL-024; enum 19-23 proven unreferenced in VERTICAL-023; velocity, status, range and world targeting still deferred |
+| Impact/addon modifiers, world targeting | partial — damage, defence and resource FACT axes through VERTICAL-024; physical resistance ordering corrected in VERTICAL-025; enum 19-23 proven unreferenced in VERTICAL-023; velocity, status, range and world targeting still deferred |
 
 ---
 
@@ -54,6 +54,7 @@ formula provenance.
 | VERTICAL-022 Recovery / HP-MP-SP-AP FACT | [x] | `96c330a` |
 | VERTICAL-023 Recovery VAR / CP consumer investigation | [x] complete — investigated, no proven runtime consumers | see `docs/reference/server/VERTICAL-023_RECOVERY_VAR_CP_INVESTIGATION.md` |
 | VERTICAL-024 DAMAGE_RATE FACT axis | [x] | see `docs/reference/server/VERTICAL-024_DAMAGE_RATE_INVESTIGATION.md` |
+| VERTICAL-025 Physical resistance ordering | [x] corrected | see `docs/reference/server/VERTICAL-025_PHYSICAL_RESISTANCE_ORDERING.md` |
 
 ---
 
@@ -589,6 +590,52 @@ was deliberately **not** extended - the rate never enters the stat calculator,
 so there is nothing to re-derive. Debug and Release both 0 errors / 0 warnings,
 CTest 14/14, core 514, server 114.
 
+
+**VERTICAL-025 - Physical resistance ordering.** Complete, corrected. See
+`docs/reference/server/VERTICAL-025_PHYSICAL_RESISTANCE_ORDERING.md`.
+
+VERTICAL-024 deferred this deviation; it turned out to be **three, not one**, and
+correcting only the ordering would have left the pipeline wrong.
+
+1. **Position.** Modern ran resistance on the ROLLED figure. Legacy runs it on
+   the RANGE at `:1562-1563`, before the roll, so the truncations do not commute.
+2. **Formula.** Modern used `dw * (1.0f - fResistTotal)`. Legacy **subtracts a
+   truncated product**, `dw -= (DWORD)(dw * fResistTotal)`. They differ by up to
+   one unit: `101 - (DWORD)(101*0.25)` is 76, `101*0.75` is 75. `MagicDamageCalculator`
+   had already noticed the asymmetry and described physical's form as "the magic
+   path's" - treating the bug as a design choice.
+3. **Scope.** Modern applied resistance to EVERY attack. Legacy applies it only
+   inside `if (pSkill)` (`:1417`, a block brace-walked as closing at `:1571`); the
+   basic-attack `else` at `:1572` has none at all.
+
+Three existing tests had encoded the deviation and were corrected rather than
+weakened - notably one that asserted flatly that physical `rawDamage` "must not
+move" when resistance changes, contrasting it with magic. That test documented
+the bug as intended, so it had to be inverted rather than adjusted.
+
+A **fourth finding is dead code**: the clamp at `:1567-1570`
+(`if (gdDamage.dwLow < 0)`) can never fire, because `gdDamage.dwLow` is a DWORD.
+It is also unreachable in practice, since `fResistTotal` is non-negative and
+capped at 0.8. Recorded, not reproduced - a live clamp would invent behaviour.
+
+**One question left open, and it is not a small one.** `CALCDAMAGE` dispatches at
+compile time on a country macro to `CALCDAMAGE_20060328` or `CALCDAMAGE_2004`,
+and the committed `Lib_Client.vcxproj` defines none of them - so the project file
+as committed compiles `CALCDAMAGE_2004`. The two are **not** interchangeable:
+`CALCDAMAGE_2004` reduces only the skill's own magnitude term (`:1941-1942`) and
+has no 0.8 cap, whereas `CALCDAMAGE_20060328` reduces the whole range.
+
+V025 targets `CALCDAMAGE_20060328` because modern has cited it continuously since
+V006, and because the 0.8 cap modern already implements **exists only there** - so
+the existing formula was already bound to that variant. That is a reasoned choice,
+not a proven one, and it should be settled against a shipped build. What is
+variant-independent, and corrected either way, is that resistance runs **before**
+the roll and **not at all** on basic attacks.
+
+12 tests. `PhysicalResist_ResistAppliesToTheRangeBeforeTheRoll` is the
+discriminator (76 against 75), and the wide-range case is recorded as agreeing by
+coincidence rather than presented as proof. Magic resistance untouched.
+Debug and Release both 0 errors / 0 warnings, CTest 14/14, core 526, server 114.
 **Next:** the remaining deferred FACT impacts. Damage rate deferred with
 subsystems: item FACT, system buff, pet skill FACT, QITEM, GM event, land effect.
 Recovery deferred with subsystems: pet, land effect, item FACT, system buff.
@@ -748,4 +795,3 @@ and the gate are equal there, where legacy's are not. See
 VERTICAL-005, so an item whose only stats are flat recovery is skipped by the
 aggregator. Same class of bug as the `requiredSP` omission this milestone fixed,
 but not a required-SP dependency, so it is reported rather than changed.
-

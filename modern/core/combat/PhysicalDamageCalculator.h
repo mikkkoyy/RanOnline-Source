@@ -90,6 +90,61 @@ const int32_t attackPower = (input.attackType == AttackType::Ranged)
 		damage.low  = ApplyAttackPower(damage.low,  attackPower);
 		damage.high = ApplyAttackPower(damage.high, attackPower);
 
+		// VERTICAL-025: physical resistance, CORRECTED to legacy's position and
+		// formula. This used to sit after the roll; it belongs before it.
+		//
+		// Legacy, CALCDAMAGE_20060328 (GLogixExPC.cpp):
+		//
+		//   if ( pSkill )                                  // :1417, closes :1571
+		//   {
+		//       ...
+		//       float fResistTotal = (float)( nRESIST * 0.01f * fRESIST_G );  // :1558
+		//       fResistTotal = fResistTotal > 0.8f ? 0.8f : fResistTotal;  // :1559
+		//       gdDamage.dwLow  -= (DWORD) ((float) gdDamage.dwLow  * fResistTotal);
+		//       gdDamage.dwHigh -= (DWORD) ((float) gdDamage.dwHigh * fResistTotal);
+		//                                                        // :1562-1563
+		//       if (gdDamage.dwLow  < 0) gdDamage.dwLow  = 0;   // :1567-1570
+		//       if (gdDamage.dwHigh < 0) gdDamage.dwHigh = 0;
+		//   }
+		//   else { ... }                                    // :1572, no resist
+		//
+		// Three things were wrong here, not one:
+		//
+		// 1. POSITION. It ran on the ROLLED figure. Legacy runs it on the range,
+		//    which is why the truncations do not commute - see the ordering test.
+		// 2. FORM. Modern used `dw * (1.0f - fResistTotal)`. Legacy subtracts a
+		//    truncated product, so `101 - (DWORD)(101 * 0.5)` is 51, not 50.
+		//    The two differ by up to one and the difference is load-bearing.
+		// 3. SCOPE. Modern applied it to every attack. Legacy applies it ONLY on
+		//    the skill path; a basic attack skips it entirely, because the whole
+		//    block lives inside `if (pSkill)`.
+		//
+		// `nRESIST` itself was already clamped at :1516 (`fMAX_RESIST`) before it
+		// gets here, which is the V020 "no mid-fold clamp" finding: this is the
+		// one legitimate clamp point, and there is no second one inside the fold.
+		if (input.skillCast && input.resistElement > 0)
+		{
+			int32_t resistClamped = input.resistElement;
+			if (resistClamped > constants.maxResist)
+				resistClamped = static_cast<int32_t>(constants.maxResist);
+			float fResistTotal = static_cast<float>(resistClamped) * 0.01f * constants.resistPhysicG;
+			if (fResistTotal > constants.maxResistReduction)
+				fResistTotal = constants.maxResistReduction;
+
+			damage.low  = damage.low  - static_cast<uint32_t>(static_cast<float>(damage.low)  * fResistTotal);
+			damage.high = damage.high - static_cast<uint32_t>(static_cast<float>(damage.high) * fResistTotal);
+
+			// Legacy clamps the ends to 0 at :1567-1570, but `gdDamage.dwLow` is a
+			// DWORD, so `if (dwLow < 0)` is never true - the guard is dead code in
+			// legacy. It is also unreachable here: `fResistTotal` is non-negative
+			// (nRESIST comes from SRESIST, which `LIMIT()` floors at 0 per element
+			// at :2979) and is capped at 0.8, so the product is always less than
+			// the range end and no wrap is possible.
+			//
+			// Recorded rather than reproduced: adding a live clamp here would
+			// invent behaviour legacy does not have.
+		}
+
 		// VERTICAL-024: `m_fDamageRate`, the single application point.
 		//
 		// Legacy order in CALCDAMAGE_20060328 (GLogixExPC.cpp):
@@ -134,22 +189,11 @@ const int32_t attackPower = (input.attackType == AttackType::Ranged)
 		uint32_t nDAMAGE_OLD = nDAMAGE_NOW + static_cast<uint32_t>(nExtFORCE);
 		result.lowSP = input.lowSP;
 
-		// VERTICAL-009: physical resistance.
-		//
-		// Legacy: GLogixExPC.cpp:1556-1563 (CALCDAMAGE_20060328)
-		//
-		// fResistTotal = nRESIST * 0.01 * fRESIST_G, capped at 0.8.
-		// Applied to raw damage BEFORE defense subtraction.
-		if (input.resistElement > 0)
-		{
-			int32_t resistClamped = input.resistElement;
-			if (resistClamped > constants.maxResist)
-				resistClamped = static_cast<int32_t>(constants.maxResist);
-			float fResistTotal = static_cast<float>(resistClamped) * 0.01f * constants.resistPhysicG;
-			if (fResistTotal > constants.maxResistReduction)
-				fResistTotal = constants.maxResistReduction;
-			nDAMAGE_OLD = static_cast<uint32_t>(static_cast<float>(nDAMAGE_OLD) * (1.0f - fResistTotal));
-		}
+		// VERTICAL-025: physical resistance used to be applied HERE, on the
+		// rolled figure. That was wrong on three counts - position, formula and
+		// scope - and it has moved above, to the range, immediately before the
+		// roll and after DAMAGE_RATE. The reasoning and the source lines are at
+		// the new site.
 
 		result.preDefenseDamage = nDAMAGE_OLD;
 

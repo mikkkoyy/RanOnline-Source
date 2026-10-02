@@ -155,6 +155,18 @@ namespace Modern::Combat
 		float damageReflection = 0.0f;      // target's damage reflection
 		float damageReflectionRate = 0.0f;  // target's damage reflection rate
 		int32_t resistElement = 0;          // target's element resistance
+
+		// VERTICAL-025: is this damage from a cast skill, or a basic attack?
+		//
+		// Legacy's discriminator is literally `if (pSkill)`
+		// (GLogixExPC.cpp:1417). The whole physical-resistance block sits inside
+		// that branch (:1556-1570, a block that closes at :1571); the `else` at
+		// :1572 handles the basic attack and contains no resistance at all.
+		//
+		// So this is not a convenience flag - it is the difference between a
+		// resisted and an unresisted attack, and `AttackType` cannot express it
+		// because a basic melee attack and a melee skill share `AttackType::Melee`.
+		bool skillCast = false;
 		bool lowSP = false;                 // target in low SP state
 		float stateDamageMultiplier = 1.0f; // fSTATE_DAMAGE
 		uint16_t requiredSP = 0;            // SP required to perform the attack

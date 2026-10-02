@@ -59,6 +59,15 @@ namespace Modern::Combat
 		// (damaging) form is executed by this slice.
 		float skillBasicVar = 0.0f;
 		float attackerDamageRate = 1.0f;   // m_fDamageRate
+
+		// VERTICAL-025: is this damage from a cast skill, or a basic attack?
+		//
+		// Legacy's discriminator is `if (pSkill)` (GLogixExPC.cpp:1417); the whole
+		// physical-resistance block lives inside that branch (:1556-1570, closing
+		// :1571) and the `else` at :1572 has none. `attackType` cannot express it,
+		// because a basic melee attack and a melee skill share `AttackType::Melee`.
+		bool skillCast = false;
+
 		int32_t skillCrushingBonus = 0;    // EMSPECA_CRUSHING_BLOW * 100
 
 		// Target derived stats
@@ -228,6 +237,10 @@ namespace Modern::Combat
 			// (:192); the physical path did not have the field at all, which is
 			// why `EMIMPACTA_DAMAGE_RATE` never reached a basic attack.
 			damageInput.damageRate = input.attackerDamageRate;
+			// VERTICAL-025: legacy resists physical damage only inside
+			// `if (pSkill)` (GLogixExPC.cpp:1417, block closing :1571), so a
+			// basic attack is never resisted.
+			damageInput.skillCast = input.skillCast;
 			damageInput.defense = input.targetDefense;
 			damageInput.defenseBody = input.targetDefenseBody;
 			damageInput.defenseItem = input.targetDefenseItem;

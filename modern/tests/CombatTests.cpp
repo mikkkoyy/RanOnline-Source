@@ -1542,13 +1542,36 @@ MODERN_TEST(CombatResist_Positive)
 	PhysicalDamageInput input = MakeBasicDamageInput();
 	input.defense = 0;
 	input.resistElement = 50;
+	// VERTICAL-025: this test asserted that resistance reduces the damage, and
+	// it passed only because resistance used to apply unconditionally. Legacy
+	// applies it inside `if (pSkill)` (GLogixExPC.cpp:1417, block closing :1571),
+	// so a BASIC attack is never resisted and the original assertion was
+	// encoding the deviation. `skillCast` is set so the test still exercises what
+	// it was written to check - a resisted physical hit - on the path legacy
+	// actually resists.
+	input.skillCast = true;
 	input.damageRoll = 0.5f;
 	input.criticalRoll = 1.0f;
 	input.crushingRoll = 1.0f;
 
-	DamageResult result = CalculatePhysicalDamage(input, constants);
+	// VERTICAL-025: the original assertion was
+	// `preDefenseDamage < rawDamage`, which only held while resistance ran on
+	// the rolled figure - `rawDamage` was captured before it and
+	// `preDefenseDamage` after. With resistance on the range, the roll is
+	// already resisted, so the two are equal here.
+	//
+	// The test's actual intent is "a resisted hit does less damage than an
+	// identical unresisted one", which is what is asserted now - against a
+	// baseline captured from the calculator itself rather than a field that
+	// used to straddle the resistance.
+	PhysicalDamageInput unresisted = input;
+	unresisted.resistElement = 0;
+	const uint32_t withoutResist = CalculatePhysicalDamage(unresisted, constants).rawDamage;
 
-	CHECK_LT(result.preDefenseDamage, result.rawDamage);
+	const DamageResult result = CalculatePhysicalDamage(input, constants);
+
+	CHECK_EQ(result.preDefenseDamage, result.rawDamage);
+	CHECK_LT(result.rawDamage, withoutResist);
 	CHECK_GT(result.damage, 0u);
 }
 
@@ -1580,6 +1603,9 @@ MODERN_TEST(CombatResist_RawValueClampedToMax)
 	PhysicalDamageInput input = MakeBasicDamageInput();
 	input.defense = 0;
 	input.resistElement = 1000;
+	// VERTICAL-025: `skillCast` for the same reason as CombatResist_Positive -
+	// legacy resists only inside `if (pSkill)`.
+	input.skillCast = true;
 	input.damageRoll = 0.5f;
 	input.criticalRoll = 1.0f;
 	input.crushingRoll = 1.0f;
@@ -1588,12 +1614,26 @@ MODERN_TEST(CombatResist_RawValueClampedToMax)
 
 	const int32_t clampedResist = 99;
 	float fResistTotal = static_cast<float>(clampedResist) * 0.01f * constants.resistPhysicG;
-	uint32_t expectedDamage = static_cast<uint32_t>(
-		static_cast<float>(result.rawDamage) * (1.0f - fResistTotal));
-	if (expectedDamage == 0)
-		expectedDamage = 1;
 
-	CHECK_EQ(result.damage, expectedDamage);
+	// VERTICAL-025: the expectation is recomputed in LEGACY's form - a
+	// subtractive fold on the RANGE - rather than the multiplicative
+	// post-roll form this test originally used. Recomputing rather than reading
+	// `rawDamage` back keeps the assertion independent of the roll.
+	Stats::DamageRange ranged = input.physicalDamage;
+	const int32_t power = static_cast<int32_t>(input.meleePower);
+	ranged.low  = ApplyAttackPower(ranged.low,  power);
+	ranged.high = ApplyAttackPower(ranged.high, power);
+	ranged.low  = ranged.low  - static_cast<uint32_t>(static_cast<float>(ranged.low)  * fResistTotal);
+	ranged.high = ranged.high - static_cast<uint32_t>(static_cast<float>(ranged.high) * fResistTotal);
+	ranged.low  = ApplyDamageRate(ranged.low,  input.damageRate);
+	ranged.high = ApplyDamageRate(ranged.high, input.damageRate);
+
+	const uint32_t expectedRoll = static_cast<uint32_t>(
+		static_cast<float>(ranged.low) +
+		(static_cast<float>(ranged.high) - static_cast<float>(ranged.low)) * input.damageRoll);
+
+	CHECK_EQ(result.rawDamage, expectedRoll);
+	CHECK_GT(result.damage, 0u);
 }
 
 // ── VERTICAL-009: PK Damage Modifier ───────────────────────────────────
@@ -1887,15 +1927,254 @@ MODERN_TEST(Magic_ResistanceIsClampedToTheLegacyMaximum)
 	CHECK_EQ(CalculateMagicDamage(capped).rawDamage, 51u);
 }
 
-// VERTICAL-024: magic consumes the same `m_fDamageRate` as physical, at the
-// same pipeline position. VERTICAL-013 gave `MagicDamageInput` a `damageRate`
-// field and applied it at :1600-1603's equivalent, but nothing ever supplied a
-// value, so the axis was inert on both channels.
+// ═══════════════════════════════════════════════════════════════════════════
+// VERTICAL-025: physical resistance on the damage RANGE
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace
+{
+	// A physical skill hit with resistance only, so the resistance is the sole
+	// thing that can move the result.
+	PhysicalDamageInput MakeResistInput(uint32_t low, uint32_t high, int32_t resist)
+	{
+		PhysicalDamageInput in = MakeBasicDamageInput();
+		in.physicalDamage = { low, high };
+		in.meleePower = 0;
+		in.shootPower = 0;
+		in.skillCast = true;
+		in.resistElement = resist;
+		in.defense = 0;
+		in.defenseBody = 0;
+		in.defenseItem = 0;
+		in.lowSP = false;
+		in.damageRoll = 0.5f;
+		in.criticalRoll = 1.0f;
+		in.crushingRoll = 1.0f;
+		return in;
+	}
+}
+
+// MANDATORY REGRESSION: zero resistance must leave the range untouched. This
+// is what protects every existing physical baseline.
+MODERN_TEST(PhysicalResist_ZeroLeavesTheRangeUnchanged)
+{
+	CombatConstants constants;
+	const PhysicalDamageInput in = MakeResistInput(101, 102, 0);
+
+	CHECK_EQ(CalculatePhysicalDamage(in, constants).rawDamage,
+	         CalculatePhysicalDamage(MakeResistInput(101, 102, 0), constants).rawDamage);
+	CHECK_EQ(CalculatePhysicalDamage(in, constants).rawDamage, 101u);
+}
+
+// Legacy form, GLogixExPC.cpp:1562-1563:
+//   fResistTotal = nRESIST * 0.01 * fRESIST_G, capped at 0.8
+//   dw -= (DWORD)(dw * fResistTotal)
 //
-// Magic needs this pinned separately because its resistance is applied to the
-// RANGE before the roll (:1562-1563), unlike physical's post-roll form. Rate
-// and resistance therefore do NOT commute on magic, and the order is
-// resist-then-rate.
+// fRESIST_PHYSIC_G is 0.5, so resistElement 50 gives fResistTotal 0.25.
+MODERN_TEST(PhysicalResist_UsesTheSubtractiveLegacyForm)
+{
+	CombatConstants constants;
+	CHECK_EQ(constants.resistPhysicG, 0.5f);
+
+	// 101 - (DWORD)(101 * 0.25) = 101 - 25 = 76; roll 0.5 of {76,76} = 76.
+	CHECK_EQ(CalculatePhysicalDamage(MakeResistInput(101, 102, 50), constants).rawDamage, 76u);
+}
+
+// THE ORDERING DISCRIMINATOR. Range 101..102, resist 50 (fResistTotal 0.25),
+// roll 0.5.
+//
+//   legacy  range-then-resist: {76,76}, roll -> 76
+//   old     roll-then-resist: roll 101.5 -> 101, then 101 * 0.75 = 75.75 -> 75
+//
+// 76 against 75. The two are one apart, which is the whole point: a test whose
+// candidates happened to agree would prove nothing.
+MODERN_TEST(PhysicalResist_ResistAppliesToTheRangeBeforeTheRoll)
+{
+	CombatConstants constants;
+
+	// The correct pre-roll ends, computed independently of the calculator.
+	CHECK_EQ(101u - static_cast<uint32_t>(101.0f * 0.25f), 76u);
+	CHECK_EQ(102u - static_cast<uint32_t>(102.0f * 0.25f), 77u);
+
+	// With equal ends after rounding, either order's roll would land on the low
+	// end, so the assertion that discriminates is on a range whose ends survive
+	// the fold separately.
+	PhysicalDamageInput in = MakeResistInput(101, 102, 50);
+	in.damageRoll = 1.0f;   // take the high end exactly
+
+	CHECK_EQ(CalculatePhysicalDamage(in, constants).rawDamage, 77u);
+}
+
+// A range wide enough that the two ends survive the fold distinctly, so the
+// discriminator is not an artefact of rounding.
+MODERN_TEST(PhysicalResist_WideRangeDiscriminatesTheTwoOrders)
+{
+	CombatConstants constants;
+
+	PhysicalDamageInput legacyOrder = MakeResistInput(100, 200, 50);
+	legacyOrder.damageRoll = 0.0f;
+	// {100 - 25, 200 - 50} = {75, 150}, roll 0.0 -> 75.
+	CHECK_EQ(CalculatePhysicalDamage(legacyOrder, constants).rawDamage, 75u);
+
+	// The old post-roll form: roll 100.0 -> 100, then trunc(100 * 0.75) = 75.
+	// Equal here by coincidence, which is why the tight range above is the real
+	// discriminator and this one is the sanity check that a wide range still
+	// lands where the arithmetic says.
+	PhysicalDamageInput sanity = MakeResistInput(100, 200, 50);
+	sanity.damageRoll = 0.5f;
+	// {75,150}, roll 0.5 -> trunc(75 + 37.5) = 112.
+	CHECK_EQ(CalculatePhysicalDamage(sanity, constants).rawDamage, 112u);
+}
+
+// SCOPE. Legacy resists only inside `if (pSkill)`; the basic-attack `else`
+// (GLogixExPC.cpp:1572-1597) has no resistance at all.
+MODERN_TEST(PhysicalResist_BasicAttacksAreNeverResisted)
+{
+	CombatConstants constants;
+
+	PhysicalDamageInput skill = MakeResistInput(100, 200, 50);
+	skill.skillCast = true;
+	skill.damageRoll = 0.0f;
+
+	PhysicalDamageInput basic = skill;
+	basic.skillCast = false;
+
+	CHECK_LT(CalculatePhysicalDamage(skill, constants).rawDamage,
+	         CalculatePhysicalDamage(basic, constants).rawDamage);
+	// The basic attack is exactly the unresisted range.
+	CHECK_EQ(CalculatePhysicalDamage(basic, constants).rawDamage, 100u);
+}
+
+// INTERACTION WITH DAMAGE_RATE. Legacy order is resist (:1562-1563) then
+// DAMAGE_RATE (:1600) then roll (:1672). The two do not commute.
+MODERN_TEST(PhysicalResist_ResistThenDamageRateThenRoll)
+{
+	CombatConstants constants;
+
+	// Range 100..100, resist 50 -> 75, rate 1.5 -> trunc(112.5) = 112.
+	PhysicalDamageInput in = MakeResistInput(100, 100, 50);
+	in.damageRate = 1.5f;
+	in.damageRoll = 0.0f;
+
+	CHECK_EQ(CalculatePhysicalDamage(in, constants).rawDamage, 112u);
+
+	// The reverse order would give 100 * 1.5 = 150, then - 37 = 113. Different,
+	// so the assertion pins resist-first.
+	PhysicalDamageInput rateFirst = MakeResistInput(100, 100, 0);
+	rateFirst.damageRate = 1.5f;
+	CHECK_EQ(CalculatePhysicalDamage(rateFirst, constants).rawDamage, 150u);
+}
+
+// INTERACTION WITH THE V019 DAMAGE FACT, which is also a range input. Legacy
+// adds it before resistance (:2329 then :1448/:1594 then :1562).
+MODERN_TEST(PhysicalResist_DamageFactIsResistedToo)
+{
+	CombatConstants constants;
+
+	PhysicalDamageInput in = MakeResistInput(100, 100, 50);
+	in.factDamage = 40;
+	in.damageRoll = 0.0f;
+
+	// VAR_PARAM floors at 1: 100 + 40 = 140, then 140 - (DWORD)(140*0.25) = 140 - 35 = 105.
+	CHECK_EQ(CalculatePhysicalDamage(in, constants).rawDamage, 105u);
+}
+
+// RANGED shares the pipeline: same field, same operation, no second
+// implementation. Switching AttackType must not fork the resistance.
+MODERN_TEST(PhysicalResist_RangedUsesTheSameResistance)
+{
+	CombatConstants constants;
+
+	PhysicalDamageInput melee = MakeResistInput(100, 200, 50);
+	melee.meleePower = 40;
+	melee.damageRoll = 0.0f;
+
+	PhysicalDamageInput ranged = melee;
+	ranged.attackType = AttackType::Ranged;
+	ranged.shootPower = 40;
+
+	CHECK_EQ(CalculatePhysicalDamage(melee, constants).rawDamage,
+	         CalculatePhysicalDamage(ranged, constants).rawDamage);
+}
+
+// HIGH resistance. fMAX_RESIST is 99 (:1516) and fRESIST_PHYSIC_G is 0.5, so the
+// largest reachable fResistTotal is 0.495 and the 0.8 cap is unreachable in the
+// physical path - the raw-value clamp is the only cap that can bite.
+MODERN_TEST(PhysicalResist_HighValuesClampRatherThanWrap)
+{
+	CombatConstants constants;
+
+	PhysicalDamageInput atMax = MakeResistInput(100, 200, 99);
+	atMax.damageRoll = 0.0f;
+	PhysicalDamageInput absurd = MakeResistInput(100, 200, 100000);
+	// The roll has to match, or this compares a low-end roll against a midpoint
+	// roll and fails for a reason that has nothing to do with the clamp.
+	absurd.damageRoll = 0.0f;
+
+	CHECK_EQ(CalculatePhysicalDamage(atMax, constants).rawDamage,
+	         CalculatePhysicalDamage(absurd, constants).rawDamage);
+	// 100 - (DWORD)(100 * 0.495) = 100 - 49 = 51.
+	CHECK_EQ(CalculatePhysicalDamage(atMax, constants).rawDamage, 51u);
+}
+
+// NEGATIVE resistance cannot occur through any legitimate source: nRESIST comes
+// from SRESIST, whose elements `LIMIT()` floors at zero (GLogixExPC.cpp:2979),
+// and the aggregator floors every axis at zero too. Modern refuses it at the
+// input boundary rather than letting a negative reach the unsigned fold.
+MODERN_TEST(PhysicalResist_NegativeResistanceIsNotModelled)
+{
+	CombatConstants constants;
+
+	// The guard is `resistElement > 0`, so a negative is treated as none - not
+	// as a damage bonus. This is recorded behaviour, not an invented clamp:
+	// legacy's source cannot produce the value, so there is nothing to reproduce.
+	CHECK_EQ(CalculatePhysicalDamage(MakeResistInput(100, 200, 0), constants).rawDamage,
+	         CalculatePhysicalDamage(MakeResistInput(100, 200, -50), constants).rawDamage);
+}
+
+// DEFENSE, CRITICAL and low-SP must be untouched by the move. The correction
+// only relocated resistance; everything downstream still reads the rolled
+// figure.
+MODERN_TEST(PhysicalResist_DownstreamStagesAreUnchanged)
+{
+	CombatConstants constants;
+
+	PhysicalDamageInput base = MakeResistInput(100, 200, 50);
+	base.damageRoll = 0.0f;
+
+	PhysicalDamageInput defended = base;
+	defended.defense = 10;
+	CHECK_LT(CalculatePhysicalDamage(defended, constants).damage,
+	         CalculatePhysicalDamage(base, constants).damage);
+
+	PhysicalDamageInput lowSp = base;
+	lowSp.lowSP = true;
+	CHECK_LT(CalculatePhysicalDamage(lowSp, constants).damage,
+	         CalculatePhysicalDamage(base, constants).damage);
+
+	// Critical needs the roll to land it, and it must scale a figure that
+	// resistance has already reduced.
+	PhysicalDamageInput crit = base;
+	crit.damageRoll = 0.0f;
+	crit.criticalRoll = 0.0f;
+	CHECK(CalculatePhysicalDamage(crit, constants).damage >= 1u);
+}
+
+// MAGIC MUST NOT MOVE. V024 proved magic already reduces the range before the
+// roll; this asserts the physical correction did not touch it.
+MODERN_TEST(PhysicalResist_MagicResistanceIsUnchanged)
+{
+	MagicDamageInput magic = MakeMagicInput(100);
+	magic.skillBasicVar = 0.0f;
+	magic.resistElement = 0;
+	const uint32_t none = CalculateMagicDamage(magic).rawDamage;
+
+	magic.resistElement = 50;
+	// 100 - (DWORD)(100 * 0.25) = 75 - the same subtractive form, unchanged.
+	CHECK_EQ(CalculateMagicDamage(magic).rawDamage, 75u);
+	CHECK_LT(CalculateMagicDamage(magic).rawDamage, none);
+}
+
 MODERN_TEST(Magic_DamageRateAppliesAfterResistanceAndBeforeTheRoll)
 {
 	MagicDamageInput plain = MakeMagicInput(100);
@@ -2147,17 +2426,21 @@ MODERN_TEST(Magic_DamageNeverReturnsZero)
 // different answer.
 MODERN_TEST(Magic_ResistanceRunsBeforeTheRollAndPhysicalResistanceDoesNot)
 {
-	// The ordering difference, stated so it cannot drift.
+	// The ordering, stated so it cannot drift.
 	//
-	// Magic applies resistance to the damage RANGE (:1562-1563) before the
-	// roll, so `rawDamage` - the rolled figure - moves when resistance changes.
-	// Physical applies resistance to the ALREADY-ROLLED value
-	// (PhysicalDamageCalculator.h:119), so its `rawDamage` is recorded before
-	// resistance and must not move at all.
+	// VERTICAL-025: this block previously asserted that PHYSICAL resistance
+	// runs on the already-rolled figure while MAGIC runs on the range - a real
+	// difference at the time, but the physical half of it was a deviation from
+	// legacy, not a distinction. Both channels reduce the range in
+	// CALCDAMAGE_20060328 (`:1562-1563`), so both must move `rawDamage`.
+	//
+	// The physical case is a SKILL cast here, because legacy resists only inside
+	// `if (pSkill)`.
 	PhysicalDamageInput physical = MakeBasicDamageInput();
 	physical.attackType     = AttackType::Melee;
 	physical.meleePower     = 100;
 	physical.physicalDamage = { 0, 0 };
+	physical.skillCast      = true;
 	physical.damageRoll     = 0.0f;
 	physical.criticalRoll   = 1.0f;
 	physical.crushingRoll   = 1.0f;
@@ -2170,8 +2453,8 @@ MODERN_TEST(Magic_ResistanceRunsBeforeTheRollAndPhysicalResistanceDoesNot)
 	physical.resistElement = 50;
 	const DamageResult physicalResisted = CalculatePhysicalDamage(physical);
 
-	// Physical: the pre-resistance roll is untouched.
-	CHECK_EQ(physicalResisted.rawDamage, physicalRawNoResist);
+	// Physical: the range shrinks before the roll, so the rolled figure moves.
+	CHECK_LT(physicalResisted.rawDamage, physicalRawNoResist);
 	CHECK_LT(physicalResisted.damage, physicalRawNoResist);
 
 	// Magic: the range itself shrinks, so the rolled figure moves.
