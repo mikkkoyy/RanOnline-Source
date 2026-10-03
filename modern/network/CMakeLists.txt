@@ -42,6 +42,23 @@ set(MODERN_NETWORK_SOURCES
     # LOGIN-001: Login Server game-server list (REQ/SND_GAME_SVR, SND_GAME_SVR_END).
     GameServerListProtocol.h
     GameServerListProtocol.cpp
+    # NETWORK-001: the real Winsock TCP layer. This is the only part of the modern
+    # tree that includes <winsock2.h>, and it is why ws2_32 is linked below.
+    #
+    # WinSockSupport exists so that the transport and the listener share ONE mapping
+    # from platform error to TransportFault. Two copies of that table would diverge,
+    # and the divergence would show up as a fault one socket reports and the other
+    # does not.
+    WinSockSupport.h
+    WinSockSupport.cpp
+    WinSockRuntime.h
+    WinSockRuntime.cpp
+    SocketAddress.h
+    SocketAddress.cpp
+    TcpTransport.h
+    TcpTransport.cpp
+    TcpListener.h
+    TcpListener.cpp
     # Vendored miniLZO 2.10, unmodified. Provenance and the open licensing
     # question are recorded in third_party/minilzo/VENDOR.md. Compiled as C
     # because that is what upstream ships; ModernNetwork itself stays C++17.
@@ -58,6 +75,19 @@ add_library(ModernNetwork STATIC ${MODERN_NETWORK_SOURCES})
 target_include_directories(ModernNetwork PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ModernNetwork PUBLIC Modern)
 target_compile_features(ModernNetwork PUBLIC cxx_std_17)
+
+# NETWORK-001: Winsock.
+#
+# ws2_32 is a PRIVATE link. ModernNetwork's own headers deliberately name no
+# Winsock type and no Winsock constant - handles cross as uintptr_t - so nothing
+# that links ModernNetwork can possibly need Winsock itself. Making it PUBLIC would
+# be a lie about the interface and would let a socket call leak into a consumer
+# that never included a socket header.
+#
+# The loopback transport and every protocol codec above this line still build and
+# run without a socket ever being opened, which is why ModernCoreTests links Modern
+# alone and stays socket free.
+target_link_libraries(ModernNetwork PRIVATE ws2_32)
 
 if(MSVC)
     target_compile_options(ModernNetwork PRIVATE /W4 /permissive- /utf-8)

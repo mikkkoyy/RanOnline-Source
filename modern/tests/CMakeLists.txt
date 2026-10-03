@@ -52,6 +52,34 @@ endif()
 
 add_test(NAME ModernNetworkTests COMMAND ModernNetworkTests)
 
+# NETWORK-001: real-socket tests.
+#
+# A SEPARATE executable, and the reason is not tidiness. ModernNetworkTests links
+# ModernNetwork and is a pure rule-test binary: it must stay runnable with no
+# socket, no clock and no network, because that is what makes it deterministic and
+# safe to run anywhere. These tests open real sockets on 127.0.0.1, so folding them
+# into that binary would make the rule tests depend on the machine's network stack -
+# and a test suite that can fail because of a firewall is a test suite nobody runs.
+#
+# Both binaries link the same library. The only difference is that this one
+# exercises the Winsock backend behind INetworkTransport rather than the loopback
+# pair. ws2_32 is already linked into ModernNetwork as a PRIVATE dependency, so
+# nothing extra is needed here - which is itself the check that ModernNetwork's
+# headers really do name no Winsock type.
+add_executable(ModernTcpTransportTests
+    TcpTransportTests.cpp
+)
+
+target_link_libraries(ModernTcpTransportTests PRIVATE ModernNetwork)
+
+target_compile_features(ModernTcpTransportTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernTcpTransportTests PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+add_test(NAME ModernTcpTransportTests COMMAND ModernTcpTransportTests)
+
 # enable_testing() is called by the top-level CMakeLists.txt, which is where
 # CTest needs it in order to reach this directory.
 add_test(NAME ModernCoreTests COMMAND ModernCoreTests)

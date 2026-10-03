@@ -886,15 +886,21 @@ MODERN_TEST(LoginServer_AClientControlledCountCannotCauseAnAllocation)
 
 MODERN_TEST(LoginServer_ExchangeOverTheTransportAbstraction)
 {
-	// The strongest integration available in this repository, and it is an honest
-	// one: both halves talk through INetworkTransport rather than by handing bytes
-	// across a function call.
+	// The strongest integration LOGIN-001 could offer, and it was an honest one:
+	// both halves talk through INetworkTransport rather than by handing bytes across
+	// a function call.
 	//
-	// It is NOT a TCP test. modern contains no socket code at all - no winsock, no
-	// <winsock2.h>, no socket() call - so a real loopback-socket integration cannot
-	// be written until a socket transport exists. LoopbackTransport is an in-process
-	// pair of byte queues. See the report's "Live integration" section: BLOCKED, and
-	// for this reason among others.
+	// IT IS NOT A TCP TEST, AND IT IS NOT SUPPOSED TO BE. modern/ contained no socket
+	// code when this was written - no winsock, no <winsock2.h>, no socket() call - so
+	// the exchange could only be driven through LoopbackTransport, an in-process pair
+	// of byte queues.
+	//
+	// NETWORK-001 changed that: ModernNetwork now has a real Winsock transport, so a
+	// loopback-socket version of this exchange is possible and belongs to
+	// LOGIN-002. This test stays as it is, because a test that drives the protocol
+	// through a byte queue is a different and still-valuable thing - it can control
+	// exactly where the boundaries fall, which a socket decides for itself. The two
+	// test levels are complementary, not successive revisions of one another.
 	auto channel = LoopbackTransport::CreatePair();
 	LoopbackTransport clientSide(channel.first);
 	LoopbackTransport serverSide(channel.second);
