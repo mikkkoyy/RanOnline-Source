@@ -325,21 +325,32 @@ namespace Modern::Network
 		// would be a packet no RAN server expects.
 		Status AppendRequestAll(std::vector<WireU8>& out);
 
-		// 2248. APPENDED. `ids.size()` may be 0..kListReleasedSlots.
+		// 2248. APPENDED. `ids.size()` may be 0..kLocalSlots.
 		//
-		// The emitted size is 12 + 4*count, which is 28 for at most 4 ids and 76 for
-		// more than 4. That reproduces both legacy widths from one rule instead of
-		// asking the caller to choose, because a caller that passed 16 ids against a
-		// 4-slot build would otherwise produce a packet that build cannot parse.
+		// The emitted size is ALWAYS kLocalSize (28 on this build), never 12 + 4*count.
+		// NET_CHA_BBA_INFO's constructor sets nmg.dwSize = sizeof(NET_CHA_BBA_INFO) and
+		// nChaNum[] is a fixed-size array member, so the width does not depend on the
+		// count: an account with two characters sends 28 bytes with two ids followed by
+		// two zero slots. The unused slots are left zero, which is what legacy's memset
+		// leaves.
+		//
+		// Refuses more ids than kLocalSlots rather than truncating: silently dropping
+		// characters would make a five-character account look like a four-character one,
+		// which is the exact failure this packet exists to prevent.
 		Status AppendIdList(std::vector<WireU8>& out, const std::vector<WireU32>& ids);
 
-		// 2248. Derives the array length from the frame's own dwSize.
+		// 2248. Derives the array length from the frame's own dwSize, and accepts
+		// either legacy width (28 or 76).
 		//
-		// Rejects a dwSize that is neither 28 nor 76, a count that disagrees with
-		// that width, a negative count, and a frame shorter than its declared size.
-		// The count check matters: without it a peer could declare 76 bytes and a
-		// count of 1, and the decoder would report a list of one while silently
-		// discarding fifteen ids.
+		// Rejects a dwSize that is neither 28 nor 76, a declared size that disagrees
+		// with the bytes present, and a negative count.
+		//
+		// nChaSNum is the number of REAL characters, which is routinely fewer than the
+		// width's capacity, so the check is `count <= capacity` and NOT
+		// `count == capacity` - the latter would reject the most common packet RAN
+		// sends. Only the counted slots are reported: the trailing zeros are padding,
+		// and returning them would invent characters that do not exist, making a
+		// client request a 2332 for a slot with nothing behind it.
 		Status DecodeIdList(const std::vector<WireU8>& frame, CharacterIdList& out);
 
 		// 2244. APPENDED. `characterId` is the id from the 2248 array.

@@ -30,6 +30,31 @@ set(MODERN_SERVER_SOURCES
     login/LoginServerConfig.h
     login/LoginServerRuntime.cpp
     login/LoginServerRuntime.h
+    # WORLD-ENTRY-001 Phase B: the authoritative world-entry domain and the
+    # Agent/Field roles' session state. NO TCP LISTENERS HERE ON PURPOSE - Phase C
+    # binds these services to real sockets; keeping them socket-free is what lets
+    # every rule below be tested without a network.
+    #
+    # CharacterRepository is the OWNERSHIP boundary: FindOwned is the modern
+    # equivalent of legacy's `WHERE ChaNum=? AND UserNum=?` SQL predicate, written
+    # as an interface method so it cannot be skipped.
+    #
+    # WorldEntryService holds a FieldEntryRegistry by reference rather than
+    # containing it, because in legacy the Agent and the Field are different
+    # processes with different owners - an Agent that could mint its own
+    # authorization would be an Agent that could forge its own proof of entry.
+    world/WorldCharacter.cpp
+    world/WorldCharacter.h
+    world/CharacterRepository.cpp
+    world/CharacterRepository.h
+    world/AgentSession.cpp
+    world/AgentSession.h
+    world/CharacterSelectService.cpp
+    world/CharacterSelectService.h
+    world/WorldEntryService.cpp
+    world/WorldEntryService.h
+    world/FieldSession.cpp
+    world/FieldSession.h
 )
 
 add_library(ModernServer STATIC ${MODERN_SERVER_SOURCES})
@@ -60,6 +85,10 @@ add_executable(ModernServerTests
     LoginResponderTests.cpp
     # LOGIN-001: Login Server responder + client end-to-end and fragmentation tests.
     LoginServerTests.cpp
+    # WORLD-ENTRY-001 Phase B: repository ownership, character selection, world-entry
+    # authorization, Field 2359 validation, spawn generation, and the illegal state
+    # transitions. Headless, like the rest of this binary.
+    WorldEntryServiceTests.cpp
 )
 
 target_include_directories(ModernServerTests PRIVATE
