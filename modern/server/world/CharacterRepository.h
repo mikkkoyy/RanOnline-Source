@@ -55,6 +55,7 @@
 #include "world/WorldCharacter.h"
 
 #include <map>
+#include <mutex>
 #include <vector>
 
 namespace Modern::Server::World
@@ -138,10 +139,33 @@ namespace Modern::Server::World
 		// Total characters held, regardless of owner. For tests and for the Agent's
 		// list assembly, which must not confuse "this account owns nothing" with
 		// "the store is empty".
-		std::size_t Size() const noexcept { return m_characters.size(); }
+		//
+		// Takes the lock, and is therefore noexcept-unsafe to call concurrently with a
+		// mutation: the count is read under the mutex like every other accessor.
+		std::size_t Size() const
+		{
+			const std::lock_guard<std::mutex> lock(m_mutex);
+			return m_characters.size();
+		}
 
 	private:
 		// Character id -> character. std::map, so iteration is id-ordered for free.
 		std::map<Network::WireU32, WorldCharacter> m_characters;
+
+		// Guards m_characters.
+		//
+		// Added in WORLD-ENTRY-002a, and the reason is that the Field role now serves
+		// connections concurrently: two clients entering the world at once each call
+		// Find and FindOwned from their own worker thread while the Agent thread may be
+		// writing. An unsynchronised std::map under concurrent read and write is not
+		// merely "racy in theory" - rebalancing can be observed half-done, so a lookup
+		// can miss a character that exists, and a writer can lose one.
+		//
+		// Deliberately a coarse lock held only for the duration of one map operation,
+		// with no I/O inside it. Character counts here are small and the operations are
+		// microseconds, so finer-grained locking would buy contention problems instead
+		// of removing them. A reader returning a COPY of the record is what keeps the
+		// lock scope this short: nothing escapes holding a reference into the map.
+		mutable std::mutex m_mutex;
 	};
 }

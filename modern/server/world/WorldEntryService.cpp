@@ -26,6 +26,16 @@ namespace Modern::Server::World
 			return Result<WorldEntryAuthorization>(found.GetStatus());
 		}
 
+		// Ownership proven BEFORE the registry lock is taken, and the repository's own
+		// lock is released by then - so nothing nests repository-inside-registry here.
+		//
+		// Lock ORDER matters now that both exist: the only nesting anywhere is
+		// registry-then-repository (Validate and Claim do this), and Reserve respects
+		// it by taking the registry lock only after its repository calls have returned.
+		// The reverse order would be a deadlock waiting for two clients to arrive
+		// together.
+		const std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
 		const WorldCharacter& character = found.GetValue();
 
 		// A NEW gaeaId every time. See the header: re-using it would make a stale
@@ -71,6 +81,12 @@ namespace Modern::Server::World
 	    const ICharacterRepository& repository,
 	    const Network::FieldIdentity& identity, WireU64 nowMs)
 	{
+		// Held for the whole walk. Validate only READS m_pending, so on its own that
+		// would need nothing more than a shared lock - but it runs concurrently with
+		// Reserve inserting and Claim mutating entries, and a std::map read during an
+		// insert can observe a half-built tree.
+		const std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
 		// The join type is a plain 4-byte enum on the wire
 		// (EMGAME_JOINTYPE, s_NetGlobal.h:4156-4161). Only the three declared values
 		// are accepted; a fourth would be a field the protocol has no meaning for.
@@ -151,6 +167,16 @@ namespace Modern::Server::World
 	    const ICharacterRepository& repository,
 	    const Network::FieldIdentity& identity, WireU64 nowMs)
 	{
+		// Acquired BEFORE Validate and released after the consume, so the pair is one
+		// atomic step.
+		//
+		// This is the reason the registry needed a lock at all. Two clients claiming the
+		// same gaeaId - a replay, or a captured 2359 raced against its owner - would
+		// otherwise both pass the replay check and both be told they had entered the
+		// world, with two characters sharing one entity id. Recursive because
+		// Validate() locks it as well.
+		const std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
 		Result<ValidatedWorldEntry> validated =
 		    Validate(repository, identity, nowMs);
 		if (validated.IsError())
@@ -167,6 +193,8 @@ namespace Modern::Server::World
 
 	void FieldEntryRegistry::Discard(WireU32 gaeaId) noexcept
 	{
+		const std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
 		const auto it = m_pending.find(gaeaId);
 		if (it == m_pending.end())
 		{
@@ -182,6 +210,8 @@ namespace Modern::Server::World
 
 	std::size_t FieldEntryRegistry::PendingCount() const noexcept
 	{
+		const std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
 		std::size_t pending = 0;
 		for (const auto& entry : m_pending)
 		{

@@ -136,4 +136,52 @@ namespace Modern::Server::World
 		m_state = FieldState::Spawned;
 		return Ok();
 	}
+
+	// ---------------------------------------------------------------------------
+	// WORLD-ENTRY-002a: movement state
+	// ---------------------------------------------------------------------------
+
+	Status FieldSession::ApplyMoveState(Network::WireU32 requestedActState, MovementStateChange& out)
+	{
+		out = MovementStateChange{};
+
+		// The gate. A connection that has not been spawned has no authoritative
+		// character, so there is nothing whose state could be updated.
+		//
+		// Legacy's equivalent is implicit - GLChar::MsgMoveState is only reachable
+		// through pChar->MsgProcess, and there is no GLChar until the 2359 has built
+		// one. Making it a state rule here means a 3032 arriving early is refused
+		// rather than quietly dropped by a lookup that finds nothing.
+		if (!m_hasCharacter || m_state != FieldState::Spawned)
+		{
+			return Status(ErrorCode::NotAllowed);
+		}
+
+		if (m_movement == nullptr)
+		{
+			// A wiring error rather than a runtime condition: the runtime installs the
+			// service before it serves anything. Reported rather than defaulted,
+			// because a default rule would be an invented movement model.
+			return Status(ErrorCode::InvalidState);
+		}
+
+		// The session's OWN copy of the authoritative record, taken from the repository
+		// at 2359 validation. The service mutates that in place, so the session's view
+		// and the repository's copy are the same object rather than two that could
+		// drift apart.
+		WorldCharacter& character = m_character;
+
+		if (const Status status = m_movement->ApplyMoveState(character, requestedActState, out);
+		    status.IsError())
+		{
+			return status;
+		}
+
+		// The identity in the reply is the AUTHORITATIVE one, read back off the
+		// character after the update. Nothing in a 3032 could have influenced it,
+		// because a 3032 carries no id at all.
+		out.gaeaId = character.gaeaId;
+
+		return Ok();
+	}
 }

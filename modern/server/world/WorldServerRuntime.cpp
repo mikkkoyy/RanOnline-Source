@@ -10,7 +10,7 @@ namespace Modern::Server::World
 		: m_config(std::move(config))
 		, m_repository(repository)
 		, m_agent(m_config, authenticator, repository, m_registry)
-		, m_field(m_config, repository, m_registry)
+		, m_field(m_config, repository, m_registry, m_movement)
 	{
 	}
 
@@ -55,6 +55,10 @@ namespace Modern::Server::World
 			return status;
 		}
 
+		// Remembered so a test can compare what the Agent advertises against what the
+		// Field actually bound - which is the assertion that makes 2358 authoritative.
+		m_fieldEndpoint = m_field.FieldBoundEndpoint();
+
 		// Handed to the redirect builder AFTER both listeners exist, so the very first
 		// 2358 this process can emit already names a live endpoint.
 		m_agent.SetAdvertisedFieldEndpoint(advertised);
@@ -90,8 +94,4 @@ namespace Modern::Server::World
 		return m_agent.ServeOneConnection(timeoutMilliseconds);
 	}
 
-	Status WorldServerRuntime::ServeOneFieldClient(int timeoutMilliseconds)
-	{
-		return m_field.ServeOneConnection(timeoutMilliseconds);
-	}
 }

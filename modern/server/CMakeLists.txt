@@ -72,6 +72,11 @@ set(MODERN_SERVER_SOURCES
     world/FieldRoleRuntime.h
     world/WorldServerRuntime.cpp
     world/WorldServerRuntime.h
+    # WORLD-ENTRY-002a: the authoritative movement-state rule. A pure function over
+    # WorldCharacter - no socket, no packet, no actor - plus the named speed seam that
+    # WORLD-ENTRY-002a deliberately leaves unimplemented.
+    world/MovementStateService.cpp
+    world/MovementStateService.h
 )
 
 add_library(ModernServer STATIC ${MODERN_SERVER_SOURCES})
@@ -106,6 +111,11 @@ add_executable(ModernServerTests
     # authorization, Field 2359 validation, spawn generation, and the illegal state
     # transitions. Headless, like the rest of this binary.
     WorldEntryServiceTests.cpp
+    # WORLD-ENTRY-002a: the authoritative movement-state rule. Headless like the
+    # rest - 3032's meaning is decided before any byte is framed, so testing it
+    # needs no socket. WorldEntryTcpTests then proves the same rule survives a real
+    # TCP connection.
+    MovementStateServiceTests.cpp
 )
 
 target_include_directories(ModernServerTests PRIVATE

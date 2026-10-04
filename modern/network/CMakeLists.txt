@@ -74,6 +74,10 @@ set(MODERN_NETWORK_SOURCES
     # the framing.
     MessageReader.h
     MessageReader.cpp
+    # WORLD-ENTRY-002a: the movement-STATE protocol - 3032 and 3033 only.
+    # GOTO (3034/3035) and everything behind it are WORLD-ENTRY-002b.
+    MovementStateProtocol.h
+    MovementStateProtocol.cpp
     # NETWORK-001: the real Winsock TCP layer. This is the only part of the modern
     # tree that includes <winsock2.h>, and it is why ws2_32 is linked below.
     #

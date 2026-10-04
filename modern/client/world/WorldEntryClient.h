@@ -58,6 +58,7 @@
 #include "login/World001LoginClient.h"
 #include "NetCompressCodec.h"
 #include "MessageReader.h"
+#include "MovementStateProtocol.h"
 #include "NetworkConnection.h"
 #include "NetworkTypes.h"
 #include "WorldEntryProtocol.h"
@@ -143,6 +144,27 @@ namespace Modern::Client
 		std::vector<WireU8> frame;
 	};
 
+	// The authoritative movement state, as received from the Field role in a 3033.
+	//
+	// Separate from Network::MovementState::MoveStateBroadcast for the same reason
+	// WorldSpawnState exists: this one is decoded from bytes off a socket, and the tests
+	// assert on it field by field rather than trusting a re-derived value.
+	struct WorldMoveStateState
+	{
+		bool    received = false;
+
+		// Whose move this was, and the AUTHORITATIVE bits for it.
+		//
+		// gaeaId is the sender's, not the receiver's. That is the whole point of a
+		// broadcast: a client watching another player move sees the mover's id here and
+		// must not confuse it with its own.
+		WireU32 gaeaId   = 0;
+		WireU32 actState = 0;
+
+		// The frame as received, so a test can assert its size and offsets.
+		std::vector<WireU8> frame;
+	};
+
 	// Drives the client side of the Agent conversation, over no socket at all.
 	//
 	// The state machine enforces the same ORDERING the server does, so a client bug
@@ -186,6 +208,18 @@ namespace Modern::Client
 		static Status BuildFieldIdentity(const Network::FieldIdentity& identity,
 		                                 std::vector<WireU8>& request);
 
+		// Builds 3032 - the client's own movement state.
+		//
+		// `actState` is the client's REQUESTED bits, not the answer: legacy sends what
+		// the player did and the server decides which of it is allowed
+		// (GLCharMsg.cpp:182-219). So this never invents or filters a bit. A client that
+		// pre-applied the authority rules would make the server's authority untestable,
+		// and would hide exactly the disagreement these tests exist to catch.
+		//
+		// No gaeaId is sent, because legacy sends none: the server already knows whose
+		// connection this is, which is what makes the 3032 authoritative.
+		Status BuildMoveState(WireU32 actState, std::vector<WireU8>& request);
+
 		// Feeds bytes received from the Field.
 		//
 		// Separate from FeedAgent because these are DIFFERENT connections with different
@@ -218,6 +252,15 @@ namespace Modern::Client
 
 		// The 2333 payload, decoded.
 		const WorldSpawnState& Spawn() const noexcept { return m_spawn; }
+
+		// The most recent 3033, decoded.
+		//
+		// "Most recent" rather than "the" because a client watching two players move
+		// receives a stream of these, and keeping only the last is what a real client
+		// would do. MoveStateCount() is what a test asserts on when the SEQUENCE
+		// matters - that two players moving produced two 3033s, not one.
+		const WorldMoveStateState& MoveState() const noexcept { return m_moveState; }
+		std::size_t                MoveStateCount() const noexcept { return m_moveStateCount; }
 
 		// True once the framer has latched an unrecoverable framing error. A
 		// desynchronised stream cannot resynchronise, so the caller must drop the
@@ -259,6 +302,8 @@ namespace Modern::Client
 		Network::FieldRedirect               m_redirect;
 		bool                                 m_hasRedirect = false;
 		WorldSpawnState                      m_spawn;
+		WorldMoveStateState                  m_moveState;
+		std::size_t                          m_moveStateCount = 0;
 
 		bool m_agentFailed = false;
 		bool m_fieldFailed = false;

@@ -94,6 +94,7 @@
 #include <map>
 #include <string>
 #include <utility>
+#include <mutex>
 #include <vector>
 
 namespace Modern::Server::World
@@ -229,6 +230,24 @@ namespace Modern::Server::World
 		// increasing order and the registry is small; ordered iteration makes the
 		// PendingCount sweep deterministic.
 		std::map<Network::WireU32, WorldEntryAuthorization> m_pending;
+
+		// Guards m_pending AND the two counters below.
+		//
+		// Added in WORLD-ENTRY-002a. This registry is the Agent->Field hop, and until
+		// then the two roles were driven by one thread each with no overlap. The Field
+		// role now serves connections concurrently, so a Reserve from the Agent thread
+		// can genuinely race a Claim or a Discard from a Field worker - and this is the
+		// worst possible place for that, because Claim is what CONSUMES an authorization.
+		//
+		// Two clients racing to claim the same gaeaId must produce exactly one winner.
+		// Without the lock, "check then consume" is not atomic, and the loser's spawn
+		// would be built from an authorization that is no longer valid.
+		//
+		// Recursive rather than plain because Claim() holds it across a call to
+		// Validate(), which locks it too. Making the pair atomic is the entire point -
+		// see Claim() - and the alternative, a private unlocked Validate, would be a
+		// second copy of the rules that could drift from the first.
+		mutable std::recursive_mutex m_mutex;
 
 		// The next gaeaId to hand out. Monotonic, never decremented.
 		Network::WireU32 m_nextGaeaId = kFirstGaeaId;

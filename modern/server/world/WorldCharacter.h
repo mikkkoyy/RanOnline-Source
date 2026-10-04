@@ -142,6 +142,23 @@ namespace Modern::Server::World
 		// note above - allocated by the Field role, never persisted.
 		Network::WireU32 gaeaId = 0;
 
+		// WORLD-ENTRY-002a: the movement STATE half only. A bitmask, never an enum -
+		// see MovementStateProtocol.h for why, and for which four bits a client may
+		// influence. No coordinate is affected by any of this.
+		Network::WireU32 actState = 0;
+
+		// m_dwUserLvl: the ACCOUNT privilege level, carried by the Agent->Field join
+		// (NET_GAME_JOIN_FIELDSVR::dwUserLvl, s_NetGlobal.h:4174) and by the client's
+		// own join payload (GLContrlCharJoinMsg.h:87).
+		//
+		// Distinct from `level` above, which is the CHARACTER level, and the two must
+		// not be conflated: the USER_GM3 gate that controls visibility flags is an
+		// ACCOUNT check (USER_GM3 = 20, s_NetGlobal.h:313), and using a character's
+		// level for it would let a levelled character set GM flags.
+		//
+		// 0 for an ordinary account, which is below USER_GM3 - the correct default.
+		Network::WireU32 accountLevel = 0;
+
 		// A field whose length would overflow the wire field, or a character name
 		// that would not fit, is a repository construction error - refused at Add so
 		// that no later stage has to defend against a record that cannot be encoded.

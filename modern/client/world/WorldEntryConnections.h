@@ -151,7 +151,35 @@ namespace Modern::Client
 		// something faults.
 		Status PumpUntilSpawn(int timeoutMilliseconds, std::size_t maxChunkBytes = 0);
 
+		// Sends a 3032 for the client's own movement state.
+		//
+		// `actState` is what the player DID, not what the player is allowed to do. See
+		// WorldEntryClient::BuildMoveState: the bits go out verbatim and the server
+		// decides. Raw, like every other client->server message here.
+		Status SendMoveState(Network::WireU32 actState);
+
+		// Reads until `wantedCount` 3033s have arrived in total, the budget runs out,
+		// the peer closes, or something faults.
+		//
+		// Takes a COUNT rather than "until the next one", and that is forced by the
+		// protocol: a client watching another player move cannot know in advance
+		// whether the server will answer at all. Legacy sends NOTHING when the
+		// authoritative state did not change (GLCharMsg.cpp:203), so "wait for the next
+		// 3033" would hang forever on a no-op move. Passing the count the test already
+		// knows lets the SAME call express both cases: the expected count for a change,
+		// and `thisCount + 0` for a move that must stay silent - which then correctly
+		// times out instead of inventing an answer.
+		Status PumpUntilMoveCount(std::size_t wantedCount, int timeoutMilliseconds,
+		                          std::size_t maxChunkBytes = 0);
+
 		const WorldSpawnState& Spawn() const noexcept { return m_protocol.Spawn(); }
+
+		// The most recent 3033, and how many have arrived.
+		const WorldMoveStateState& MoveState() const noexcept { return m_protocol.MoveState(); }
+		std::size_t                MoveStateCount() const noexcept
+		{
+			return m_protocol.MoveStateCount();
+		}
 
 		std::size_t MessagesHandled() const noexcept { return m_handled; }
 

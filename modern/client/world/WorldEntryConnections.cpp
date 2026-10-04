@@ -176,6 +176,109 @@ namespace Modern::Client
 		return m_transport.Send(bytes.data(), bytes.size());
 	}
 
+	Status FieldConnection::SendMoveState(Network::WireU32 actState)
+	{
+		if (!m_transport.IsConnected())
+		{
+			return Status(ErrorCode::InvalidState);
+		}
+
+		std::vector<Network::WireU8> request;
+		if (const Status status = m_protocol.BuildMoveState(actState, request);
+		    status.IsError())
+		{
+			return status;
+		}
+
+		// Raw, and for the same reason SendIdentity is: client -> server is never
+		// enveloped. Wrapping a 3032 would give the server's framer bytes it could not
+		// read, and the resulting failure would look like a framing bug in Phase C's
+		// code rather than like a wrong choice here.
+		return m_transport.Send(request.data(), request.size());
+	}
+
+	Status FieldConnection::PumpUntilMoveCount(std::size_t wantedCount,
+	                                           int         timeoutMilliseconds,
+	                                           std::size_t maxChunkBytes)
+	{
+		if (!m_transport.IsConnected())
+		{
+			return Status(ErrorCode::InvalidState);
+		}
+
+		// Already satisfied before a single byte is read.
+		//
+		// Without this a caller asking for a count it has already reached would block
+		// for the whole budget and then report NotFound - which is indistinguishable
+		// from the server having stayed silent. Both are "no", and a caller that asked
+		// for nothing must be told "yes" immediately.
+		if (m_protocol.MoveStateCount() >= wantedCount)
+		{
+			return Ok();
+		}
+
+		const std::size_t chunk =
+		    (maxChunkBytes == 0 || maxChunkBytes > kReadBufferSize) ? kReadBufferSize
+		                                                             : maxChunkBytes;
+
+		const auto deadline = std::chrono::steady_clock::now() +
+		                     std::chrono::milliseconds(timeoutMilliseconds > 0
+		                                                  ? timeoutMilliseconds
+		                                                  : 1);
+
+		for (;;)
+		{
+			if (m_protocol.MoveStateCount() >= wantedCount)
+			{
+				return Ok();
+			}
+
+			const auto   now = std::chrono::steady_clock::now();
+			if (now >= deadline)
+			{
+				return Status(ErrorCode::NotFound);
+			}
+
+			const auto left =
+			    std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+			if (left <= 0)
+			{
+				return Status(ErrorCode::NotFound);
+			}
+
+			const int slice = left < 250 ? static_cast<int>(left) : 250;
+
+			std::vector<Network::WireU8> buffer(chunk);
+			std::size_t                  received = 0;
+
+			const Status status =
+			    m_transport.Receive(buffer.data(), buffer.size(), received, slice);
+
+			if (status.IsError())
+			{
+				// A peer that closed before delivering the 3033 is NotFound here, not a
+				// fault: "the answer never arrived" is the fact the caller needs, and it
+				// is the same fact a timeout reports. Matching PumpUntilSpawn's handling
+				// of the same event keeps the two pumps comparable.
+				return status;
+			}
+
+			if (received == 0)
+			{
+				continue;
+			}
+
+			std::size_t handled = 0;
+			if (const Status fed = m_protocol.FeedField(buffer.data(), received, handled);
+			    fed.IsError())
+			{
+				m_handled += handled;
+				return fed;
+			}
+			m_handled += handled;
+		}
+	}
+
 	Status FieldConnection::PumpUntilSpawn(int timeoutMilliseconds,
 	                                       std::size_t maxChunkBytes)
 	{

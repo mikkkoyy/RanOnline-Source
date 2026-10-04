@@ -117,13 +117,11 @@ namespace
 	// Every ownership test needs at least the case where an account owns SOMETHING,
 	// because "reject B's character" is only interesting if the same call accepts
 	// A's own.
-	InMemoryCharacterRepository MakePopulatedRepository()
+	void MakePopulatedRepository(InMemoryCharacterRepository& repository)
 	{
-		InMemoryCharacterRepository repository;
 		(void) repository.Add(MakeCharacter(kCharA1, kAccountA, "Aone", 10));
 		(void) repository.Add(MakeCharacter(kCharA2, kAccountA, "Atwo", 20));
 		(void) repository.Add(MakeCharacter(kCharB1, kAccountB, "Bone", 30));
-		return repository;
 	}
 
 	// An Agent session that has been sent the list, which is the only state a
@@ -197,7 +195,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_RepositoryRejectsUnknownAccountsAndCharacters)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 
 		// An unknown account owns nothing - and that is NOT NotFound. "No rows" is how
 		// a SQL lookup reports an account with no characters, so treating it as an error
@@ -218,7 +217,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_RepositoryEnforcesOwnershipAsAnInvariant)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 
 		// The positive case: each account finds its own characters.
 		CHECK(repository.FindOwned(kAccountA, kCharA1).IsOk());
@@ -303,7 +303,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_RepositoryGaeaIdIsAnEntityIdNotAnIdentity)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 
 		// Unplaced.
 		CHECK_EQ(repository.ReadGaeaId(kCharA1).GetValueOr(0), 0u);
@@ -332,7 +333,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_CharacterListIsFixedWidthAndNeedsNoTerminator)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		CharacterSelectService        select(repository);
 
 		AgentSession session(1);
@@ -376,7 +378,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_AnAccountWithNoCharactersStillGetsAValidList)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		CharacterSelectService        select(repository);
 
 		// An account the repository has never heard of. Not an error: a new account
@@ -399,7 +402,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_CharacterListIsRefusedBeforeAuthentication)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		CharacterSelectService        select(repository);
 
 		// CONNECTED -> character list. Refused, so an unauthenticated client never
@@ -424,7 +428,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_CharacterDetailIsOwnershipCheckedAnd1176Bytes)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		CharacterSelectService        select(repository);
 
 		AgentSession session = MakeSessionReadyToSelect(kAccountA, "user_a");
@@ -453,7 +458,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_SelectionStoresTheAuthoritativeCharacter)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		CharacterSelectService        select(repository);
 
 		AgentSession session = MakeSessionReadyToSelect(kAccountA, "user_a");
@@ -479,7 +485,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_SelectionRefusesAnotherAccountsCharacter)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		CharacterSelectService        select(repository);
 
 		AgentSession session = MakeSessionReadyToSelect(kAccountA, "user_a");
@@ -513,7 +520,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_SessionRefusesASelectionItselfDidNotResolve)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 
 		AgentSession session = MakeSessionReadyToSelect(kAccountA, "user_a");
 
@@ -542,7 +550,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_WorldEntryProducesARealRedirectAndAClaimablePair)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -599,7 +608,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_WorldEntryIsRefusedWithoutASelection)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -629,7 +639,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_WorldEntryRefusesAnEndpointTheClientWouldDial)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -668,7 +679,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_WorldEntryReProvesOwnershipAtAuthorizationTime)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -739,7 +751,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_FieldAcceptsAnAgentAuthorizedIdentity)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -777,7 +790,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_FieldRejectsEveryWrongIdentity)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -855,7 +869,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_ReplayOfAValidIdentityIsRefused)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -884,7 +899,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_StaleAuthorizationIsRefused)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -921,7 +937,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_AuthorizationForAPreviousAppearanceIsRefused)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -958,7 +975,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_FieldRefusesAnAuthorizationTheRepositoryContradicts)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -983,7 +1001,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_DifferentAccountCannotClaimAnOthersPair)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -1025,7 +1044,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_RegistryRefusesToAuthorizeWhatItCannotProve)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 
 		// A character the repository does not hold. The registry proves ownership for
@@ -1091,7 +1111,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_SpawnIs1022BytesOfAuthoritativeValues)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -1160,7 +1181,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_SpawnReservedRegionsAreZero)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -1226,7 +1248,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_SpawnIsRefusedWithoutAValidatedIdentity)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 
 		// FIELD_CONNECTED -> spawn, with no 2359 at all. This is the case the brief
@@ -1254,7 +1277,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_SpawnIsRefusedTwiceOnOneSession)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -1299,7 +1323,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_IllegalAgentTransitionsAreAllRefused)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -1418,7 +1443,8 @@ namespace
 
 	MODERN_TEST(WorldEntry_PhaseB_IllegalFieldTransitionsAreAllRefused)
 	{
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 
 		Network::FieldIdentity nothing;
@@ -1436,7 +1462,8 @@ namespace
 		// IDENTITY_VALIDATED: one spawn, then no more.
 		{
 			FieldEntryRegistry           local;
-			InMemoryCharacterRepository localRepo = MakePopulatedRepository();
+			InMemoryCharacterRepository localRepo;
+			MakePopulatedRepository(localRepo);
 			FieldSession                 s(localRepo, local, 2);
 
 			// Reserve allocates gaeaId 1 and slot 1 for the first request.
@@ -1551,7 +1578,8 @@ namespace
 		// frames: the 2358 redirect, the 2333 spawn, and - on a refused selection -
 		// the 2335. Asserted as a count so that adding a fourth would fail here and
 		// have to be justified.
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		FieldEntryRegistry           registry;
 		CharacterSelectService       select(repository);
 		WorldEntryService            entry(repository, registry);
@@ -1592,7 +1620,8 @@ namespace
 		// The one refusal the protocol DOES define: NET_MSG_LOBBY_CHAR_JOIN_FB (2335),
 		// which CAgentServer would emit when the entry is refused. Phase A's codec
 		// carries it as an opaque reason.
-		InMemoryCharacterRepository repository = MakePopulatedRepository();
+		InMemoryCharacterRepository repository;
+		MakePopulatedRepository(repository);
 		CharacterSelectService        select(repository);
 
 		AgentSession session = MakeSessionReadyToSelect(kAccountA, "user_a");

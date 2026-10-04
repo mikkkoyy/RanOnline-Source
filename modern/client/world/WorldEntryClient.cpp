@@ -119,6 +119,17 @@ namespace Modern::Client
 		return WorldEntryCodec::AppendFieldIdentity(request, identity);
 	}
 
+	Status WorldEntryClient::BuildMoveState(WireU32 actState, std::vector<WireU8>& request)
+	{
+		// The shared codec builds the 12-byte NET_MSG_GCTRL_MOVESTATE and refuses
+		// anything else, so a client cannot put a wrong-sized 3032 on the wire.
+		//
+		// `actState` is passed through verbatim, deliberately. See the header: filtering
+		// the client-owned bits here would make the server's authority rule untestable.
+		return MovementState::MovementStateCodec::AppendMoveStateRequest(
+		    request, MovementState::MoveStateRequest{actState});
+	}
+
 	void WorldEntryClient::Reset() noexcept
 	{
 		m_phase            = WorldEntryPhase::Disconnected;
@@ -132,6 +143,12 @@ namespace Modern::Client
 		m_redirect     = FieldRedirect{};
 		m_hasRedirect  = false;
 		m_spawn        = WorldSpawnState{};
+		// The 3033 stream resets with the connection that carried it, for the same
+		// reason the Field framer does. Leaving the count behind would let a second
+		// world entry inherit the first one's broadcasts and make MoveStateCount()
+		// answer a question about two different sessions.
+		m_moveState      = WorldMoveStateState{};
+		m_moveStateCount = 0;
 		m_agentFailed  = false;
 		m_fieldFailed  = false;
 	}
@@ -325,6 +342,39 @@ namespace Modern::Client
 
 			++messagesHandled;
 			const std::vector<WireU8> frame = ReconstructFrame(message);
+
+			// ---- 3033: authoritative movement state ---------------------------------
+			//
+			// Checked BEFORE the spawn test, because 3033 now arrives on the SAME
+			// long-lived connection as 2333 rather than on a conversation of its own. A
+			// Field client that has spawned and then moved receives both, interleaved,
+			// and treating the 3033 as "not a spawn" would drop it on the floor.
+			if (MovementState::MovementStateCodec::IsMoveStateBroadcast(message.header.type))
+			{
+				MovementState::MoveStateBroadcast broadcast;
+				if (const Status status =
+				        MovementState::MovementStateCodec::DecodeMoveStateBroadcast(
+				            frame, broadcast);
+				    status.IsError())
+				{
+					// Terminal, and differently so from an unknown id. The id is one this
+					// client recognises, so a bad one is a protocol fault worth reporting
+					// rather than something to skip past - and the stream cannot be trusted
+					// to be in the right place afterwards.
+					m_fieldFailed = true;
+					return status;
+				}
+
+				WorldMoveStateState received;
+				received.received = true;
+				received.gaeaId   = broadcast.gaeaId;
+				received.actState = broadcast.actState;
+				received.frame    = frame;
+
+				m_moveState = received;
+				++m_moveStateCount;
+				continue;
+			}
 
 			if (!WorldEntryCodec::IsSpawn(message.header.type))
 			{

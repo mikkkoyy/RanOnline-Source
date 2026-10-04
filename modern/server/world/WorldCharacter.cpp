@@ -1,5 +1,7 @@
 #include "world/WorldCharacter.h"
 
+#include "MovementStateProtocol.h"
+
 namespace Modern::Server::World
 {
 	Status WorldCharacter::Validate() const
@@ -39,6 +41,17 @@ namespace Modern::Server::World
 			}
 		}
 
+		// The authoritative movement-state word may only contain bits RAN defines.
+		//
+		// Checked here rather than only in MovementStateService because this is where
+		// server state is CREATED: a record created with a stray bit would otherwise be
+		// reported later as corruption by whichever service touched it first, which
+		// points the investigation at the wrong place.
+		if ((actState & ~Network::MovementState::kKnownFlags) != 0)
+		{
+			return Status(ErrorCode::InvalidArgument);
+		}
+
 		// Level 0 does not exist in RAN (the table starts at 1), and a resource
 		// above its own maximum cannot be encoded honestly.
 		if (level == 0)
@@ -61,6 +74,7 @@ namespace Modern::Server::World
 		       a.hp.max == b.hp.max && a.mp.now == b.mp.now && a.mp.max == b.mp.max &&
 		       a.sp.now == b.sp.now && a.sp.max == b.sp.max &&
 		       a.saveMapId.value == b.saveMapId.value && a.gaeaId == b.gaeaId &&
+		       a.actState == b.actState && a.accountLevel == b.accountLevel &&
 		       a.savePosition.x == b.savePosition.x &&
 		       a.savePosition.y == b.savePosition.y &&
 		       a.savePosition.z == b.savePosition.z;

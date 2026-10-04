@@ -63,6 +63,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -162,9 +163,18 @@ namespace
 	{
 	public:
 		TestWorldServer()
-			: m_repository(MakeRepository())
-			, m_runtime(MakeConfig(), m_authenticator, m_repository)
+			: m_runtime(MakeConfig(), m_authenticator, m_repository)
 		{
+			// Populated in the body, not in the initialiser list.
+			//
+			// InMemoryCharacterRepository holds a mutex and is therefore not copyable, so
+			// the old `m_repository(MakeRepository())` no longer compiles. Filling the
+			// member in place is the fix, and it is also the honest one: the repository is
+			// a member whose lifetime the runtime already borrows by reference, so it was
+			// never really being copied in - only moved through a return value that
+			// happened to elide.
+			PopulateRepository(m_repository);
+
 			// The credentials the test client sends.
 			//
 			// Without these the authenticator refuses every login, the Agent role answers
@@ -176,13 +186,11 @@ namespace
 			m_authenticator.AddAccount(kUserB, kPassB);
 		}
 
-		static InMemoryCharacterRepository MakeRepository()
+		static void PopulateRepository(InMemoryCharacterRepository& repository)
 		{
-			InMemoryCharacterRepository repository;
 			(void) repository.Add(MakeCharacter(kCharA1, kAccountA, "Alpha", kUserA, 10));
 			(void) repository.Add(MakeCharacter(kCharA2, kAccountA, "Alpine", kUserA, 20));
 			(void) repository.Add(MakeCharacter(kCharB1, kAccountB, "Beta", kUserB, 30));
-			return repository;
 		}
 
 		static WorldServerConfig MakeConfig()
@@ -203,9 +211,14 @@ namespace
 			return status;
 		}
 
-		// Serves both roles until Stop. One thread each, because the two listeners are
-		// independent sockets and a client holding connection #1 open while it opens
-		// connection #2 needs both able to progress.
+		// Serves the Agent role until Stop. One thread, because the Agent conversation
+		// is still short-lived: 2358 then 2359 then close.
+		//
+		// There is deliberately NO Field thread here. WORLD-ENTRY-002a made the Field
+		// connection long-lived, so FieldRoleRuntime owns its own accept thread and one
+		// worker per connection from Start(). A pump loop driving it from here would be
+		// both redundant and wrong - a single-threaded pump could not serve two clients
+		// that are each holding a Field connection open waiting for the other's 3033.
 		void StartServing()
 		{
 			m_agentThread = std::thread([this] {
@@ -217,31 +230,18 @@ namespace
 					}
 				}
 			});
-
-			m_fieldThread = std::thread([this] {
-				while (!m_stop.load(std::memory_order_acquire))
-				{
-					if (m_runtime.ServeOneFieldClient(200).IsError())
-					{
-						return;
-					}
-				}
-			});
 		}
 
-		// Joins both threads. Called before any assertion on the final counters,
-		// because those counters are written by the server threads and reading them
-		// while those run would be reading a value mid-update.
+		// Joins the Agent thread and then stops the runtime, which is what joins the
+		// Field role's accept and worker threads. Called before any assertion on the
+		// final counters, because those counters are written by the server threads and
+		// reading them while those run would be reading a value mid-update.
 		void Stop()
 		{
 			m_stop.store(true, std::memory_order_release);
 			if (m_agentThread.joinable())
 			{
 				m_agentThread.join();
-			}
-			if (m_fieldThread.joinable())
-			{
-				m_fieldThread.join();
 			}
 			m_runtime.Stop();
 		}
@@ -281,7 +281,6 @@ namespace
 		WorldServerRuntime          m_runtime;
 
 		std::thread m_agentThread;
-		std::thread m_fieldThread;
 		std::atomic<bool> m_stop{false};
 	};
 
@@ -1137,10 +1136,16 @@ namespace
 
 		// Serving before Start, and after Stop, are InvalidState rather than a crash or
 		// a silent no-op - a caller looping on ServeOneClient must be able to tell.
+		//
+		// The Field role has no one-shot entry point to call (it serves itself from
+		// Start), so what is asserted instead is that it is not listening: a caller that
+		// believed it had a Field role before Start would find a port already bound.
 		CHECK(server.Runtime().ServeOneAgentClient(100).IsError());
-		CHECK(server.Runtime().ServeOneFieldClient(100).IsError());
+		CHECK(!server.Runtime().Field().IsRunning());
+		CHECK(server.Runtime().AuthorizedFieldSessionCount() == 0);
 
 		CHECK(server.Start().IsOk());
+		CHECK(server.Runtime().Field().IsRunning());
 
 		// A second Start is refused rather than silently rebinding: a caller that
 		// believed it had two servers would find one port serving both.
@@ -1148,7 +1153,397 @@ namespace
 
 		server.Stop();
 		CHECK(server.Runtime().ServeOneAgentClient(100).IsError());
-		CHECK(server.Runtime().ServeOneFieldClient(100).IsError());
+		CHECK(!server.Runtime().Field().IsRunning());
+		CHECK(server.Runtime().AuthorizedFieldSessionCount() == 0);
+	}
+
+	// =========================================================================
+	// WORLD-ENTRY-002a: movement state over real sockets
+	// =========================================================================
+	//
+	// The cases below are the ones that need a socket. MovementStateServiceTests
+	// proves which BITS move; nothing there can prove that a 3032 survives framing,
+	// that the answer arrives on the connection the move was sent from, or that a
+	// second client learns about it - all three of which are wire behaviour, and all
+	// three of which are where a change like this actually breaks.
+	//
+	// The property under test throughout is that the Field connection SURVIVES the
+	// move. That is the whole reason 002a changed the Field role from one
+	// conversation per connection to a long-lived one: a 3032 arrives minutes after
+	// the 2359, on a socket that must still be there.
+
+	// A client that has finished world entry and is still holding its Field
+	// connection open.
+	//
+	// A struct rather than a function returning a connection, because FieldConnection
+	// owns a socket and is neither copyable nor movable - a helper would have to
+	// return a reference to something the caller owns, which is more indirection than
+	// the three lines of connect/identify/pump it would save.
+	struct SpawnedClient
+	{
+		// Declared before `protocol`, which takes it by reference.
+		MinLzo1xCodec    codec;
+		WorldEntryClient protocol{codec};
+		FieldConnection  connection{protocol};
+		WorldSpawnState  spawn;
+
+		// Runs the whole entry flow and stops with the Field connection OPEN.
+		Status Spawn(TestWorldServer& server, const std::string& userId,
+		             const std::string& password, WireU32 selectId, int timeout)
+		{
+			// A real 2358 from a real Agent conversation. A test that built its own
+			// redirect would be testing a Field client that no server ever authorized.
+			const AgentOnlyResult agent =
+			    RunAgentConversation(server, userId, password, selectId);
+			if (!agent.ok)
+			{
+				return Status(ErrorCode::InvalidState);
+			}
+
+			if (const Status status = connection.Connect(agent.redirect, timeout);
+			    status.IsError())
+			{
+				return status;
+			}
+
+			if (const Status status = connection.SendIdentity(IdentityFrom(agent.redirect));
+			    status.IsError())
+			{
+				return status;
+			}
+
+			if (const Status status = connection.PumpUntilSpawn(timeout); status.IsError())
+			{
+				return status;
+			}
+
+			spawn = protocol.Spawn();
+			return Ok();
+		}
+	};
+
+	// Short, because it is used to prove the server says NOTHING. A generous budget
+	// would turn a real hang into a slow test rather than a failure.
+	constexpr int kSilenceBudget = 500;
+
+	// Polls `predicate` until it holds, or the budget runs out.
+	//
+	// Needed because "the client received the 2335" and "the server recorded the
+	// session" are two different events. The server sends the spawn, the bytes cross
+	// loopback, the client reads them and returns from its pump - and only then does
+	// the server's own worker thread run its next statement and mark the peer spawned.
+	// So asserting a SERVER-side counter immediately after a CLIENT-side confirmation
+	// is a race by construction.
+	//
+	// The alternative, a fixed sleep, only relocates the flake: it makes the test
+	// slower on a fast machine and still fails on a slow one. This waits exactly as
+	// long as the property takes and no longer.
+	bool WaitFor(int budgetMilliseconds, const std::function<bool()>& predicate)
+	{
+		const auto deadline = std::chrono::steady_clock::now() +
+		                     std::chrono::milliseconds(budgetMilliseconds);
+
+		while (std::chrono::steady_clock::now() < deadline)
+		{
+			if (predicate())
+			{
+				return true;
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		}
+
+		// Checked once more so a predicate that became true during the final sleep is
+		// not reported as a failure.
+		return predicate();
+	}
+
+	MODERN_TEST(MovementState_AClientMovesAndGetsTheAuthoritativeAnswerBack)
+	{
+		TestWorldServer server;
+		CHECK(server.Start().IsOk());
+
+		SpawnedClient client;
+		CHECK(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+		CHECK(client.spawn.received);
+		CHECK_EQ(client.spawn.characterId, kCharA1.value);
+
+		const WireU32 gaeaId = client.spawn.gaeaId;
+		CHECK(gaeaId != 0);
+
+		// The connection is STILL OPEN after the spawn. Asserted before the move
+		// because it is the premise of the whole milestone: before 002a the Field role
+		// closed the socket here, and every later case in this file depends on it not
+		// doing so.
+		CHECK(client.connection.IsConnected());
+
+		CHECK(client.connection.SendMoveState(MovementState::kActRun).IsOk());
+		CHECK(client.connection.PumpUntilMoveCount(1, kDeadline).IsOk());
+
+		CHECK_EQ(client.connection.MoveStateCount(), static_cast<std::size_t>(1));
+		CHECK(client.connection.MoveState().received);
+		CHECK_EQ(client.connection.MoveState().frame.size(),
+		         static_cast<std::size_t>(16));
+		CHECK_EQ(client.connection.MoveState().gaeaId, gaeaId);
+
+		// The authoritative word, which for this request is exactly the two client-owned
+		// bits and nothing else.
+		CHECK_EQ(client.connection.MoveState().actState,
+		         static_cast<WireU32>(MovementState::kActRun));
+
+		CHECK(client.connection.IsConnected());
+
+		server.Stop();
+		CHECK_EQ(server.Runtime().Field().MoveStateSentCount(), static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().AuthorizedSessionCount(),
+		         static_cast<std::size_t>(0));
+	}
+
+	// The observable half of legacy's `if (dwOldActState != m_dwActState)`
+	// (GLCharMsg.cpp:203): an unchanged word sends NOTHING at all.
+	//
+	// Asserted as an ABSENCE. A test that only checked "the pump returned" would pass
+	// against a server that sent a second identical 3033.
+	MODERN_TEST(MovementState_AnUnchangedMoveProducesNoBroadcastAtAll)
+	{
+		TestWorldServer server;
+		CHECK(server.Start().IsOk());
+
+		SpawnedClient client;
+		CHECK(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+		CHECK(client.connection.SendMoveState(MovementState::kActRun).IsOk());
+		CHECK(client.connection.PumpUntilMoveCount(1, kDeadline).IsOk());
+		CHECK_EQ(client.connection.MoveStateCount(), static_cast<std::size_t>(1));
+
+		// Exactly the state it is already in.
+		CHECK(client.connection.SendMoveState(MovementState::kActRun).IsOk());
+
+		// Asking for a SECOND 3033 must time out: there will not be one.
+		CHECK(client.connection.PumpUntilMoveCount(2, kSilenceBudget).IsError());
+		CHECK_EQ(client.connection.MoveStateCount(), static_cast<std::size_t>(1));
+
+		// Still connected, and still able to move - a no-op must not cost the session.
+		CHECK(client.connection.IsConnected());
+		CHECK(client.connection.SendMoveState(MovementState::kActRun |
+		                                     MovementState::kActPeaceMode)
+		          .IsOk());
+		CHECK(client.connection.PumpUntilMoveCount(2, kDeadline).IsOk());
+		CHECK_EQ(client.connection.MoveState().actState,
+		         static_cast<WireU32>(MovementState::kActRun |
+		                               MovementState::kActPeaceMode));
+
+		server.Stop();
+		CHECK_EQ(server.Runtime().Field().MoveStateSentCount(), static_cast<std::size_t>(2));
+		CHECK_EQ(server.Runtime().Field().MoveStateUnchangedCount(),
+		         static_cast<std::size_t>(1));
+	}
+
+	// The broadcast is the point of 3033 being a separate message from 3032: a client
+	// that did not move still has to learn that somebody else did.
+	//
+	// Two real clients, two real characters, two real Agent conversations and two Field
+	// connections alive at once - which is only possible because the Field role now
+	// serves connections concurrently. A one-conversation-at-a-time Field role would
+	// have deadlocked here, and that is a real regression this case prevents.
+	MODERN_TEST(MovementState_ASecondClientIsToldAboutTheFirstClientsMove)
+	{
+		TestWorldServer server;
+		CHECK(server.Start().IsOk());
+
+		SpawnedClient mover;
+		SpawnedClient watcher;
+		CHECK(mover.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+		CHECK(watcher.Spawn(server, kUserB, kPassB, kCharB1.value, kDeadline).IsOk());
+
+		CHECK(mover.spawn.gaeaId != watcher.spawn.gaeaId);
+		// Waited for, not asserted immediately: both clients hold open Field
+		// connections, and the server's own count of that trails their spawns by a
+		// thread scheduling. See WaitFor.
+		CHECK(WaitFor(kDeadline, [&] {
+			return server.Runtime().AuthorizedFieldSessionCount() == 2;
+		}));
+
+		CHECK(mover.connection.SendMoveState(MovementState::kActRun).IsOk());
+
+		// BOTH are answered: the mover on its own connection, the watcher on its own.
+		CHECK(mover.connection.PumpUntilMoveCount(1, kDeadline).IsOk());
+		CHECK(watcher.connection.PumpUntilMoveCount(1, kDeadline).IsOk());
+
+		CHECK_EQ(mover.connection.MoveState().gaeaId, mover.spawn.gaeaId);
+		CHECK_EQ(mover.connection.MoveState().actState,
+		         static_cast<WireU32>(MovementState::kActRun));
+
+		// The watcher is told whose move it was. Asserting gaeaId specifically is what
+		// separates a real broadcast from a server echoing the watcher's own state back.
+		CHECK(watcher.connection.MoveState().received);
+		CHECK_EQ(watcher.connection.MoveState().gaeaId, mover.spawn.gaeaId);
+		CHECK_EQ(watcher.connection.MoveState().actState,
+		         static_cast<WireU32>(MovementState::kActRun));
+		CHECK_EQ(watcher.connection.MoveStateCount(), static_cast<std::size_t>(1));
+
+		// The watcher never sent a 3032 and therefore never got a spawn-time state of its
+		// own - exactly one broadcast, about somebody else.
+		CHECK(watcher.spawn.received);
+
+		server.Stop();
+	}
+
+	// The authority rules, over a socket, where a client could actually try them.
+	//
+	// Both accounts here are ordinary (accountLevel 0, below USER_GM3), so the two
+	// visibility flags are outside this client's reach entirely.
+	MODERN_TEST(MovementState_AClientCannotInfluenceServerOwnedBitsOverTheWire)
+	{
+		TestWorldServer server;
+		CHECK(server.Start().IsOk());
+
+		// ---- asking to be DEAD, from a clean state -----------------------
+		//
+		// Nothing changes, so nothing is broadcast. Silence is the correct answer, and
+		// a server that granted the request would answer with a 3033 carrying EM_ACT_DIE.
+		{
+			SpawnedClient client;
+			CHECK(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+			CHECK(client.connection
+			          .SendMoveState(MovementState::kActDie | MovementState::kReqLogout |
+			                         MovementState::kReqGateOut)
+			          .IsOk());
+
+			CHECK(client.connection.PumpUntilMoveCount(1, kSilenceBudget).IsError());
+			CHECK_EQ(client.connection.MoveStateCount(), static_cast<std::size_t>(0));
+			CHECK(client.connection.IsConnected());
+
+			// And the session is unharmed: a refused bit is not a refused connection.
+			CHECK(client.connection.SendMoveState(MovementState::kActRun).IsOk());
+			CHECK(client.connection.PumpUntilMoveCount(1, kDeadline).IsOk());
+			CHECK_EQ(client.connection.MoveState().actState,
+			         static_cast<WireU32>(MovementState::kActRun));
+		}
+
+		// ---- asking for the GM visibility flags --------------------------
+		{
+			SpawnedClient client;
+			CHECK(client.Spawn(server, kUserA, kPassA, kCharA2.value, kDeadline).IsOk());
+
+			CHECK(client.connection
+			          .SendMoveState(MovementState::kReqVisibleNone |
+			                         MovementState::kReqVisibleOff)
+			          .IsOk());
+
+			CHECK(client.connection.PumpUntilMoveCount(1, kSilenceBudget).IsError());
+			CHECK_EQ(client.connection.MoveStateCount(), static_cast<std::size_t>(0));
+		}
+
+		server.Stop();
+		CHECK_EQ(server.Runtime().Field().MoveStateSentCount(), static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().RefusedClientCount(), static_cast<std::size_t>(0));
+	}
+
+	// A 3032 is refused BEFORE the client has entered the world.
+	//
+	// The connection is dropped rather than left open, because a connection that has
+	// not presented a 2359 has nothing to attribute a movement state to - and the one
+	// thing this server must never do is guess whose character is moving.
+	MODERN_TEST(MovementState_AMoveBeforeEntryIsRefusedAndTheConnectionDropped)
+	{
+		TestWorldServer server;
+		CHECK(server.Start().IsOk());
+
+		const AgentOnlyResult agent =
+		    RunAgentConversation(server, kUserA, kPassA, kCharA1.value);
+		CHECK(agent.ok);
+
+		MinLzo1xCodec    codec;
+		WorldEntryClient protocol(codec);
+		FieldConnection  connection(protocol);
+
+		CHECK(connection.Connect(agent.redirect, kDeadline).IsOk());
+		CHECK(connection.SendMoveState(MovementState::kActRun).IsOk());
+
+		// No 3033, ever.
+		CHECK(connection.PumpUntilMoveCount(1, kSilenceBudget).IsError());
+		CHECK(!protocol.MoveState().received);
+
+		server.Stop();
+		CHECK_EQ(server.Runtime().Field().RefusedClientCount(), static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().MoveStateSentCount(), static_cast<std::size_t>(0));
+	}
+
+	// A wrong-sized 3032 is refused at the framing boundary.
+	//
+	// Sent RAW, so the test controls dwSize: a client built through
+	// WorldEntryClient::SendMoveState cannot produce one, which is the point - this
+	// case exists for a peer that is not that client.
+	MODERN_TEST(MovementState_AMalformed3032IsRefused)
+	{
+		TestWorldServer server;
+		CHECK(server.Start().IsOk());
+
+		const AgentOnlyResult agent =
+		    RunAgentConversation(server, kUserA, kPassA, kCharA1.value);
+		CHECK(agent.ok);
+
+		MinLzo1xCodec    codec;
+		WorldEntryClient protocol(codec);
+		FieldConnection  connection(protocol);
+
+		CHECK(connection.Connect(agent.redirect, kDeadline).IsOk());
+		CHECK(connection.SendIdentity(IdentityFrom(agent.redirect)).IsOk());
+		CHECK(connection.PumpUntilSpawn(kDeadline).IsOk());
+
+		// Correct id, wrong length: 8 bytes where 12 are required.
+		std::vector<WireU8> malformed;
+		Network::Codec::WriteU32(malformed, 8);
+		Network::Codec::WriteU32(malformed, MovementState::kMoveStateId);
+		CHECK_EQ(malformed.size(), static_cast<std::size_t>(8));
+
+		CHECK(connection.SendRaw(malformed).IsOk());
+		CHECK(connection.PumpUntilMoveCount(1, kSilenceBudget).IsError());
+		CHECK(!protocol.MoveState().received);
+
+		server.Stop();
+		CHECK_EQ(server.Runtime().Field().RefusedClientCount(), static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().MoveStateSentCount(), static_cast<std::size_t>(0));
+	}
+
+	// The connection outlives several moves and an idle gap.
+	//
+	// The idle gap is the point: WORLD-ENTRY-002a raised the Field role's read budget
+	// from "the whole conversation" to "per message", precisely so a client could sit
+	// still between moves. A budget that still covered the whole connection would kill
+	// this client mid-session.
+	MODERN_TEST(MovementState_TheConnectionSurvivesAnIdleGapBetweenMoves)
+	{
+		TestWorldServer server;
+		CHECK(server.Start().IsOk());
+
+		SpawnedClient client;
+		CHECK(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+		CHECK(client.connection.SendMoveState(MovementState::kActRun).IsOk());
+		CHECK(client.connection.PumpUntilMoveCount(1, kDeadline).IsOk());
+
+		// Read nothing at all for a while. No pump, no traffic - just silence, which is
+		// what an AFK player looks like to the server.
+		std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+
+		CHECK(client.connection.IsConnected());
+		CHECK(WaitFor(kDeadline, [&] {
+			return server.Runtime().AuthorizedFieldSessionCount() == 1;
+		}));
+
+		// Still authoritative, still responsive.
+		CHECK(client.connection.SendMoveState(MovementState::kActPeaceMode).IsOk());
+		CHECK(client.connection.PumpUntilMoveCount(2, kDeadline).IsOk());
+
+		// EM_ACT_RUN was set by the first move and the second request did not mention
+		// it, so it is CLEARED - the whole word, applied bit by bit.
+		CHECK_EQ(client.connection.MoveState().actState,
+		         static_cast<WireU32>(MovementState::kActPeaceMode));
+
+		server.Stop();
+		CHECK_EQ(server.Runtime().Field().MoveStateSentCount(), static_cast<std::size_t>(2));
 	}
 }
 

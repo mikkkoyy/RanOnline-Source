@@ -55,6 +55,7 @@
 #include "types/Result.h"
 #include "world/CharacterRepository.h"
 #include "world/WorldCharacter.h"
+#include "world/MovementStateService.h"
 #include "world/WorldEntryService.h"
 
 #include <cstdint>
@@ -151,6 +152,32 @@ namespace Modern::Server::World
 			return m_state == FieldState::IdentityValidated;
 		}
 
+		// ---- movement state (WORLD-ENTRY-002a) ------------------------------
+		//
+		// Handles a 3032 on THIS connection: derive the authoritative state and report
+		// whether it changed.
+		//
+		// `changed == false` means legacy sends NOTHING back (GLCharMsg.cpp:203), so
+		// the caller must not broadcast. That is observable protocol behaviour rather
+		// than an optimisation, and it is why the result distinguishes the two cases
+		// instead of always sending.
+		//
+		// The gaeaId in the result comes from this session's OWN authorized character.
+		// A 3032 carries no id at all, so there is nothing for a client to spoof - and
+		// `out.gaeaId` is filled from the repository record, never from a parameter.
+		//
+		// Requires Spawned: a connection that has completed 2359 but has not yet been
+		// spawned has no authoritative character to move, and one that has not
+		// completed 2359 has no character at all.
+		Status ApplyMoveState(Network::WireU32 requestedActState, MovementStateChange& out);
+
+		// The movement-state rule this session applies. Borrowed, not owned: the
+		// service holds no per-session state and the repository does.
+		void SetMovementStateService(const MovementStateService& service) noexcept
+		{
+			m_movement = &service;
+		}
+
 		// ---- lifecycle ------------------------------------------------------
 
 		// Terminal. Does NOT hand the gaeaId back: the character was placed, and
@@ -181,6 +208,8 @@ namespace Modern::Server::World
 		Network::WireU32   m_gaeaId = 0;
 		Network::WireU64   m_authorizationId = 0;
 		Network::WireU64   m_agentSessionId = 0;
+
+		const MovementStateService* m_movement = nullptr;
 
 		FieldState m_state = FieldState::Connected;
 	};

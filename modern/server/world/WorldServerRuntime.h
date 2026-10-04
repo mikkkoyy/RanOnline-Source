@@ -54,6 +54,7 @@
 #include "world/AgentRoleRuntime.h"
 #include "world/CharacterRepository.h"
 #include "world/FieldRoleRuntime.h"
+#include "world/MovementStateService.h"
 #include "world/WorldEntryService.h"
 #include "world/WorldServerConfig.h"
 
@@ -110,7 +111,6 @@ namespace Modern::Server::World
 		// thread has to say which it means. Returns Ok when the accept timed out with
 		// nobody knocking - an idle pass, not a failure.
 		Status ServeOneAgentClient(int timeoutMilliseconds);
-		Status ServeOneFieldClient(int timeoutMilliseconds);
 
 		AgentRoleRuntime& Agent() noexcept { return m_agent; }
 		FieldRoleRuntime& Field() noexcept { return m_field; }
@@ -122,6 +122,34 @@ namespace Modern::Server::World
 		// Field claim consumed it.
 		FieldEntryRegistry& Registry() noexcept { return m_registry; }
 
+		// The movement-state rule, for tests and for a future in-process caller.
+		MovementStateService& Movement() noexcept { return m_movement; }
+
+		// The Field endpoint the Agent role advertises in its 2358.
+		// Read back after Start(), because with port 0 requested the configuration
+		// cannot contain it before the bind happens.
+		// How many Field connections have earned a spawn and are still connected.
+		//
+		// Read through the runtime rather than by counting test sockets, because it is
+		// the SERVER's view that the test is asserting: a client that connected and
+		// vanished must not still be counted as a broadcast target.
+		std::size_t AuthorizedFieldSessionCount() const
+		{
+			return m_field.AuthorizedSessionCount();
+		}
+		Network::Endpoint AdvertisedFieldEndpoint() const noexcept
+		{
+			return m_fieldEndpoint;
+		}
+
+		// The Field role deliberately has no equivalent of ServeOneAgentClient: its
+		// connections are long-lived now, so it owns an accept thread and a worker per
+		// connection (see FieldRoleRuntime.h). A one-shot "serve one connection" entry
+		// point would block every other Field client, which is exactly the bug the
+		// thread-per-connection design exists to avoid.
+		//
+		// Drive it by calling Start() and then leaving it running.
+
 	private:
 		WorldServerConfig m_config;
 		ICharacterRepository& m_repository;
@@ -129,8 +157,17 @@ namespace Modern::Server::World
 		// The Agent->Field hop, in process. See the header.
 		FieldEntryRegistry m_registry;
 
+		// The authoritative movement-state rule, shared by every Field session.
+		//
+		// Owned here because it is process-wide policy with no per-session state, and
+		// because FieldSession takes it by reference - two Field connections must never
+		// disagree about what a 3032 means.
+		MovementStateService m_movement;
+
 		AgentRoleRuntime m_agent;
 		FieldRoleRuntime m_field;
+
+		Network::Endpoint m_fieldEndpoint;
 
 		bool m_running = false;
 	};

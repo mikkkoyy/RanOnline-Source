@@ -2,12 +2,28 @@
 
 namespace Modern::Server::World
 {
+	// Every function below takes m_mutex for the whole of its map access and no
+	// longer. The pattern is the same in all of them and is worth stating once:
+	//
+	//   - The record is COPIED out of the map before the lock is released
+	//     (Result<WorldCharacter> holds a value, not a reference). That is what lets
+	//     the lock cover only a map operation rather than the caller's whole use of
+	//     the result, which would otherwise serialise two Field workers for as long as
+	//     one of them spent building a spawn packet.
+	//   - Validation runs OUTSIDE the lock. It touches only the argument, so holding
+	//     the lock across it would be pure contention.
+	//   - No I/O happens under the lock.
+	//
+	// See the m_mutex comment in the header for why this locking exists at all.
+
 	Status InMemoryCharacterRepository::Add(const WorldCharacter& character)
 	{
 		if (const Status status = character.Validate(); status.IsError())
 		{
 			return status;
 		}
+
+		const std::lock_guard<std::mutex> lock(m_mutex);
 
 		if (m_characters.find(character.id.value) != m_characters.end())
 		{
@@ -29,6 +45,8 @@ namespace Modern::Server::World
 			return status;
 		}
 
+		const std::lock_guard<std::mutex> lock(m_mutex);
+
 		const auto it = m_characters.find(character.id.value);
 		if (it == m_characters.end())
 		{
@@ -42,22 +60,32 @@ namespace Modern::Server::World
 	Status InMemoryCharacterRepository::ListByAccount(
 	    WorldAccountId accountId, std::vector<WorldCharacter>& out) const
 	{
-		out.clear();
+		// Built locally and swapped in at the end, so a caller passing a vector that is
+		// also aliased elsewhere cannot observe it half-filled.
+		std::vector<WorldCharacter> found;
 
-		// A std::map walk is already in ascending character-id order, so no sort is
-		// needed and no insertion order can leak into the result.
-		for (const auto& entry : m_characters)
 		{
-			if (entry.second.accountId == accountId)
+			const std::lock_guard<std::mutex> lock(m_mutex);
+
+			// A std::map walk is already in ascending character-id order, so no sort is
+			// needed and no insertion order can leak into the result.
+			for (const auto& entry : m_characters)
 			{
-				out.push_back(entry.second);
+				if (entry.second.accountId == accountId)
+				{
+					found.push_back(entry.second);
+				}
 			}
 		}
+
+		out = std::move(found);
 		return Ok();
 	}
 
 	Result<WorldCharacter> InMemoryCharacterRepository::Find(WorldCharacterId id) const
 	{
+		const std::lock_guard<std::mutex> lock(m_mutex);
+
 		const auto it = m_characters.find(id.value);
 		if (it == m_characters.end())
 		{
@@ -69,6 +97,8 @@ namespace Modern::Server::World
 	Result<WorldCharacter> InMemoryCharacterRepository::FindOwned(
 	    WorldAccountId accountId, WorldCharacterId characterId) const
 	{
+		const std::lock_guard<std::mutex> lock(m_mutex);
+
 		const auto it = m_characters.find(characterId.value);
 		if (it == m_characters.end())
 		{
@@ -96,11 +126,14 @@ namespace Modern::Server::World
 	                                                 Network::WireU32 gaeaId)
 	{
 		// 0 is the "not in the world" sentinel; assigning it would erase the
-		// placement rather than record one.
+		// placement rather than record one. Checked before the lock because it needs
+		// no shared state at all.
 		if (gaeaId == 0)
 		{
 			return Status(ErrorCode::InvalidArgument);
 		}
+
+		const std::lock_guard<std::mutex> lock(m_mutex);
 
 		const auto it = m_characters.find(characterId.value);
 		if (it == m_characters.end())
@@ -115,6 +148,8 @@ namespace Modern::Server::World
 	Result<Network::WireU32> InMemoryCharacterRepository::ReadGaeaId(
 	    WorldCharacterId characterId) const
 	{
+		const std::lock_guard<std::mutex> lock(m_mutex);
+
 		const auto it = m_characters.find(characterId.value);
 		if (it == m_characters.end())
 		{
