@@ -42,6 +42,28 @@ set(MODERN_NETWORK_SOURCES
     # LOGIN-001: Login Server game-server list (REQ/SND_GAME_SVR, SND_GAME_SVR_END).
     GameServerListProtocol.h
     GameServerListProtocol.cpp
+    # WORLD-ENTRY-001 Phase A: the world-entry wire layouts.
+    #
+    # RanWirePrimitives holds the fixed-layout POD types (SNATIVEID, GLDWDATA,
+    # D3DXVECTOR3, SITEM_LOBY...) that both packets embed. It is shared on purpose:
+    # one definition means one set of static_asserts guarding both packets, so a
+    # layout change fails the build instead of silently changing the wire.
+    #
+    # CharacterListProtocol is 2247 / 2248 / 2244 / 2332, including the character
+    # DETAIL packet at its measured 1176 bytes.
+    #
+    # WorldEntryProtocol is 2353 / 2358 / 2359 / 2333 / 2335, including the spawn
+    # packet at its measured PACKED 1022 bytes.
+    #
+    # No sockets, no sessions and no compression here: these are layouts and codecs.
+    # NetCompressCodec already handles the envelope, and ConnectionFramer already
+    # handles message boundaries; neither is duplicated.
+    RanWirePrimitives.h
+    RanWirePrimitives.cpp
+    CharacterListProtocol.h
+    CharacterListProtocol.cpp
+    WorldEntryProtocol.h
+    WorldEntryProtocol.cpp
     # NETWORK-001: the real Winsock TCP layer. This is the only part of the modern
     # tree that includes <winsock2.h>, and it is why ws2_32 is linked below.
     #

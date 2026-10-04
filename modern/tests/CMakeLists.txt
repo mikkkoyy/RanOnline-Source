@@ -40,6 +40,12 @@ add_executable(ModernNetworkTests
     LoginResponseProtocolTests.cpp
     # LOGIN-001: Login Server game-server list (REQ/SND_GAME_SVR, SND_GAME_SVR_END).
     GameServerListProtocolTests.cpp
+    # WORLD-ENTRY-001 Phase A: protocol layout tests.
+    #
+    # Pure codec tests. No socket, because these packets are framed and measured
+    # independently of a transport - which is the point of Phase A being separate
+    # from the later Agent/Field sessions.
+    WorldEntryProtocolTests.cpp
 )
 
 target_link_libraries(ModernNetworkTests PRIVATE ModernNetwork)

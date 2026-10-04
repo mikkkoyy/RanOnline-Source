@@ -116,6 +116,17 @@ struct.** This checkout's buildable `.vcxproj` files define **no** country macro
 (only dead VS2003 `.vcproj` files define `KR_PARAM`), so a build of *this tree*
 emits 28 — while a real Korean release server emits 76.
 
+**The width is fixed; only the count varies.** `NET_CHA_BBA_INFO`'s constructor
+(`s_NetGlobal.h:3987-3992`) does `memset(this, 0, sizeof(...))`,
+`nmg.dwSize = sizeof(...)`, `nChaSNum = 0`, and `nChaNum[]` is a fixed-size array
+**member**, not a trailing array. So `dwSize` never depends on `nChaSNum`: an
+account with two characters still sends 28 bytes carrying two IDs followed by two
+zero slots. Consequently `nChaSNum <= capacity`, **not** `== capacity` — requiring
+equality would reject the most common packet RAN sends, an account with fewer than
+`MAX_ONESERVERCHAR_NUM` characters. The slots past `nChaSNum` are padding and must
+**not** be reported as characters; a client that counted them would request a 2332
+for a slot with no character behind it.
+
 ### 3.2 `SCHARINFO_LOBBY` — payload of 2332, sizeof **1168**
 
 | Off | Size | Field | In scope? |
