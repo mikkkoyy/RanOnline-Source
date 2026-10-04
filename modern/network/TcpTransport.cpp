@@ -856,6 +856,24 @@ namespace Modern::Network
 		return Ok();
 	}
 
+	void TcpTransport::CloseOwnedHandle(std::uintptr_t handle) noexcept
+	{
+		if (handle == kNoSocket)
+		{
+			return;
+		}
+
+		const SOCKET socket = static_cast<SOCKET>(handle);
+
+		// shutdown() before closesocket(), same ordering and same reason as
+		// CloseSocket: it is what makes a peer blocked in recv() observe the close
+		// rather than waiting out its own timeout. The return value is ignored for the
+		// same reason it is ignored there - a socket the peer already reset cannot be
+		// shut down cleanly, and that is no reason to skip the close.
+		::shutdown(socket, SD_BOTH);
+		::closesocket(socket);
+	}
+
 	void TcpTransport::Disconnect() noexcept
 	{
 		CloseSocket();

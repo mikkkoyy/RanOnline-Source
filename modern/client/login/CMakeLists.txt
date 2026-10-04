@@ -25,6 +25,13 @@ add_library(ModernClientLogin STATIC
     # LOGIN-001: Login Server client (pre-login phase, separate from Agent login).
     LoginServerClient.h
     LoginServerClient.cpp
+    # LOGIN-002: the socket half of the Login Server conversation.
+    #
+    # LoginServerClient owns the protocol and owns no socket; LoginServerSession owns
+    # the TcpTransport and drives the protocol through it. Keeping them apart is what
+    # lets LOGIN-001's protocol tests run with no network at all.
+    LoginServerSession.cpp
+    LoginServerSession.h
 )
 
 target_include_directories(ModernClientLogin PUBLIC

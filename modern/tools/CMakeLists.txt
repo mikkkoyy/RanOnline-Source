@@ -15,3 +15,12 @@ endif()
 # the headless suite in modern/tests/, which is what gets run and what gates
 # changes. No client or server executable is ever launched.
 add_subdirectory(emulator)
+
+# LOGIN-002: the runnable Login Server.
+#
+# The first modern executable that opens a socket. ModernEmulator prints the core
+# foundation and deliberately never starts a client or server, because the
+# authority is the headless suite. This one exists to be started BY HAND and
+# watched, which is a different purpose and needs a different dependency set: it
+# links the server and, through it, the real Winsock transport.
+add_subdirectory(login_server)

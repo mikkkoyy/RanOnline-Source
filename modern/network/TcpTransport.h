@@ -157,6 +157,23 @@ namespace Modern::Network
 		static Result<TcpTransport> Adopt(std::uintptr_t               handle,
 		                                  const TcpTransportOptions& options = TcpTransportOptions{});
 
+		// Closes a socket that this layer created but could not hand to a transport.
+		//
+		// Adopt deliberately does NOT close its argument when it fails, because the
+		// caller that passed it in is better placed than the factory to decide what
+		// should happen to it. The cost of that choice is that somebody has to close it
+		// - and this is that somebody.
+		//
+		// It exists for exactly one caller: a server that has just accepted a socket and
+		// cannot build a transport from it. Without it, that socket leaks - silently,
+		// once per occurrence, which is the worst shape a leak can have.
+		//
+		// Idempotent for the sentinel, and safe to call with any handle this layer
+		// produced. It does NOT touch Winsock reference counting: a handle passed here
+		// belonged to a socket whose transport never existed, so no reference was ever
+		// taken for it.
+		static void CloseOwnedHandle(std::uintptr_t handle) noexcept;
+
 		// Closes the socket and drops the Winsock reference.
 		//
 		// Closing here rather than hoping the caller remembered is the point of
