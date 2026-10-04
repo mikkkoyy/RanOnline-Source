@@ -64,6 +64,16 @@ set(MODERN_NETWORK_SOURCES
     CharacterListProtocol.cpp
     WorldEntryProtocol.h
     WorldEntryProtocol.cpp
+    # WORLD-ENTRY-001 Phase C: the ONE read loop every server role uses.
+    #
+    # LOGIN-002 had this shape as a private method on LoginServerRuntime. Phase C
+    # needs it twice more (Agent role, Field role), so it is here and
+    # LoginServerRuntime::ReadMessage is now a thin wrapper over it - four copies
+    # of a deadline loop would drift, and the drift would be invisible until it was
+    # not. It reads no protocol and owns no framing: ConnectionFramer still does
+    # the framing.
+    MessageReader.h
+    MessageReader.cpp
     # NETWORK-001: the real Winsock TCP layer. This is the only part of the modern
     # tree that includes <winsock2.h>, and it is why ws2_32 is linked below.
     #

@@ -32,6 +32,18 @@ add_library(ModernClientLogin STATIC
     # lets LOGIN-001's protocol tests run with no network at all.
     LoginServerSession.cpp
     LoginServerSession.h
+    # WORLD-ENTRY-001 Phase C: the client half of world entry, over TWO sockets.
+    #
+    # WorldEntryClient is the protocol object and owns no socket, exactly as
+    # LoginServerClient does - which is what lets its state machine be tested with no
+    # network. AgentConnection and FieldConnection own the two TcpTransports
+    # SEPARATELY: they are two classes with two transports and no shared state,
+    # because the whole point of the phase is that the client opens a genuinely
+    # second connection to the endpoint the 2358 named.
+    ../world/WorldEntryClient.cpp
+    ../world/WorldEntryClient.h
+    ../world/WorldEntryConnections.cpp
+    ../world/WorldEntryConnections.h
 )
 
 target_include_directories(ModernClientLogin PUBLIC

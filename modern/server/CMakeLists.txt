@@ -55,6 +55,23 @@ set(MODERN_SERVER_SOURCES
     world/WorldEntryService.h
     world/FieldSession.cpp
     world/FieldSession.h
+    # WORLD-ENTRY-001 Phase C: the two TCP listeners and the process that owns them.
+    #
+    # Phase C adds NO new rule. Every decision about ownership, selection,
+    # authorization, gaeaId allocation and spawn content is still Phase B's, reached
+    # through the same objects; these files translate packets into service calls and
+    # nothing else. AgentRoleRuntime and FieldRoleRuntime own a TcpListener each -
+    # TWO listeners, because the brief's whole claim is that the client-visible
+    # topology is two real connections, and one socket wearing two hats would prove
+    # nothing.
+    world/WorldServerConfig.cpp
+    world/WorldServerConfig.h
+    world/AgentRoleRuntime.cpp
+    world/AgentRoleRuntime.h
+    world/FieldRoleRuntime.cpp
+    world/FieldRoleRuntime.h
+    world/WorldServerRuntime.cpp
+    world/WorldServerRuntime.h
 )
 
 add_library(ModernServer STATIC ${MODERN_SERVER_SOURCES})
@@ -135,3 +152,33 @@ if(MSVC)
 endif()
 
 add_test(NAME ModernLoginServerTcpTests COMMAND ModernLoginServerTcpTests)
+
+# WORLD-ENTRY-001 Phase C: real Winsock TCP integration for the two-connection
+# world-entry flow.
+#
+# A SEPARATE executable from ModernServerTests, for the same reason
+# ModernLoginServerTcpTests is separate: ModernServerTests is a headless rule-test
+# binary that must keep running with no socket and no network, because that is what
+# makes it deterministic and safe to run anywhere. These bind 127.0.0.1:0 and prove
+# the thing a byte queue cannot - that a client really opens a SECOND connection to
+# the endpoint a 2358 named.
+#
+# It links ModernClientLogin because the milestone is the EXCHANGE: a real client
+# and a real server, which needs both halves.
+add_executable(ModernWorldEntryTcpTests
+    WorldEntryTcpTests.cpp
+)
+
+target_include_directories(ModernWorldEntryTcpTests PRIVATE
+    ${CMAKE_SOURCE_DIR}/modern/tests
+)
+
+target_link_libraries(ModernWorldEntryTcpTests PRIVATE ModernServer ModernClientLogin)
+
+target_compile_features(ModernWorldEntryTcpTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernWorldEntryTcpTests PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+add_test(NAME ModernWorldEntryTcpTests COMMAND ModernWorldEntryTcpTests)

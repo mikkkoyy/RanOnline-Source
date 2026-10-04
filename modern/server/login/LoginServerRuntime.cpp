@@ -1,8 +1,7 @@
 #include "LoginServerRuntime.h"
 
+#include "MessageReader.h"
 
-// steady_clock, so the exchange budget measures time actually waited.
-#include <chrono>
 namespace Modern::Server
 {
 	using namespace Modern::Network;
@@ -15,21 +14,10 @@ namespace Modern::Server
 		// one byte at a time must not be able to hold a connection open indefinitely by
 		// never quite hitting an idle timeout. Every blocking call is given a slice of
 		// this budget and the loop checks what is left.
-		constexpr int kExchangeTimeoutMilliseconds = 10000;
-
-		// How long a single receive waits before the loop re-checks the budget.
 		//
-		// Short, because the budget is enforced by the loop rather than by this value:
-		// a long poll would make Stop() and the end of the exchange feel sluggish,
-		// and a short one costs nothing but a few extra select() calls on an idle
-		// connection.
-		constexpr int kReadSliceMilliseconds = 250;
-
-		// Read buffer for one receive. Larger than any single RAN message (56 bytes +
-		// header) and far larger than the header alone, so a message almost always
-		// arrives whole - but "almost always" is exactly the case the framer exists
-		// for, and the client-side tests prove it by reading far smaller slices.
-		constexpr std::size_t kReadBufferSize = 2048;
+		// The loop itself now lives in Network::ReadOneMessage, shared with the Agent
+		// and Field roles; this constant is the LOGIN-002 budget handed to it.
+		constexpr int kExchangeTimeoutMilliseconds = 10000;
 	}
 
 	const char* ToString(LoginServerEvent event) noexcept
@@ -249,11 +237,7 @@ namespace Modern::Server
 		// The frame as bytes, header included. ValidateRequest and the bare decoders all
 		// read dwSize and nType, and both live in the header that Message splits out -
 		// so the header has to be written back to reconstruct the frame.
-		std::vector<WireU8> frame;
-		frame.reserve(static_cast<std::size_t>(message.header.size));
-		Codec::WriteU32(frame, message.header.size);
-		Codec::WriteU32(frame, message.header.type);
-		frame.insert(frame.end(), message.payload.begin(), message.payload.end());
+		std::vector<WireU8> frame = ReconstructFrame(message);
 
 		// The id is checked BEFORE the size, so a wrong id reports as a wrong id rather
 		// than as a length problem. Legacy's MsgProcess dispatches on nType alone
@@ -319,98 +303,40 @@ namespace Modern::Server
 	bool LoginServerRuntime::ReadMessage(TcpTransport& connection, ConnectionFramer& framer,
 	                                     Message& out)
 	{
-		// A wall-clock deadline, not a per-iteration counter.
+		// The loop itself is Network::ReadOneMessage's, shared with the Agent and
+		// Field roles added by WORLD-ENTRY-001 Phase C. Four copies of a deadline loop
+		// would drift, and the drift would be invisible until it was not.
 		//
-		// Subtracting the read timeout on every iteration would charge a full slice for
-		// a read that returned instantly, so a client that sends its 8-byte request in
-		// one write and is then silent would be treated exactly like one that is
-		// dribbling - and, worse, a server that reads fast would exhaust its budget
-		// while making real progress. Time actually waited is the only thing a deadline
-		// can honestly mean.
-		const auto deadline =
-		    std::chrono::steady_clock::now() + std::chrono::milliseconds(kExchangeTimeoutMilliseconds);
+		// This wrapper keeps LOGIN-002's refusal vocabulary, which its tests assert
+		// on: the shared reader reports four outcomes and this maps them onto the
+		// LoginServerRefusal values that were already part of this class's contract.
+		const ReadResult result = ReadOneMessage(connection, framer, out,
+		                                         kExchangeTimeoutMilliseconds);
 
-		for (;;)
+		if (result.IsOk())
 		{
-			const auto   now = std::chrono::steady_clock::now();
-			if (now >= deadline)
-			{
-				m_refusal       = LoginServerRefusal::MalformedFrame;
-				m_refusalDetail = "no complete request within the exchange budget";
-				return false;
-			}
+			return true;
+		}
 
-			const auto left =
-			    std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
-			if (left <= 0)
-			{
-				m_refusal       = LoginServerRefusal::MalformedFrame;
-				m_refusalDetail = "no complete request within the exchange budget";
-				return false;
-			}
+		m_refusalDetail = result.detail;
 
-			const int slice = left < kReadSliceMilliseconds ? static_cast<int>(left)
-			                                                  : kReadSliceMilliseconds;
-
-			std::vector<WireU8> buffer(kReadBufferSize);
-			std::size_t        received = 0;
-
-			const Status status = connection.Receive(buffer.data(), buffer.size(),
-			                                         received, slice);
-
-			if (status.IsError())
-			{
-				m_refusalDetail = "receive failed: ";
-				m_refusalDetail += status.GetMessage();
-				m_refusal       = LoginServerRefusal::ReceiveFailed;
-				return false;
-			}
-
-			if (received == 0)
-			{
-				if (connection.Fault() == TransportFault::PeerClosed)
-				{
-					// An orderly close before a complete request. Distinguished from a
-					// timeout because the two mean different things: this client left,
-					// whereas a timeout means it is still there and still silent.
-					m_refusal       = LoginServerRefusal::PeerClosedFirst;
-					m_refusalDetail = "peer closed before sending a request";
-					return false;
-				}
-				// Nothing yet. The deadline test at the top of the loop is the timeout.
-				continue;
-			}
-
-			if (const FrameStatus fed = framer.Feed(buffer.data(), received); fed != FrameStatus::Ok)
-			{
-				// Oversized: the peer is trying to make the buffer grow without bound.
-				// The framer refuses rather than discarding, because silently dropping
-				// bytes would desynchronise everything after them. The connection is
-				// dropped either way, so nothing after them is protected - the point is
-				// that the server NOTICES instead of growing.
-				m_refusal       = LoginServerRefusal::MalformedFrame;
-				m_refusalDetail = "framer refused the received bytes (oversized)";
-				return false;
-			}
-
-			const FrameStatus next = framer.Next(out);
-			if (next == FrameStatus::Ok)
-			{
-				return true;
-			}
-			if (next == FrameStatus::InvalidLength)
-			{
-				// A header that cannot be valid. The stream is no longer trustworthy -
-				// there is no longer a known place where the next message starts - so
-				// the connection is dropped rather than resynchronised onto garbage.
-				m_refusal       = LoginServerRefusal::MalformedFrame;
-				m_refusalDetail = "malformed frame header";
-				return false;
-			}
-			// NeedMoreData: a partial message. Loop for the rest of it. The deadline is
-			// what stops a client that sends a header promising a body it will never
-			// send - a client that dribbles bytes forever is bounded here rather than
-			// holding the connection open.
+		switch (result.outcome)
+		{
+		case ReadOutcome::PeerClosed:
+			// An orderly close before a complete request.
+			m_refusal = LoginServerRefusal::PeerClosedFirst;
+			return false;
+		case ReadOutcome::TransportFault:
+			m_refusal = LoginServerRefusal::ReceiveFailed;
+			return false;
+		case ReadOutcome::TimedOut:
+		case ReadOutcome::Oversized:
+		case ReadOutcome::MalformedHeader:
+		default:
+			// TimedOut and both framing failures are MalformedFrame here, exactly as
+			// the pre-Phase-C private loop reported them.
+			m_refusal = LoginServerRefusal::MalformedFrame;
+			return false;
 		}
 	}
 }

@@ -1,0 +1,266 @@
+#pragma once
+
+// WORLD-ENTRY-001 Phase C: the client half of the world-entry flow.
+//
+// This is the protocol object. It owns NO socket and never sees one - the same
+// split LoginServerClient / LoginServerSession established, and for the same
+// reason: it is what lets the state machine be tested byte by byte against a
+// loopback pair, with the boundaries chosen by the test.
+//
+// The socket halves are AgentConnection (TCP #1) and FieldConnection (TCP #2).
+//
+// ---------------------------------------------------------------------------
+// TWO CONNECTIONS, AND THE SECOND ONE IS DERIVED FROM A PACKET
+// ---------------------------------------------------------------------------
+//
+// This is the part Phase C exists to prove, so it is worth being exact about what
+// the code does:
+//
+//   1. AgentConnection dials the AGENT endpoint the caller configured.
+//   2. WorldEntryClient runs login -> list -> detail -> select over it.
+//   3. The server answers 2358. FieldRedirect::FieldEndpoint() returns the address
+//      and port the SERVER put in that packet.
+//   4. FieldConnection dials THAT address. There is no second endpoint configured
+//      anywhere in this client, and no default. If the client had a fallback port
+//      it would be a port the test could pass while the redirect was wrong, which
+//      is precisely the bug the 2358 requirement exists to prevent.
+//
+// So a test that changes the Field role's port changes where the client connects,
+// with no other edit. That is the proof.
+//
+// ---------------------------------------------------------------------------
+// THE 2358 IS INSIDE A NET_COMPRESS ENVELOPE, AND SO IS EVERYTHING ELSE HERE
+// ---------------------------------------------------------------------------
+//
+// Agent -> client and Field -> client are compressed unconditionally
+// (investigation §4.2); client -> anything is raw. So this client unwraps an
+// envelope, feeds the inner stream to ConnectionFramer, and sends without an
+// envelope of its own.
+//
+// NetCompress::DecodeServerToClientEnvelope and ConnectionFramer are used, not
+// reimplemented. What is written here is the buffering AROUND them - an envelope
+// can straddle any read boundary, so raw bytes have to be held until a whole
+// envelope is present - and that is the same twenty lines LoginResponseClient
+// already needs for the same reason. It is envelope PLUMBING, not a third
+// implementation of either.
+//
+// ---------------------------------------------------------------------------
+// NO TERMINATOR AFTER THE CHARACTER LIST
+// ---------------------------------------------------------------------------
+//
+// Legacy completes the list by COUNTING: `m_nStartCharNum == m_nStartCharLoad`
+// (DxLobyStage.h:150). This client counts, and `ExpectedDetailCount()` is the value
+// it counts toward. A client that waited for an end-of-list message would wait
+// forever - which is the difference from LOGIN-001's SND_GAME_SVR_END, and the
+// reason the two client types share no phase enum.
+
+#include "CharacterListProtocol.h"
+#include "login/World001LoginClient.h"
+#include "NetCompressCodec.h"
+#include "MessageReader.h"
+#include "NetworkConnection.h"
+#include "NetworkTypes.h"
+#include "WorldEntryProtocol.h"
+#include "types/Result.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace Modern::Client
+{
+	// The wire types this header names directly.
+	//
+	// Explicit using-DECLARATIONS rather than a blanket "using namespace
+	// Modern::Network". The blanket form would pull every protocol constant in the
+	// network layer into Modern::Client's scope, where an id declared in two places
+	// would silently become an ambiguity - and an ambiguity in a protocol header is a
+	// wire bug waiting to be misdiagnosed as a build problem.
+	using Network::WireU8;
+	using Network::WireU16;
+	using Network::WireU32;
+	using Network::WireI32;
+	using Network::Lzo1xCodec;
+	using Network::ConnectionFramer;
+	// Where the client is in the Agent conversation.
+	enum class WorldEntryPhase : std::uint8_t
+	{
+		Disconnected = 0,
+
+		// LOGIN_2 sent, LOGIN_FB not yet seen.
+		LoggingIn,
+
+		// Accepted. The character list may be requested.
+		Authenticated,
+
+		// 2248 received; the id list is known.
+		CharacterListReady,
+
+		// 2353 sent.
+		SelectingCharacter,
+
+		// 2358 received. This client has NOT yet dialled the Field - that is
+		// FieldConnection's job, and it must be driven with the endpoint this phase
+		// received. A client that treated the redirect as "nothing to do" would be
+		// exactly the failure the brief forbids.
+		RedirectReceived,
+
+		LoginRejected,
+	};
+
+	const char* ToString(WorldEntryPhase phase) noexcept;
+
+	// The authoritative spawn, as received from the Field role.
+	//
+	// A separate type from WorldEntry::SpawnState so that what the CLIENT believes
+	// cannot be confused with what the SERVER was going to send: this one is decoded
+	// from bytes off a socket, and the tests assert on it field by field.
+	struct WorldSpawnState
+	{
+		bool        received = false;
+		std::string userId;          // szUserID, the account login name
+		WireU32     clientId     = 0;   // dwClientID; 0 in this phase, see the header
+		WireU32     gaeaId       = 0;
+		WireU32     accountId    = 0;
+		WireU32     characterId  = 0;
+		std::string characterName;
+		WireU32     characterClass = 0;
+		WireU16     school         = 0;
+		WireU16     level          = 0;
+		WireU32     hp = 0;
+		WireU32     mp = 0;
+		WireU32     sp = 0;
+		WireU32     mapId      = 0;
+		float       positionX = 0.0f;
+		float       positionY = 0.0f;
+		float       positionZ = 0.0f;
+		WireU32     startMapId = 0;
+		WireU32     startGate  = 0;
+
+		// The frame as received, so a test can assert its size and inspect its
+		// reserved regions without the client having to re-derive them.
+		std::vector<WireU8> frame;
+	};
+
+	// Drives the client side of the Agent conversation, over no socket at all.
+	//
+	// The state machine enforces the same ORDERING the server does, so a client bug
+	// is reported as a client bug rather than as a server refusal.
+	class WorldEntryClient
+	{
+	public:
+		explicit WorldEntryClient(Lzo1xCodec& codec) noexcept
+			: m_codec(codec)
+		{
+		}
+
+		// ---- Agent conversation --------------------------------------------
+
+		// Builds LOGIN_2 into `request`.
+		//
+		// The request bytes come from the existing WORLD-001 codec; this class does not
+		// re-encode a login packet.
+		Status BuildLogin(const LoginRequestData& data, std::vector<WireU8>& request);
+
+		// Builds 2247 - a bare 8-byte header.
+		Status BuildRequestCharacterList(std::vector<WireU8>& request);
+
+		// Builds 2244 for one character id.
+		Status BuildRequestCharacterDetail(WireU32 characterId, std::vector<WireU8>& request);
+
+		// Builds 2353 for one character id.
+		Status BuildSelectCharacter(WireU32 characterId, std::vector<WireU8>& request);
+
+		// Feeds bytes received from the Agent. Unwraps any envelopes and applies every
+		// whole message, returning how many were consumed.
+		Status FeedAgent(const WireU8* data, std::size_t size, std::size_t& messagesHandled);
+		Status FeedAgent(const std::vector<WireU8>& data, std::size_t& messagesHandled)
+		{
+			return FeedAgent(data.data(), data.size(), messagesHandled);
+		}
+
+		// ---- Field conversation ---------------------------------------------
+
+		// Builds 2359 from an identity.
+		static Status BuildFieldIdentity(const Network::FieldIdentity& identity,
+		                                 std::vector<WireU8>& request);
+
+		// Feeds bytes received from the Field.
+		//
+		// Separate from FeedAgent because these are DIFFERENT connections with different
+		// framer state: mixing them would let a partial message from one be completed
+		// by bytes from the other, which is precisely the class of bug two sockets in
+		// one process invites.
+		Status FeedField(const WireU8* data, std::size_t size, std::size_t& messagesHandled);
+		Status FeedField(const std::vector<WireU8>& data, std::size_t& messagesHandled)
+		{
+			return FeedField(data.data(), data.size(), messagesHandled);
+		}
+
+		// ---- results --------------------------------------------------------
+
+		WorldEntryPhase Phase() const noexcept { return m_phase; }
+
+		// The 2248 payload: how many characters, and which ids.
+		const Network::CharacterIdList& CharacterIds() const noexcept { return m_ids; }
+		std::size_t ExpectedDetailCount() const noexcept { return m_expectedDetails; }
+
+		// The 2332 payloads, one per id, in arrival order.
+		const std::vector<Network::CharacterDetail>& CharacterDetails() const noexcept
+		{
+			return m_details;
+		}
+
+		// The 2358 payload. Only meaningful once Phase() is RedirectReceived.
+		const Network::FieldRedirect& Redirect() const noexcept { return m_redirect; }
+		bool                          HasRedirect() const noexcept { return m_hasRedirect; }
+
+		// The 2333 payload, decoded.
+		const WorldSpawnState& Spawn() const noexcept { return m_spawn; }
+
+		// True once the framer has latched an unrecoverable framing error. A
+		// desynchronised stream cannot resynchronise, so the caller must drop the
+		// connection rather than keep parsing.
+		bool IsFailed() const noexcept { return m_agentFailed || m_fieldFailed; }
+
+		void Reset() noexcept;
+
+	private:
+		// Holds raw bytes until a whole NET_COMPRESS envelope is present, unwraps it,
+		// and feeds the inner message stream to `framer`.
+		//
+		// Returns the number of complete inner messages now buffered in `framer`.
+		Status ConsumeEnvelopes(std::vector<WireU8>& pendingRaw,
+		                        ConnectionFramer&  framer,
+		                        std::size_t         maxInnerBytes);
+
+		// Pops every complete message currently buffered in the Agent framer.
+		Status DrainAgentMessages(std::size_t& messagesHandled);
+
+		// Pops every complete message currently buffered in the Field framer.
+		Status DrainFieldMessages(std::size_t& messagesHandled);
+
+		Lzo1xCodec& m_codec;
+
+		ConnectionFramer m_agentFramer;
+		ConnectionFramer m_fieldFramer;
+
+		// Raw transport bytes not yet classifiable. Held across Feed calls because an
+		// envelope can straddle any read boundary.
+		std::vector<WireU8> m_agentRaw;
+		std::vector<WireU8> m_fieldRaw;
+
+		WorldEntryPhase m_phase = WorldEntryPhase::Disconnected;
+
+		Network::CharacterIdList              m_ids;
+		std::size_t                          m_expectedDetails = 0;
+		std::vector<Network::CharacterDetail> m_details;
+		Network::FieldRedirect               m_redirect;
+		bool                                 m_hasRedirect = false;
+		WorldSpawnState                      m_spawn;
+
+		bool m_agentFailed = false;
+		bool m_fieldFailed = false;
+	};
+}
