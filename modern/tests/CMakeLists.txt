@@ -13,6 +13,9 @@ add_executable(ModernCoreTests
     CodexTests.cpp
     CombatTests.cpp
     StatusEffectTests.cpp
+    # WORLD-ENTRY-002d: RAN navigation kernel and WLD navigation asset reader.
+    NavigationTests.cpp
+    WldNavigationTests.cpp
 SkillFactTests.cpp
 )
 

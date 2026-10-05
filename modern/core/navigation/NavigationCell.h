@@ -130,6 +130,20 @@ namespace Modern::Navigation
 			ExitingCell,
 		};
 
+		// Sentinel for "this edge is solid", used in the link id table the WLD
+		// reader produces.
+		//
+		// A null `Link()` is already how the kernel says "solid", because
+		// `ClassifyPathToCell` hands the caller a null next cell and the caller
+		// slides along the wall (navigationmesh.cpp:291-309). The sentinel is what
+		// the FILE stores: `NavigationSaveLoad.cpp:33-46` writes a `BOOL` presence
+		// flag per side and only writes an id when it is set.
+		//
+		// It lives here rather than in the reader because it is a property of a
+		// cell's edge, and because `NavigationMesh::Build` needs the same value -
+		// one definition, so the two cannot drift.
+		static constexpr std::uint32_t kNoLink = 0xFFFFFFFFu;
+
 		// The vertical window `GLChar::MsgGoto` probes before it will build a path.
 		//
 		// legacy/Lib_Client/G-Logic/GLCharMsg.cpp:293-297:

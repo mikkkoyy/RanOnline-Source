@@ -20,6 +20,9 @@ set(MODERN_SOURCES
     navigation/NavigationPath.cpp
     navigation/NavigationSearchSession.cpp
     navigation/TriangleCollision.cpp
+    navigation/WldCrypt.cpp
+    navigation/WldNavigationLoader.cpp
+    navigation/WldNavigationReader.cpp
     equipment/ItemContributionAggregator.cpp
     equipment/ItemDefinitionProvider.cpp
     gameplay/CharacterSnapshot.cpp

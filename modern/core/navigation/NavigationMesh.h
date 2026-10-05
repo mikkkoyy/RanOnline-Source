@@ -80,12 +80,10 @@ namespace Modern::Navigation
 	class NavigationMesh
 	{
 	public:
-		// Sentinel for "this edge is solid", used in the link id array.
-		//
-		// RAN stores the same information as a `BOOL` per side and only writes
-		// the id when it is true (NavigationSaveLoad.cpp:33-46); the reader
-		// collapses that into this one value.
-		static constexpr std::uint32_t kNoLink = 0xFFFFFFFFu;
+		// Sentinel for "this edge is solid" in the link id array. Defined by
+		// `NavigationCell`, which owns the concept; aliased here so a caller holding
+		// a mesh does not need the cell header for one constant.
+		static constexpr std::uint32_t kNoLink = NavigationCell::kNoLink;
 
 		NavigationMesh() = default;
 
