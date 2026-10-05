@@ -9,6 +9,9 @@ namespace Modern
 	// This is deliberately not a general linear-algebra type: the core only
 	// needs position and unit-direction arithmetic, and every extra operation
 	// is another rule that has to be understood before it can be trusted.
+	//
+	// WORLD-ENTRY-002d added Dot, Cross and operator[] for the RAN navigation
+	// kernel and nothing else; see the note on them below.
 	struct Vector3
 	{
 		float x, y, z;
@@ -63,7 +66,42 @@ namespace Modern
 		static const Vector3 UnitZ;
 
 		static Vector3 FromArray(const float v[3]) { return {v[0], v[1], v[2]}; }
+
+		// ---- WORLD-ENTRY-002d: the navigation kernel's three additions -------
+		//
+		// `Dot`, `Cross` and `operator[]` exist for one consumer: the RAN
+		// navigation kernel, which was written against `D3DXVECTOR3` and uses
+		// exactly these three of the D3DX surface
+		// (legacy/Lib_Engine/NaviMesh/plane.h:193, :197;
+		// legacy/Lib_Engine/DxCommon/Collision.cpp:261-262).
+		//
+		// They are here rather than in a navigation-local helper because a vector
+		// type that cannot take its own dot product is the wrong shape, and
+		// duplicating the arithmetic in the kernel would be two answers to the
+		// same question. Nothing else in the codebase depends on them yet.
+		float operator[](int i) const { return i == 0 ? x : (i == 1 ? y : z); }
+		float& operator[](int i) { return i == 0 ? x : (i == 1 ? y : z); }
 	};
+
+	inline float Dot(const Vector3& a, const Vector3& b) noexcept
+	{
+		return a.x * b.x + a.y * b.y + a.z * b.z;
+	}
+
+	// The right-handed cross product, in the same order as `D3DXVec3Cross`.
+	//
+	// Order matters and is not arbitrary: RAN builds every navigation plane as
+	// `cross(P1 - P0, P2 - P0)` (legacy/Lib_Engine/NaviMesh/plane.h:193), and the
+	// resulting normal is what decides whether `Actor::Update` suppresses Y
+	// (legacy/Lib_Engine/NaviMesh/actor.cpp:361). Reversing the arguments would
+	// flip every normal in the mesh and silently invert which surfaces count as
+	// floors.
+	inline Vector3 Cross(const Vector3& a, const Vector3& b) noexcept
+	{
+		return {a.y * b.z - a.z * b.y,
+		        a.z * b.x - a.x * b.z,
+		        a.x * b.y - a.y * b.x};
+	}
 
 	inline const Vector3 Vector3::Zero    {0.0f, 0.0f, 0.0f};
 	inline const Vector3 Vector3::Up      {0.0f, 1.0f, 0.0f};

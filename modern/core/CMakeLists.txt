@@ -15,6 +15,11 @@ set(MODERN_SOURCES
     character/CharacterClassTable.cpp
     entity/Entity.cpp
     equipment/EquipmentState.cpp
+    navigation/NavigationCell.cpp
+    navigation/NavigationMesh.cpp
+    navigation/NavigationPath.cpp
+    navigation/NavigationSearchSession.cpp
+    navigation/TriangleCollision.cpp
     equipment/ItemContributionAggregator.cpp
     equipment/ItemDefinitionProvider.cpp
     gameplay/CharacterSnapshot.cpp
