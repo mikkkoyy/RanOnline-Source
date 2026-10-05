@@ -23,6 +23,12 @@ set(MODERN_SOURCES
     navigation/WldCrypt.cpp
     navigation/WldNavigationLoader.cpp
     navigation/WldNavigationReader.cpp
+    # WORLD-ENTRY-002e: map identity, mapslist.mst -> .lev -> .wld binding.
+    map/MapIdentity.cpp
+    map/LevHead.cpp
+    map/MapsList.cpp
+    map/MapRegistry.cpp
+    map/RanByteCrypt.cpp
     equipment/ItemContributionAggregator.cpp
     equipment/ItemDefinitionProvider.cpp
     gameplay/CharacterSnapshot.cpp

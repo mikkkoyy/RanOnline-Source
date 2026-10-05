@@ -16,6 +16,8 @@ add_executable(ModernCoreTests
     # WORLD-ENTRY-002d: RAN navigation kernel and WLD navigation asset reader.
     NavigationTests.cpp
     WldNavigationTests.cpp
+    # WORLD-ENTRY-002e: map identity, mapslist.mst decoding and WLD binding.
+    MapRegistryTests.cpp
 SkillFactTests.cpp
 )
 
