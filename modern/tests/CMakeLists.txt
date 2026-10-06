@@ -18,6 +18,10 @@ add_executable(ModernCoreTests
     WldNavigationTests.cpp
     # WORLD-ENTRY-002e: map identity, mapslist.mst decoding and WLD binding.
     MapRegistryTests.cpp
+    # WORLD-ENTRY-002f: the recovered 16-row class speed table, the base-term
+    # speed formula, and the headless Actor's probes, arrival threshold, injected
+    # elapsed-time stepping and blocked motion.
+    MovementTests.cpp
 SkillFactTests.cpp
 )
 
@@ -51,6 +55,12 @@ add_executable(ModernNetworkTests
     # independently of a transport - which is the point of Phase A being separate
     # from the later Agent/Field sessions.
     WorldEntryProtocolTests.cpp
+    # WORLD-ENTRY-002f: the GOTO codec pair, 3034 and 3035.
+    #
+    # Pure layout and codec tests. The 60-unit rule, the vertical probe and
+    # the arrival threshold are not here: they are decided AFTER a 3034 is
+    # decoded, so they belong to the movement and GOTO rule tests.
+    GotoProtocolTests.cpp
 )
 
 target_link_libraries(ModernNetworkTests PRIVATE ModernNetwork)

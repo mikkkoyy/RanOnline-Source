@@ -36,6 +36,7 @@
 //   userId        szUserID, the login name the character belongs to.
 //   name          m_szName / szChaName.
 //   characterClass m_emClass / m_emCharClass. Raw on the wire; not interpreted.
+//   characterGender m_emSex. WORLD-ENTRY-002f: needed to resolve EMCHARINDEX.
 //   school         m_wSchool.
 //   level          m_wLevel. Authoritative; a client-supplied level is ignored.
 //   hp/mp/sp       m_sHP / m_sMP / m_sSP, the GLDWDATA now/max union.
@@ -125,6 +126,21 @@ namespace Modern::Server::World
 		Network::WireU32     characterClass = 0; // raw; not interpreted here
 		Network::WireU16     school         = 0;
 		Network::WireU16     level          = 0;
+
+		// WORLD-ENTRY-002f: m_emSex, as a `CharacterGender`. 0 == Male.
+		//
+		// Added because RAN's class index is PAIRED with gender and the raw class alone
+		// cannot produce it. `EMCHARINDEX` has sixteen entries - eight classes times
+		// two genders - while `characterClass` above is only eight wide, so
+		// `CharClassToIndex` (GLCharDefine.cpp:91-118) cannot be evaluated without
+		// this. Movement speed is indexed by `EMCHARINDEX` (WORLD-ENTRY-002c §2.3),
+		// so without a gender the recovered speed table is unreachable.
+		//
+		// NOT on 2333. The Phase A spawn layout is fixed at 1022 bytes with every field
+		// already assigned, so this is server-side data only - exactly as `level` and
+		// `characterClass` are repository facts that merely happen to be transmitted.
+		// The wire is unchanged, which is the property that matters.
+		Network::WireU8      characterGender = 0;
 
 		Network::RanWire::DwPair hp;
 		Network::RanWire::DwPair mp;

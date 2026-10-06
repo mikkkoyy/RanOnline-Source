@@ -130,6 +130,28 @@ namespace Modern::Client
 		    request, MovementState::MoveStateRequest{actState});
 	}
 
+	Status WorldEntryClient::BuildGoto(WireU32 requestedActState, Vector3 claimedCurrent,
+	                                 Vector3 requestedTarget, std::vector<WireU8>& request)
+	{
+		// The shared codec builds the 36-byte NET_MSG_GCTRL_GOTO and refuses anything
+		// else, so a client cannot put a wrong-sized 3034 on the wire - and refuses a
+		// non-finite coordinate, which would otherwise reach the server's 60-unit
+		// comparison as a NaN and silently pass it.
+		//
+		// Both positions are sent as the CLIENT believes them. See the header: the
+		// server owns the position, and `vCurPos` exists to be CHECKED against it.
+		Network::Goto::GotoRequest message;
+		message.actState        = requestedActState;
+		message.currentPosition = Network::RanWire::Vector3{ claimedCurrent.x,
+			                                                claimedCurrent.y,
+			                                                claimedCurrent.z };
+		message.targetPosition  = Network::RanWire::Vector3{ requestedTarget.x,
+			                                                requestedTarget.y,
+			                                                requestedTarget.z };
+
+		return Network::Goto::GotoCodec::AppendGotoRequest(request, message);
+	}
+
 	void WorldEntryClient::Reset() noexcept
 	{
 		m_phase            = WorldEntryPhase::Disconnected;
@@ -149,6 +171,12 @@ namespace Modern::Client
 		// answer a question about two different sessions.
 		m_moveState      = WorldMoveStateState{};
 		m_moveStateCount = 0;
+		// The 3035 stream resets with the connection that carried it, for the same
+		// reason the 3033 stream does: leaving a count behind would let a second world
+		// entry inherit the first one's broadcasts, and GotoCount() would then answer a
+		// question about two different sessions.
+		m_goto      = WorldGotoState{};
+		m_gotoCount = 0;
 		m_agentFailed  = false;
 		m_fieldFailed  = false;
 	}
@@ -376,6 +404,48 @@ namespace Modern::Client
 				continue;
 			}
 
+// ---- 3035: an accepted GOTO ------------------------------------------------
+			//
+			// Checked BEFORE the spawn test for the same reason the 3033 is: all three
+			// arrive on ONE long-lived Field connection, interleaved. A client that has
+			// spawned and then moved receives 2333, 3033 and 3035 in whatever order the
+			// server produced them.
+			if (Goto::GotoCodec::IsGotoBroadcast(message.header.type))
+			{
+				Goto::GotoBroadcast broadcast;
+				if (const Status status =
+				        Goto::GotoCodec::DecodeGotoBroadcast(frame, broadcast);
+				    status.IsError())
+				{
+					// Terminal, and differently so from an unknown id. The id is one this
+					// client recognises, so a bad one is a protocol fault worth reporting
+					// rather than something to skip past - and the stream cannot be
+					// trusted to be in the right place afterwards.
+					m_fieldFailed = true;
+					return status;
+				}
+
+				// Copied field by field rather than aliased, so what a test asserts on
+				// is plainly what arrived.
+				WorldGotoState received;
+				received.received          = true;
+				received.gaeaId            = broadcast.gaeaId;
+				received.actState          = broadcast.actState;
+				received.currentPositionX  = broadcast.currentPosition.x;
+				received.currentPositionY  = broadcast.currentPosition.y;
+				received.currentPositionZ  = broadcast.currentPosition.z;
+				received.targetPositionX   = broadcast.targetPosition.x;
+				received.targetPositionY   = broadcast.targetPosition.y;
+				received.targetPositionZ   = broadcast.targetPosition.z;
+				received.delay             = broadcast.delay;
+				received.frame             = frame;
+
+				m_goto = received;
+				++m_gotoCount;
+				continue;
+			}
+
+			if (!WorldEntryCodec::IsSpawn(message.header.type))
 			if (!WorldEntryCodec::IsSpawn(message.header.type))
 			{
 				// Not a spawn. Ignored rather than treated as an error, for the same

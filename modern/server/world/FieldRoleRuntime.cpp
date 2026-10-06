@@ -27,7 +27,7 @@ namespace Modern::Server::World
 		constexpr std::size_t kReadBufferSize = 2048;
 	}
 
-	const char* ToString(FieldEvent event) noexcept
+const char* ToString(FieldEvent event) noexcept
 	{
 		switch (event)
 		{
@@ -37,6 +37,8 @@ namespace Modern::Server::World
 		case FieldEvent::SpawnSent:          return "SpawnSent";
 		case FieldEvent::MoveStateSent:      return "MoveStateSent";
 		case FieldEvent::MoveStateUnchanged: return "MoveStateUnchanged";
+		case FieldEvent::GotoAccepted:       return "GotoAccepted";
+		case FieldEvent::GotoRejected:       return "GotoRejected";
 		case FieldEvent::ClientRejected:      return "ClientRejected";
 		case FieldEvent::ClientDisconnected: return "ClientDisconnected";
 		}
@@ -56,6 +58,7 @@ namespace Modern::Server::World
 		case FieldRefusal::ReceiveFailed:    return "ReceiveFailed";
 		case FieldRefusal::IdentityRejected: return "IdentityRejected";
 		case FieldRefusal::NotSpawned:       return "NotSpawned";
+		case FieldRefusal::GotoBeforeSpawn:  return "GotoBeforeSpawn";
 		}
 		return "Unrecognised";
 	}
@@ -69,10 +72,18 @@ namespace Modern::Server::World
 		, m_repository(repository)
 		, m_registry(registry)
 		, m_movement(movement)
+		// WORLD-ENTRY-002f. The movement world reads its rules from the SAME service
+		// instance this role already owns, and the GOTO rule borrows that same service.
+		// Two services would be two answers to "what speed does this character walk
+		// at", and they would disagree the first time a 3032 and a 3034 arrived close
+		// enough together for the ordering to matter.
+		, m_movementWorld()
+	, m_gotoService(m_movement)
 		, m_log(std::move(log))
 	{
+		m_movementWorld.SetMovementStateService(&m_movement);
+		m_movementWorld.SetGotoService(&m_gotoService);
 	}
-
 	FieldRoleRuntime::~FieldRoleRuntime()
 	{
 		Stop();
@@ -114,6 +125,11 @@ namespace Modern::Server::World
 
 		Emit(FieldEvent::Listening, m_config.fieldBind.host + ":" +
 		                                    std::to_string(m_config.fieldBind.port));
+
+		// WORLD-ENTRY-002f: the movement ticker is NOT started here. A caller that
+		// wants it calls StartMovementTicker, and a test that injects elapsed time
+		// itself must not: a ticker running alongside an injected tick would advance
+		// every actor twice. Deliberate, and the reason is in WorldMovementRuntime.h.
 		return Ok();
 	}
 
@@ -224,6 +240,14 @@ namespace Modern::Server::World
 			PeerPtr peer = std::make_shared<Peer>(m_repository, m_registry, m_peerCounter++);
 			peer->transport = std::move(adopted.GetValue());
 			peer->session.SetMovementStateService(m_movement);
+// WORLD-ENTRY-002f: the session's WINDOW onto the movement world.
+		//
+		// Set per peer rather than once in the role's constructor because the session is
+		// what owns the actor's identity - the map source, the path and the position all
+		// hang off the SESSION id - and a session that never learns where the world is
+		// cannot answer a 3034 at all. Without this line every GOTO is refused as
+		// InvalidState, which on the wire is indistinguishable from a refusal.
+		peer->session.SetMovementRuntime(&m_movementWorld);
 
 			// Registered BEFORE the worker starts, so a broadcast from another thread
 			// cannot arrive for a connection this role has not yet heard of.
@@ -293,7 +317,7 @@ namespace Modern::Server::World
 			// Dispatched before 2359 on purpose: a movement message is the thing this
 			// connection exists for after the spawn, and recognising it first keeps the
 			// "not spawned yet" refusal from being reported as an unexpected id.
-			if (MovementState::MovementStateCodec::IsMoveState(message.header.type))
+if (MovementState::MovementStateCodec::IsMoveState(message.header.type))
 			{
 				if (!HandleMoveState(peer, batcher, message))
 				{
@@ -303,6 +327,21 @@ namespace Modern::Server::World
 				continue;
 			}
 
+			// ---- 3034 -------------------------------------------------------
+			//
+			// Dispatched with 3032 and BEFORE 2359, for the same reason: a movement
+			// message is what this connection exists for after the spawn, and recognising
+			// it first keeps the "not spawned yet" refusal from being reported as an
+			// unexpected id.
+			if (Goto::GotoCodec::IsGoto(message.header.type))
+			{
+				if (!HandleGoto(peer, batcher, message))
+				{
+					refused = true;
+					break;
+				}
+				continue;
+			}
 			// ---- 2359 --------------------------------------------------------
 			if (WorldEntryCodec::IsFieldIdentity(message.header.type))
 			{
@@ -447,7 +486,14 @@ namespace Modern::Server::World
 		m_lastGaeaId.store(spawn.gaeaId, std::memory_order_release);
 		m_lastCharacterId.store(spawn.character.id.value, std::memory_order_release);
 		peer->spawned.store(true, std::memory_order_release);
-		Emit(FieldEvent::SpawnSent, "", spawn.gaeaId);
+Emit(FieldEvent::SpawnSent, "", spawn.gaeaId);
+
+		// WORLD-ENTRY-002f: give the character an actor on its map. A failure here is
+		// deliberately NOT fatal and does not stop the spawn: the 2333 has already gone
+		// out, the client is in the map, and every GOTO it sends will be answered with a
+		// reason naming the map. Refusing the spawn would turn a missing asset into a
+		// failed login - the wrong diagnosis for the same underlying fault.
+		(void)m_movementWorld.Attach(peer->session.SessionId(), spawn.character);
 		return true;
 	}
 
@@ -526,8 +572,184 @@ namespace Modern::Server::World
 		BroadcastMoveState(peer, broadcast);
 
 		m_moveSent.fetch_add(1, std::memory_order_relaxed);
-		Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
+Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
+
+		// WORLD-ENTRY-002f: the ticker reads the run flag to choose walk or run speed,
+		// and this is the only place the authoritative word changes on a 3032. Copied
+		// into the movement snapshot immediately, so a state change is visible to the
+		// walk on its very next slice rather than one slice late.
+		(void)m_movementWorld.SetActState(peer->session.SessionId(), change.actState);
 		return true;
+	}
+
+// ---------------------------------------------------------------------------
+	// WORLD-ENTRY-002f: the 3034 path
+	// ---------------------------------------------------------------------------
+
+	bool FieldRoleRuntime::HandleGoto(PeerPtr peer, ServerBatchEncoder& batcher,
+	                                   const Message& message)
+	{
+		const std::vector<WireU8> frame = ReconstructFrame(message);
+
+		Goto::GotoRequest request;
+		if (const Status status = Goto::GotoCodec::DecodeGotoRequest(frame, request);
+		    status.IsError())
+		{
+			// A 3034 of the wrong length is a protocol fault and the connection is
+			// dropped, exactly as a malformed 3032 is.
+			//
+			// The codec has already refused a non-finite coordinate, which is worth
+			// stating: a NaN in vCurPos would make the 60-unit comparison false and
+			// silently DISABLE the anti-teleport check, so it is refused at the boundary
+			// rather than reaching a comparison it cannot survive.
+			m_refusal.store(FieldRefusal::BadMessageSize, std::memory_order_release);
+			m_refusalDetail = "3034 malformed (dwSize " + std::to_string(frame.size()) +
+			                  ", expected " + std::to_string(Goto::kRequestSize) + ")";
+			return false;
+		}
+
+		GotoResult result;
+		if (const Status status = peer->session.ApplyGoto(request, result);
+		    status.IsError())
+		{
+			// NotAllowed is the pre-spawn case, which is the one a caller can actually
+			// provoke; anything else is a wiring fault.
+			m_refusal.store(status.GetCode() == ErrorCode::NotAllowed
+			                    ? FieldRefusal::GotoBeforeSpawn
+			                    : FieldRefusal::MalformedFrame,
+			                std::memory_order_release);
+			m_refusalDetail = "3034 refused: ";
+			m_refusalDetail += status.GetMessage();
+			// No Emit here: returning false makes ServePeer emit ClientRejected once, with
+			// this same detail, when it accounts for the connection. Emitting in both
+			// places would report one refused client twice.
+			return false;
+		}
+
+		// The authoritative word the rule derived, copied into the session's own
+		// character so the two records cannot drift. A 3034 influences exactly one bit
+		// of it and the rule has already applied that.
+		if (const Status status = peer->session.AdoptGotoActState(result.actState);
+		    status.IsError())
+		{
+			m_refusal.store(FieldRefusal::MalformedFrame, std::memory_order_release);
+			m_refusalDetail = "3034 produced a corrupt movement state";
+			return false;
+		}
+
+		if (!result.accepted)
+		{
+			// SILENT, which is the whole of legacy's failure behaviour: no 3035, no
+			// error packet, nothing at all back to the client. An unreachable destination,
+			// a dead character and a desynchronised client are indistinguishable from each
+			// other on the wire, and 002c measured exactly that. Inventing a rejection
+			// packet would be a new network message.
+			//
+			// The CONNECTION is unaffected. A bad destination is not a misbehaving client,
+			// and it may send another.
+			m_gotoRefused.fetch_add(1, std::memory_order_relaxed);
+			Emit(FieldEvent::GotoRejected, result.detail, peer->session.GaeaId());
+			return true;
+		}
+
+		// GLCharMsg.cpp:311-318, in order. Every value is the SERVER's:
+		//
+		//   dwGaeaID   the session's own authorized entity id. A 3034 carries no id, so
+		//              there is nothing to forge.
+		//   dwActState the authoritative word AFTER the run bit, never the request.
+		//   vCurPos    the server's position, which is how a drifted client learns where
+		//              the server thinks it is.
+		//   vTarPos    the RAW requested target, not the probe's resolution.
+		//   fDelay     0.0f, the only value this route ever sends.
+		Goto::GotoBroadcast broadcast;
+		broadcast.gaeaId   = peer->session.GaeaId();
+		broadcast.actState = result.actState;
+		broadcast.currentPosition = RanWire::Vector3{ result.authoritativeCurrent.x,
+		                                              result.authoritativeCurrent.y,
+		                                              result.authoritativeCurrent.z };
+		broadcast.targetPosition = RanWire::Vector3{ result.authoritativeTarget.x,
+		                                             result.authoritativeTarget.y,
+		                                             result.authoritativeTarget.z };
+		broadcast.delay = 0.0f;
+
+		std::vector<WireU8> packet;
+		if (const Status status = Goto::GotoCodec::AppendGotoBroadcast(packet, broadcast);
+		    status.IsError())
+		{
+			m_refusal.store(FieldRefusal::SendFailed, std::memory_order_release);
+			m_refusalDetail = "could not encode 3035";
+			return false;
+		}
+
+		// The mover gets its own copy synchronously, on the connection it moved from.
+		if (const Status sent = SendEnveloped(batcher, peer, packet); sent.IsError())
+		{
+			m_refusal.store(FieldRefusal::SendFailed, std::memory_order_release);
+			m_refusalDetail = "send failed: ";
+			m_refusalDetail += sent.GetMessage();
+			return false;
+		}
+
+		// And everyone else who is authorized learns it too - the same staged
+		// approximation of view range the 3033 broadcast already documents.
+		BroadcastGoto(peer, broadcast);
+
+		m_gotoSent.fetch_add(1, std::memory_order_relaxed);
+		Emit(FieldEvent::GotoAccepted, "", broadcast.gaeaId);
+		return true;
+	}
+
+	void FieldRoleRuntime::BroadcastGoto(const PeerPtr& exclude,
+	                                    const Goto::GotoBroadcast& broadcast)
+	{
+		std::vector<WireU8> packet;
+		if (const Status status = Goto::GotoCodec::AppendGotoBroadcast(packet, broadcast);
+		    status.IsError())
+		{
+			// Already validated a moment ago by the caller, so this cannot fail; refused
+			// rather than ignored so a future change that breaks it is visible.
+			return;
+		}
+
+		// The peer list is COPIED under the lock and then used without it - the same
+		// reasoning as BroadcastMoveState, and deliberately not folded into a shared
+		// helper: the two broadcasts carry different packet types, and one more level of
+		// indirection on the send path would cost more readability than the duplication
+		// it saved.
+		std::vector<PeerPtr> targets;
+		{
+			const std::lock_guard<std::mutex> lock(m_peersMutex);
+			targets = m_peers;
+		}
+
+		for (const PeerPtr& peer : targets)
+		{
+			if (peer == exclude)
+			{
+				continue;
+			}
+
+			// Only sessions that have earned a spawn are told. A connection mid-handshake
+			// has no character in the world to have moved.
+			if (!peer->spawned.load(std::memory_order_acquire))
+			{
+				continue;
+			}
+
+			ServerBatchEncoder batcher(peer->codec);
+			(void)SendEnveloped(batcher, peer, packet);
+		}
+	}
+
+
+	Status FieldRoleRuntime::StartMovementTicker()
+	{
+		return m_movementWorld.StartTicker();
+	}
+
+	void FieldRoleRuntime::StopMovementTicker() noexcept
+	{
+		m_movementWorld.StopTicker();
 	}
 
 	void FieldRoleRuntime::BroadcastMoveState(const PeerPtr& exclude,

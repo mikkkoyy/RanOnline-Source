@@ -39,6 +39,9 @@
 // anyone calling accept(), which is why connect-then-accept from two threads is
 // safe and deadlock-free.
 
+#include "GotoProtocol.h"
+#include "NavigationMeshFixture.h"
+
 #include "TestHarness.h"
 
 #include "CharacterListProtocol.h"
@@ -1544,6 +1547,338 @@ namespace
 
 		server.Stop();
 		CHECK_EQ(server.Runtime().Field().MoveStateSentCount(), static_cast<std::size_t>(2));
+	}
+// =========================================================================
+	// WORLD-ENTRY-002f: GOTO over a real socket.
+	//
+	// What these add that GotoServiceTests cannot: that a 3034 survives being
+	// framed, that the server's answer is a real 3035 with the right size and
+	// offsets, that the 60-unit rule holds AT ITS BOUNDARY over the wire, and that
+	// a refusal is silent in both directions.
+	//
+	// What they deliberately do NOT prove: that the character keeps walking.
+	// RAN has no per-tick position broadcast - 002c section 10 measured that
+	// `GLChar::FrameMove` transmits nothing while a character moves - so once the
+	// 3035 is read there is no further evidence on the wire that time passed.
+	// Movement itself is proved headlessly, where elapsed time can be injected
+	// rather than waited for, in WorldMovementRuntimeTests.
+	// =========================================================================
+
+	// A navigation pad placed around the position `MakeCharacter` gives every test
+	// character, so the actor attaches to a mesh and a GOTO can be accepted.
+	//
+	// Half-extents of ten units on each axis put the square's edges twenty units from
+	// the spawn point, which is what leaves room for a 59-unit claim to stay INSIDE
+	// the mesh while a 61-unit one is refused - the boundary test below needs the
+	// refusal to come from the desync check and not from "that point has no floor".
+	// The point every character in this file spawns at, and the point the pad is
+	// built around. Declared before SpawnPad because that class uses it in its own
+	// member initialiser list, and a member initialiser runs before the statement that
+	// follows the class.
+	const Vector3 kSpawnPoint{ 100.5f, -20.25f, 3.75f };
+	class SpawnPad
+	{
+	public:
+		// The map id every test character carries in MakeCharacter. Named so that
+		// changing the character factory without changing the pad reads as a missing
+		// mesh at runtime rather than as a wrong-source bug here.
+		static constexpr std::uint32_t kFixtureMapId = 7u;
+
+		SpawnPad()
+			// The map source is constructed OVER the mesh rather than assigned, because
+			// it has no default constructor and holding the mesh itself is what keeps the
+			// two from disagreeing about its lifetime.
+			: m_source(ModernTests::MeshFixture::MakeFlatPad(kSpawnPoint, 10.0f, 10.0f),
+			           kFixtureMapId)
+		{
+			m_mesh = m_source.MeshForPackedMapId(kFixtureMapId);
+		}
+
+		bool Ready() const noexcept
+		{
+			return m_mesh != nullptr;
+		}
+
+		const ModernTests::MeshFixture::SingleMapSource& Source() const noexcept { return m_source; }
+
+	private:
+		std::shared_ptr<const Modern::Navigation::NavigationMesh> m_mesh{};
+		ModernTests::MeshFixture::SingleMapSource                                m_source;
+	};
+
+
+	// that changing `MakeCharacter` breaks one line instead of six.
+
+	// The server's position, as `MakeCharacter` wrote it.
+	//
+	// Read from the SPAWN rather than from this constant wherever the assertion is
+	// about the server's own record: `kSpawnPoint` is what the fixture was built
+	// around, and using it to check what the server said would only prove the
+	// constant equals itself.
+	Vector3 ServerSpawnPoint(const SpawnedClient& client) noexcept
+	{
+		return Vector3{ client.spawn.positionX, client.spawn.positionY,
+			            client.spawn.positionZ };
+	}
+
+	MODERN_TEST(Goto_AnAcceptedGotoComesBackAsA3035CarryingTheServersOwnPosition)
+	{
+		SpawnPad pad;
+		CHECK(pad.Ready());
+
+		TestWorldServer server;
+		server.Runtime().SetNavigationMapSource(&pad.Source());
+		CHECK(server.Start().IsOk());
+
+		SpawnedClient client;
+		CHECK(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+		CHECK(client.connection.IsConnected());
+
+		// A claim INSIDE the 60-unit tolerance that is nevertheless NOT where the
+		// character is. This is the whole reason the 3035 carries a position: the
+		// answer must be the SERVER's, not an echo of what the client claimed.
+		const Vector3 lying = kSpawnPoint + Vector3{ 30.0f, 0.0f, 0.0f };
+		const Vector3 target = kSpawnPoint + Vector3{ 4.0f, 0.0f, 0.0f };
+
+		CHECK(client.connection.SendGoto(MovementState::kActRun, lying, target).IsOk());
+		CHECK(client.connection.PumpUntilGotoCount(1, kDeadline).IsOk());
+
+		CHECK_EQ(client.connection.GotoCount(), static_cast<std::size_t>(1));
+		CHECK(client.connection.Goto().received);
+		CHECK_EQ(client.connection.Goto().frame.size(), Goto::kBroadcastSize);
+		CHECK_EQ(client.connection.Goto().frame.size(), static_cast<std::size_t>(44));
+
+		// The id is the MOVER's, and it came from the session rather than from the
+		// packet - a 3034 carries no id to forge.
+		CHECK_EQ(client.connection.Goto().gaeaId, client.spawn.gaeaId);
+
+		// The run flag is the SERVER's word after applying the request, not the raw
+		// request echoed back.
+		CHECK_EQ(client.connection.Goto().actState,
+		         static_cast<WireU32>(MovementState::kActRun));
+
+		// The server's position, not the lie. Compared as a distance because the
+		// spawn is a float the wire carried, and equality on a decoded float would be
+		// asserting a rounding accident.
+		const Vector3 reported{ client.connection.Goto().currentPositionX,
+			                        client.connection.Goto().currentPositionY,
+			                        client.connection.Goto().currentPositionZ };
+		CHECK(reported.Distance(ServerSpawnPoint(client)) < 0.01f);
+		CHECK(reported.Distance(lying) > 1.0f);
+
+		// The RAW requested target, which is what legacy stores - not the point the
+		// vertical probe resolved to.
+		const Vector3 echoedTarget{ client.connection.Goto().targetPositionX,
+			                            client.connection.Goto().targetPositionY,
+			                            client.connection.Goto().targetPositionZ };
+		// Waited for rather than asserted straight after the pump. The counters are
+		// written by the server's own worker thread, and a client that has decoded the
+		// 3035 is already one step ahead of the code that counts the send - so an
+		// immediate assertion is a race that fails perhaps one run in five. See WaitFor.
+		CHECK(WaitFor(kDeadline, [&] {
+			return server.Runtime().Field().GotoSentCount() == 1 &&
+			       server.Runtime().Field().GotoRefusedCount() == 0;
+		}));
+
+		server.Stop();
+		CHECK_EQ(server.Runtime().Field().GotoRefusedCount(), static_cast<std::size_t>(0));
+	}
+
+	// The 60-unit rule, asserted at the boundary rather than near it.
+	//
+	// Two claims either side of the threshold, in one connection, and both are
+	// refused or accepted for the reason the legacy check gives and no other. A test
+	// that only tried 500 units would pass against a server whose threshold was 10
+	// or 5000.
+	MODERN_TEST(Goto_TheSixtyUnitDesyncRuleHoldsAtItsBoundary)
+	{
+		SpawnPad pad;
+		CHECK(pad.Ready());
+
+		TestWorldServer server;
+		server.Runtime().SetNavigationMapSource(&pad.Source());
+		CHECK(server.Start().IsOk());
+
+		SpawnedClient client;
+		CHECK(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+		const Vector3 target = kSpawnPoint + Vector3{ 4.0f, 0.0f, 0.0f };
+
+		// 59 units away: INSIDE the tolerance, so it is accepted and answered.
+		CHECK(client.connection
+		          .SendGoto(MovementState::kActRun, kSpawnPoint + Vector3{ 59.0f, 0.0f, 0.0f },
+		                    target)
+		          .IsOk());
+		CHECK(client.connection.PumpUntilGotoCount(1, kDeadline).IsOk());
+		CHECK_EQ(client.connection.GotoCount(), static_cast<std::size_t>(1));
+
+		// 61 units away: OVER it, so it is refused - SILENTLY.
+		CHECK(client.connection
+		          .SendGoto(MovementState::kActRun, kSpawnPoint + Vector3{ 61.0f, 0.0f, 0.0f },
+		                    target)
+		          .IsOk());
+
+		// Asking for a second 3035 must time out: there will not be one. This is the
+		// property that makes `PumpUntilGotoCount` take a count rather than "the next
+		// one", and it is asserted as an absence.
+		CHECK(client.connection.PumpUntilGotoCount(2, kSilenceBudget).IsError());
+		CHECK_EQ(client.connection.GotoCount(), static_cast<std::size_t>(1));
+
+		// The connection survives a refusal. A refused GOTO must not cost the
+		// session, or a desynchronised client could never recover.
+		CHECK(client.connection.IsConnected());
+
+		// Same wait as above, with the refusal the boundary test provokes alongside it.
+		CHECK(WaitFor(kDeadline, [&] {
+			return server.Runtime().Field().GotoSentCount() == 1 &&
+			       server.Runtime().Field().GotoRefusedCount() == 1;
+		}));
+
+		server.Stop();
+		CHECK_EQ(server.Runtime().Field().GotoSentCount(), static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().GotoRefusedCount(), static_cast<std::size_t>(1));
+	}
+
+	// The whole point of 3035 being a separate message from 3034: a client that did
+	// not move still has to learn that somebody else did.
+	//
+	// Two real clients, two real characters, two real Field connections alive at
+	// once. The watcher's 3035 names the MOVER, and the mover's own count stays at
+	// one - the sender is excluded from the broadcast rather than receiving its own
+	// message twice.
+	MODERN_TEST(Goto_TheBroadcastReachesOtherSpawnedPlayersAndNotTheMover)
+	{
+		SpawnPad pad;
+		CHECK(pad.Ready());
+
+		TestWorldServer server;
+		server.Runtime().SetNavigationMapSource(&pad.Source());
+		CHECK(server.Start().IsOk());
+
+		SpawnedClient mover;
+		SpawnedClient watcher;
+		CHECK(mover.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+		CHECK(watcher.Spawn(server, kUserB, kPassB, kCharB1.value, kDeadline).IsOk());
+
+		// Waited for, not asserted immediately. A broadcast SKIPS a peer the server has
+		// not yet marked spawned, and the server marks it on its own worker thread
+		// AFTER the client has read its 2333. Without this wait the watcher's miss is a
+		// race that would fail perhaps one run in five - which is exactly how a real
+		// ordering bug hides. See WaitFor.
+		CHECK(WaitFor(kDeadline, [&] {
+			return server.Runtime().AuthorizedFieldSessionCount() == 2;
+		}));
+
+		const Vector3 target = kSpawnPoint + Vector3{ 4.0f, 0.0f, 0.0f };
+		CHECK(mover.connection
+		          .SendGoto(MovementState::kActRun, ServerSpawnPoint(mover), target)
+		          .IsOk());
+
+		CHECK(mover.connection.PumpUntilGotoCount(1, kDeadline).IsOk());
+		CHECK(watcher.connection.PumpUntilGotoCount(1, kDeadline).IsOk());
+
+		CHECK_EQ(watcher.connection.Goto().gaeaId, mover.spawn.gaeaId);
+		CHECK(watcher.connection.Goto().received);
+
+		// The watcher never sent a 3034, so nothing here is its own movement.
+		CHECK_NE(watcher.connection.Goto().gaeaId, watcher.spawn.gaeaId);
+
+		// Exactly one for the mover: the sender is excluded, so a client that counted
+		// its own broadcast would see two.
+		CHECK_EQ(mover.connection.GotoCount(), static_cast<std::size_t>(1));
+
+		server.Stop();
+	}
+
+	// A 3034 split across three writes is still ONE 3034.
+	//
+	// Sent raw on purpose. `SendGoto` writes the 36 bytes in one call, which would
+	// never exercise the reassembler; the question here is whether the Field framer
+	// - not luck - is what turns a partial write into a whole message. Three chunks
+	// rather than three bytes, because a 1-byte-per-write case is already covered for
+	// every other message and the interesting boundary here is a split that lands
+	// INSIDE the payload, past the 8-byte header.
+	MODERN_TEST(Goto_A3034SplitAcrossThreeWritesIsStillOneGoto)
+	{
+		SpawnPad pad;
+		CHECK(pad.Ready());
+
+		TestWorldServer server;
+		server.Runtime().SetNavigationMapSource(&pad.Source());
+		CHECK(server.Start().IsOk());
+
+		SpawnedClient client;
+		CHECK(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+		std::vector<WireU8> request;
+		const Vector3       target = kSpawnPoint + Vector3{ 4.0f, 0.0f, 0.0f };
+		CHECK(client.protocol
+		          .BuildGoto(MovementState::kActRun, ServerSpawnPoint(client), target,
+		                     request)
+		          .IsOk());
+		CHECK_EQ(request.size(), Goto::kRequestSize);
+		CHECK_EQ(request.size(), static_cast<std::size_t>(36));
+
+		// 6 / 14 / 16: the first stops short of the 8-byte header, the second stops
+		// inside `vCurPos`, the third carries the rest.
+		const std::size_t first  = 6;
+		const std::size_t second = 14;
+
+		CHECK(client.connection
+		          .SendRaw(std::vector<WireU8>(request.begin(),
+		                                       request.begin() + static_cast<long>(first)))
+		          .IsOk());
+		CHECK(client.connection
+		          .SendRaw(std::vector<WireU8>(
+		              request.begin() + static_cast<long>(first),
+		              request.begin() + static_cast<long>(first + second)))
+		          .IsOk());
+		CHECK(client.connection
+		          .SendRaw(std::vector<WireU8>(
+		              request.begin() + static_cast<long>(first + second), request.end()))
+		          .IsOk());
+
+		CHECK(client.connection.PumpUntilGotoCount(1, kDeadline).IsOk());
+		CHECK(WaitFor(kDeadline, [&] {
+			return server.Runtime().Field().GotoSentCount() == 1;
+		}));
+
+		server.Stop();
+		CHECK_EQ(server.Runtime().Field().GotoSentCount(), static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().GotoRefusedCount(), static_cast<std::size_t>(0));
+	}
+
+	// A GOTO with no navigation behind it is refused SILENTLY, which is a different
+	// outcome from a refused one and needs a different fix.
+	//
+	// The server here is started with no map source at all - the shape a modern
+	// deployment is in before a map registry is loaded - so the refusal cannot be
+	// mistaken for "that destination has no floor".
+	MODERN_TEST(Goto_WithoutAMeshTheServerRefusesSilentlyAndKeepsTheConnection)
+	{
+		TestWorldServer server;
+		CHECK(server.Start().IsOk());
+
+		SpawnedClient client;
+		CHECK(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+		const Vector3 target = kSpawnPoint + Vector3{ 4.0f, 0.0f, 0.0f };
+		CHECK(client.connection
+		          .SendGoto(MovementState::kActRun, ServerSpawnPoint(client), target)
+		          .IsOk());
+
+		CHECK(client.connection.PumpUntilGotoCount(1, kSilenceBudget).IsError());
+		CHECK_EQ(client.connection.GotoCount(), static_cast<std::size_t>(0));
+		CHECK(client.connection.IsConnected());
+
+		CHECK(WaitFor(kDeadline, [&] {
+			return server.Runtime().Field().GotoRefusedCount() == 1;
+		}));
+
+		server.Stop();
+		CHECK_EQ(server.Runtime().Field().GotoSentCount(), static_cast<std::size_t>(0));
+		CHECK_EQ(server.Runtime().Field().GotoRefusedCount(), static_cast<std::size_t>(1));
+
 	}
 }
 

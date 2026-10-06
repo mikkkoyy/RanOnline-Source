@@ -51,12 +51,16 @@
 // (DxGameStage.cpp:581). A modern server has nothing to acknowledge here, and
 // inventing an ack because it looks tidy would be reviving dead protocol.
 
+#include "GotoProtocol.h"
 #include "WorldEntryProtocol.h"
+#include "movement/Actor.h"
 #include "types/Result.h"
 #include "world/CharacterRepository.h"
+#include "world/GotoService.h"
 #include "world/WorldCharacter.h"
 #include "world/MovementStateService.h"
 #include "world/WorldEntryService.h"
+#include "world/WorldMovementRuntime.h"
 
 #include <cstdint>
 #include <string>
@@ -178,6 +182,41 @@ namespace Modern::Server::World
 			m_movement = &service;
 		}
 
+		// ---- GOTO (WORLD-ENTRY-002f) -----------------------------------------
+		//
+		// Handles a 3034 on THIS connection.
+		//
+		// The session's own job is narrow and it is the same job it has always had: own
+		// the authoritative copy of the character, and refuse anything that arrives
+		// before there is one. Everything about movement - the run bit, the 60-unit
+		// check, the vertical probe, the speed - belongs to `GotoService` and to the
+		// actor the movement runtime holds. What comes back is a verdict plus the
+		// authoritative values the 3035 must carry.
+		//
+		// `result.accepted` decides whether a 3035 goes out, and it is FALSE for a
+		// destination the mesh cannot resolve, a dead character, and a desynchronised
+		// client. All three are silent on the wire, which is legacy's behaviour and is
+		// not something to "improve" with an invented packet.
+		Status ApplyGoto(const Network::Goto::GotoRequest& request, GotoResult& result);
+
+		// The movement world, for this session's character. Borrowed; may be null,
+		// in which case every 3034 is refused with InvalidState rather than silently
+		// dropped.
+		void SetMovementRuntime(WorldMovementRuntime* movement) noexcept
+		{
+			m_movementRuntime = movement;
+		}
+
+		// Copies the authoritative movement word the runtime computed, so the
+		// character this session owns and the snapshot the ticker reads are written in
+		// the same call and cannot drift.
+		//
+		// Narrow on purpose: a 3034 influences exactly ONE bit, EM_ACT_RUN, and the
+		// 3034 path already applied it. This is not a general setter - it refuses a
+		// word with bits RAN does not define, so a bug upstream is caught here rather
+		// than being stored.
+		Status AdoptGotoActState(Network::WireU32 actState);
+
 		// ---- lifecycle ------------------------------------------------------
 
 		// Terminal. Does NOT hand the gaeaId back: the character was placed, and
@@ -210,6 +249,10 @@ namespace Modern::Server::World
 		Network::WireU64   m_agentSessionId = 0;
 
 		const MovementStateService* m_movement = nullptr;
+
+		// Borrowed. Null until the Field role installs it, which it does before it
+		// serves anything - so a null here is a wiring error, reported as one.
+		WorldMovementRuntime* m_movementRuntime = nullptr;
 
 		FieldState m_state = FieldState::Connected;
 	};

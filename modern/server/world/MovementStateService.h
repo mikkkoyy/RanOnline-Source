@@ -154,6 +154,34 @@ namespace Modern::Server::World
 		Status ApplyMoveState(WorldCharacter& character, Network::WireU32 requestedActState,
 		                     MovementStateChange& out) const;
 
+		// The speed the configured provider supplies for `character`, or 0 when there is
+		// none.
+		//
+		// WORLD-ENTRY-002f. This service already OWNS the seam and was already calling
+		// it (`ApplyMoveState` discards the result), so exposing it here is what keeps
+		// the two movement paths - a 3032 and a 3034 - reading the SAME provider
+		// instead of each holding one. Two providers would be two answers to "how fast
+		// does this character walk", and they would disagree the first time someone
+		// configured the second.
+		//
+		// 0 is a real answer, not a default: with no provider configured there is no
+		// speed, and `TrySpeedFor` exists so a caller can tell that from "very slow".
+		float SpeedFor(const WorldCharacter& character) const noexcept
+		{
+			return m_speedProvider != nullptr ? m_speedProvider->MaxSpeedFor(character) : 0.0f;
+		}
+
+		bool TrySpeedFor(const WorldCharacter& character, float& out) const noexcept
+		{
+			if (m_speedProvider == nullptr)
+			{
+				out = 0.0f;
+				return false;
+			}
+			out = m_speedProvider->MaxSpeedFor(character);
+			return true;
+		}
+
 	private:
 		const IMovementSpeedProvider* m_speedProvider = nullptr;
 	};

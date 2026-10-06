@@ -52,6 +52,7 @@
 #include "login/LoginReceiver.h"
 #include "types/Result.h"
 #include "world/AgentRoleRuntime.h"
+#include "world/CharacterClassMovementSpeed.h"
 #include "world/CharacterRepository.h"
 #include "world/FieldRoleRuntime.h"
 #include "world/MovementStateService.h"
@@ -123,7 +124,40 @@ namespace Modern::Server::World
 		FieldEntryRegistry& Registry() noexcept { return m_registry; }
 
 		// The movement-state rule, for tests and for a future in-process caller.
-		MovementStateService& Movement() noexcept { return m_movement; }
+MovementStateService& Movement() noexcept { return m_movement; }
+
+		// WORLD-ENTRY-002f: tells the Field role where navigation meshes come from.
+		//
+		// BORROWED and optional. Installed before Start(); a server that never calls it
+		// has a Field role with no map source, which spawns characters that cannot walk
+		// and refuses every 3034 with a reason naming the map. That is the correct
+		// behaviour for a server started without an asset root, and the reason it is
+		// not an error here: refusing to START would hide a missing asset behind a
+		// failed bind, and an operator would go looking at the wrong problem.
+		//
+		// The production implementation is `Movement::MapRegistryMeshSource`, which
+		// borrows a `Map::MapRegistry` that has already loaded. `RAN_ASSET_ROOT`
+		// produces it; see the reference document.
+		void SetNavigationMapSource(const Movement::INavigationMapSource* source) noexcept
+		{
+			m_navigationMaps = source;
+			m_field.ConfigureMovement(source);
+		}
+
+		// The movement world, for a caller that wants to inject elapsed time itself.
+		// See FieldRoleRuntime::Movement for why it is exposed.
+		const WorldMovementRuntime& MovementWorld() const noexcept
+		{
+			return m_field.Movement();
+		}
+
+		WorldMovementRuntime& MovementWorld() noexcept { return m_field.MovementWorld(); }
+
+		// Starts and stops the movement ticker. See FieldRoleRuntime's documentation:
+		// a caller that injects elapsed time itself must NOT start it, or every actor
+		// is advanced twice per step.
+		Status StartMovementTicker() { return m_field.StartMovementTicker(); }
+		void   StopMovementTicker() noexcept { m_field.StopMovementTicker(); }
 
 		// The Field endpoint the Agent role advertises in its 2358.
 		// Read back after Start(), because with port 0 requested the configuration
@@ -152,17 +186,43 @@ namespace Modern::Server::World
 
 	private:
 		WorldServerConfig m_config;
+
 		ICharacterRepository& m_repository;
+		// WORLD-ENTRY-002f: the caller's mesh source, kept alive for the runtime's
+		// lifetime. The Field role holds a second pointer to it through
+		// ConfigureMovement, so a source that went out of scope here would leave every
+		// movement query reading freed memory.
+		//
+		// Kept even though only the Field role dereferences it: holding the borrow is
+		// what makes the lifetime rule checkable instead of a comment.
+		const Movement::INavigationMapSource* m_navigationMaps = nullptr;
 
 		// The Agent->Field hop, in process. See the header.
 		FieldEntryRegistry m_registry;
+
+		// WORLD-ENTRY-002f: RAN's per-class walk and run speeds, and nothing else.
+		//
+		// Declared BEFORE `m_movement` because the service borrows it, and a reference
+		// initialised from a later-declared member is a bug that reads as a plausible
+		// speed. The table is the reason the 16-entry `EMCHARINDEX` recovery and
+		// `WorldCharacter::characterGender` exist: RAN indexes this table by class AND
+		// gender, so a class alone does not identify a speed.
+		//
+		// A member rather than a file-static because the service's lifetime is the
+		// runtime's, and a static would outlive it.
+		CharacterClassMovementSpeed m_classSpeed;
 
 		// The authoritative movement-state rule, shared by every Field session.
 		//
 		// Owned here because it is process-wide policy with no per-session state, and
 		// because FieldSession takes it by reference - two Field connections must never
 		// disagree about what a 3032 means.
-		MovementStateService m_movement;
+		//
+		// Built over `m_classSpeed`, so a 3034 and a 3032 cannot disagree about what
+		// this character walks at. With no provider both paths fall back to the
+		// placeholder in `Actor` and the milestone looks implemented while every
+		// character moves at 5 units a second regardless of class.
+		MovementStateService m_movement{ &m_classSpeed };
 
 		AgentRoleRuntime m_agent;
 		FieldRoleRuntime m_field;

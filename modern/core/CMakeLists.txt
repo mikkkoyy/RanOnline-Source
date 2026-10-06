@@ -29,6 +29,10 @@ set(MODERN_SOURCES
     map/MapsList.cpp
     map/MapRegistry.cpp
     map/RanByteCrypt.cpp
+    # WORLD-ENTRY-002f: base movement speed, map-mesh source, headless Actor.
+    movement/Actor.cpp
+    movement/MovementSpeed.cpp
+    movement/NavigationMapSource.cpp
     equipment/ItemContributionAggregator.cpp
     equipment/ItemDefinitionProvider.cpp
     gameplay/CharacterSnapshot.cpp

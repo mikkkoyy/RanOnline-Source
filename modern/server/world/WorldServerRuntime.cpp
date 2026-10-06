@@ -1,4 +1,4 @@
-#include "world/WorldServerRuntime.h"
+		#include "world/WorldServerRuntime.h"
 
 #include <utility>
 
@@ -51,6 +51,11 @@ namespace Modern::Server::World
 			// The Field is already listening. Stopping it here means a failed Start
 			// leaves nothing behind - otherwise a retry would fail to bind the same
 			// port, and the operator would be chasing a phantom "address in use".
+// WORLD-ENTRY-002f: the movement ticker is stopped BEFORE the listeners. A ticker
+		// running while the worker threads are being joined would keep advancing actors
+		// for characters whose Field sessions have already gone, and the joined threads
+		// would be waiting on a runtime that is still mutating.
+		m_field.StopMovementTicker();
 			m_field.Stop();
 			return status;
 		}
@@ -69,6 +74,12 @@ namespace Modern::Server::World
 
 	void WorldServerRuntime::Stop() noexcept
 	{
+		// WORLD-ENTRY-002f: the movement ticker is stopped BEFORE the listeners. A ticker
+		// running while the Field role's worker threads are being joined would keep
+		// advancing actors for characters whose sessions have already gone, and the
+		// joined threads would be waiting on a runtime that is still mutating.
+		m_field.StopMovementTicker();
+
 		m_agent.Stop();
 		m_field.Stop();
 		m_running = false;

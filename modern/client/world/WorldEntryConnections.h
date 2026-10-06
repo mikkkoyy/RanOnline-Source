@@ -172,6 +172,27 @@ namespace Modern::Client
 		Status PumpUntilMoveCount(std::size_t wantedCount, int timeoutMilliseconds,
 		                          std::size_t maxChunkBytes = 0);
 
+	// Sends a 3034 for the client's own GOTO.
+		//
+		// `claimedCurrent` is where the CLIENT believes it is and `requestedTarget` is
+		// where it wants to go. Both are sent verbatim - see
+		// WorldEntryClient::BuildGoto: the server owns the position, and vCurPos exists
+		// so it can DETECT disagreement, not so it can be argued with. Raw, like every
+		// other client->server message here.
+		Status SendGoto(WireU32 requestedActState, Vector3 claimedCurrent,
+		                Vector3 requestedTarget);
+
+		// Reads until `wantedCount` 3035s have arrived in total, the budget runs out,
+		// the peer closes, or something faults.
+		//
+		// A COUNT, and for the same reason `PumpUntilMoveCount` takes one: legacy sends
+		// NOTHING when a GOTO is refused - an unreachable destination, a dead character
+		// and a desynchronised client are all silent - so a client cannot wait for "the
+		// next one" or it would block forever on a refused move. Passing the count the
+		// caller already knows lets the same call express both cases.
+		Status PumpUntilGotoCount(std::size_t wantedCount, int timeoutMilliseconds,
+		                          std::size_t maxChunkBytes = 0);
+
 		const WorldSpawnState& Spawn() const noexcept { return m_protocol.Spawn(); }
 
 		// The most recent 3033, and how many have arrived.
@@ -180,6 +201,9 @@ namespace Modern::Client
 		{
 			return m_protocol.MoveStateCount();
 		}
+		// The most recent 3035, and how many have arrived.
+		const WorldGotoState& Goto() const noexcept { return m_protocol.Goto(); }
+		std::size_t GotoCount() const noexcept { return m_protocol.GotoCount(); }
 
 		std::size_t MessagesHandled() const noexcept { return m_handled; }
 

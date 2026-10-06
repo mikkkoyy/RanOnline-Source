@@ -184,4 +184,49 @@ namespace Modern::Server::World
 
 		return Ok();
 	}
+	// ---------------------------------------------------------------------------
+	// WORLD-ENTRY-002f: GOTO
+	// ---------------------------------------------------------------------------
+
+	Status FieldSession::AdoptGotoActState(Network::WireU32 actState)
+	{
+		// Server state being written, so it is checked like server state: a word with a
+		// bit RAN does not define is corruption, not a request, and storing it would
+		// hide the bug that produced it.
+		if ((actState & ~MovementState::kKnownFlags) != 0)
+		{
+			return Status(ErrorCode::InvalidState);
+		}
+
+		m_character.actState = actState;
+		return Ok();
+	}
+
+	Status FieldSession::ApplyGoto(const Network::Goto::GotoRequest& request,
+	                               GotoResult& result)
+	{
+		result = GotoResult{};
+
+		// The same gate 3032 has. A connection with no spawned character has nothing
+		// whose position could be authoritative, so a 3034 is refused rather than
+		// quietly dropped by a lookup that finds nothing.
+		if (!m_hasCharacter || m_state != FieldState::Spawned)
+		{
+			result.outcome = GotoOutcome::RejectedDestination;
+			result.detail  = "no spawned character on this connection";
+			return Status(ErrorCode::NotAllowed);
+		}
+
+		if (m_movementRuntime == nullptr)
+		{
+			// A wiring error rather than a runtime condition: the Field role installs the
+			// runtime before it serves anything. Reported rather than defaulted, because a
+			// default would be an invented movement model.
+			result.outcome = GotoOutcome::RejectedNoMesh;
+			result.detail  = "the Field role has no movement runtime";
+			return Status(ErrorCode::InvalidState);
+		}
+
+		return m_movementRuntime->ApplyGoto(m_sessionId, m_character, request, result);
+	}
 }

@@ -70,7 +70,8 @@ namespace Modern::Server::World
 	{
 		return a.id == b.id && a.accountId == b.accountId && a.userId == b.userId &&
 		       a.name == b.name && a.characterClass == b.characterClass &&
-		       a.school == b.school && a.level == b.level && a.hp.now == b.hp.now &&
+		       a.characterGender == b.characterGender && a.school == b.school &&
+		       a.level == b.level && a.hp.now == b.hp.now &&
 		       a.hp.max == b.hp.max && a.mp.now == b.mp.now && a.mp.max == b.mp.max &&
 		       a.sp.now == b.sp.now && a.sp.max == b.sp.max &&
 		       a.saveMapId.value == b.saveMapId.value && a.gaeaId == b.gaeaId &&

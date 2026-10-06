@@ -78,6 +78,9 @@ set(MODERN_NETWORK_SOURCES
     # GOTO (3034/3035) and everything behind it are WORLD-ENTRY-002b.
     MovementStateProtocol.h
     MovementStateProtocol.cpp
+    # WORLD-ENTRY-002f: the GOTO protocol - 3034 and 3035.
+    GotoProtocol.h
+    GotoProtocol.cpp
     # NETWORK-001: the real Winsock TCP layer. This is the only part of the modern
     # tree that includes <winsock2.h>, and it is why ws2_32 is linked below.
     #

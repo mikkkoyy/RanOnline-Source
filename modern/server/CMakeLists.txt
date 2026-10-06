@@ -43,7 +43,10 @@ set(MODERN_SERVER_SOURCES
     # containing it, because in legacy the Agent and the Field are different
     # processes with different owners - an Agent that could mint its own
     # authorization would be an Agent that could forge its own proof of entry.
+    world/CharacterClassMovementSpeed.cpp
+    world/GotoService.cpp
     world/WorldCharacter.cpp
+    world/WorldMovementRuntime.cpp
     world/WorldCharacter.h
     world/CharacterRepository.cpp
     world/CharacterRepository.h
@@ -116,6 +119,12 @@ add_executable(ModernServerTests
     # needs no socket. WorldEntryTcpTests then proves the same rule survives a real
     # TCP connection.
     MovementStateServiceTests.cpp
+    # WORLD-ENTRY-002f: the GOTO rule - the 60-unit desync check, the legacy
+    # validation ORDER, the silence of a refusal, and the class speed seam.
+    GotoServiceTests.cpp
+    # WORLD-ENTRY-002f: the Field role's movement runtime - the actor registry,
+    # injected-time Tick progression, snapshots and multi-actor isolation.
+    WorldMovementRuntimeTests.cpp
 )
 
 target_include_directories(ModernServerTests PRIVATE

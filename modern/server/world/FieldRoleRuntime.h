@@ -63,6 +63,9 @@
 // identity to forge.
 
 #include "CompressionCodec.h"
+#include "CompressionCodec.h"
+#include "GotoProtocol.h"
+#include "MessageReader.h"
 #include "MessageReader.h"
 #include "MovementStateProtocol.h"
 #include "NetworkConnection.h"
@@ -109,6 +112,16 @@ namespace Modern::Server::World
 		// sent - legacy's `dwOldActState != m_dwActState` behaviour.
 		MoveStateUnchanged,
 
+		// WORLD-ENTRY-002f: a 3034 was accepted and 3035 went out. Carries the gaeaId
+		// that is now walking.
+		GotoAccepted,
+
+		// WORLD-ENTRY-002f: a 3034 was refused and NOTHING was sent - which is exactly
+		// what legacy does for an unreachable destination, a dead character and a
+		// desynchronised client alike. The log line is the only difference from
+		// silence, and it is the difference an operator has.
+		GotoRejected,
+
 		ClientRejected,
 		ClientDisconnected,
 	};
@@ -146,6 +159,12 @@ namespace Modern::Server::World
 		// IdentityRejected because the cause is different and an operator reading a log
 		// needs to tell "you are not logged in" from "that entry has expired".
 		NotSpawned,
+
+		// WORLD-ENTRY-002f: a 3034 arrived before the connection was spawned. Its own
+		// value rather than a reuse of NotSpawned, because the count it feeds is a
+		// MOVEMENT count, and an operator chasing "why will nobody move" should not
+		// have to read two refusal kinds to find it.
+		GotoBeforeSpawn,
 	};
 
 	const char* ToString(FieldRefusal refusal) noexcept;
@@ -196,7 +215,48 @@ namespace Modern::Server::World
 		std::size_t MoveStateUnchangedCount() const noexcept { return m_moveUnchanged.load(); }
 
 		// Currently authorized Field sessions. For tests and for the operator log.
+// Currently authorized Field sessions. For tests and for the operator log.
 		std::size_t AuthorizedSessionCount() const;
+
+		// WORLD-ENTRY-002f: the movement world, so a test can observe where a
+		// character actually IS.
+		//
+		// Exposed because RAN transmits no authoritative position after the initial
+		// spawn - there is no per-tick position packet, which is a MEASURED fact and
+		// not an omission (002c section 10). The only way to assert "movement happened
+		// after the 3035" is therefore to ask the server, and asking the server must
+		// not mean inventing a packet.
+		const WorldMovementRuntime& Movement() const noexcept { return m_movementWorld; }
+
+		// The same world, mutably, for a runtime that owns it. Only the owning
+		// WorldServerRuntime and the tests take this; a reader wants the const form
+		// above and has no business walking an actor.
+		WorldMovementRuntime& MovementWorld() noexcept { return m_movementWorld; }
+
+		//
+		// A caller that injects elapsed time itself must NOT start the ticker: the two
+		// would both advance every actor and each movement would happen twice. See
+		// WorldMovementRuntime.h.
+		Status StartMovementTicker();
+		void   StopMovementTicker() noexcept;
+
+		// WORLD-ENTRY-002f: where navigation meshes come from.
+		//
+		// BORROWED and optional. Installed before Start(); a Field role with no map
+		// source spawns characters that cannot walk and refuses every 3034 with a
+		// reason naming the map. That is the correct behaviour for a server started
+		// without an asset root, and the reason it is not an error here.
+		//
+		// The production implementation is `Movement::MapRegistryMeshSource`, which
+		// borrows a `Map::MapRegistry` that has already loaded.
+		void ConfigureMovement(const Movement::INavigationMapSource* maps) noexcept
+		{
+			m_movementWorld.SetMapSource(maps);
+		}
+
+		// 3035s sent and 3034s refused. Monotonic; read after Stop().
+		std::size_t GotoSentCount() const noexcept { return m_gotoSent.load(); }
+		std::size_t GotoRefusedCount() const noexcept { return m_gotoRefused.load(); }
 
 	private:
 		// One live client connection.
@@ -257,9 +317,14 @@ namespace Modern::Server::World
 		bool HandleIdentity(PeerPtr peer, Network::ServerBatchEncoder& batcher,
 		                    const Network::Message& message);
 
-		// The 3032 path. Returns whether the connection may continue.
+// The 3032 path. Returns whether the connection may continue.
 		bool HandleMoveState(PeerPtr peer, Network::ServerBatchEncoder& batcher,
 		                     const Network::Message& message);
+
+		// WORLD-ENTRY-002f: the 3034 path. Returns whether the connection may
+		// continue.
+		bool HandleGoto(PeerPtr peer, Network::ServerBatchEncoder& batcher,
+		                const Network::Message& message);
 
 		// Sends 3033 for `broadcast` to every authorized peer EXCEPT `exclude`.
 		//
@@ -267,6 +332,13 @@ namespace Modern::Server::World
 		// without it the mover would get the message twice.
 		void BroadcastMoveState(const PeerPtr& exclude,
 		                        const Network::MovementState::MoveStateBroadcast& broadcast);
+
+		// Sends 3035 to every authorized peer EXCEPT `exclude`, for the same reason
+		// and by the same shape as BroadcastMoveState. One implementation, not two:
+		// the copy-the-peer-list-under-the-lock dance is identical, and a second copy
+		// would be a second thing to keep correct.
+		void BroadcastGoto(const PeerPtr& exclude,
+		                   const Network::Goto::GotoBroadcast& broadcast);
 
 		Status SendEnveloped(Network::ServerBatchEncoder& batcher, PeerPtr peer,
 		                     const std::vector<Network::WireU8>& inner);
@@ -279,7 +351,20 @@ namespace Modern::Server::World
 		WorldServerConfig      m_config;
 		ICharacterRepository&  m_repository;
 		FieldEntryRegistry&    m_registry;
-		const MovementStateService& m_movement;
+const MovementStateService& m_movement;
+
+		// WORLD-ENTRY-002f: the movement world.
+		//
+		// Owned by the role because the role is what has the characters in it. The
+		// speed seam and the map source are BORROWED through it, so changing where
+		// meshes come from is a wiring change and not a new object graph.
+		WorldMovementRuntime m_movementWorld;
+
+		// The GOTO rule, built from the movement-state service this role already owns
+		// so the two movement paths cannot disagree about speed. Held by value, so its
+		// borrow of the service cannot outlive it.
+		GotoService m_gotoService;
+
 		FieldLogSink           m_log;
 		Network::TcpListener   m_listener;
 
@@ -312,6 +397,8 @@ namespace Modern::Server::World
 		std::atomic<std::size_t> m_refused{0};
 		std::atomic<std::size_t> m_moveSent{0};
 		std::atomic<std::size_t> m_moveUnchanged{0};
+std::atomic<std::size_t> m_gotoSent{0};
+		std::atomic<std::size_t> m_gotoRefused{0};
 		std::atomic<Network::WireU32> m_lastGaeaId{0};
 		std::atomic<std::size_t> m_lastCharacterId{0};
 

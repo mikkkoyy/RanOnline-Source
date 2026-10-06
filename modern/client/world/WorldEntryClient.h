@@ -55,8 +55,10 @@
 // reason the two client types share no phase enum.
 
 #include "CharacterListProtocol.h"
+#include "GotoProtocol.h"
 #include "login/World001LoginClient.h"
 #include "NetCompressCodec.h"
+#include "math/Vector3.h"
 #include "MessageReader.h"
 #include "MovementStateProtocol.h"
 #include "NetworkConnection.h"
@@ -80,7 +82,10 @@ namespace Modern::Client
 	// wire bug waiting to be misdiagnosed as a build problem.
 	using Network::WireU8;
 	using Network::WireU16;
+using Modern::Vector3;
 	using Network::WireU32;
+using Network::WireU32;
+	using Network::Lzo1xCodec;
 	using Network::WireI32;
 	using Network::Lzo1xCodec;
 	using Network::ConnectionFramer;
@@ -165,6 +170,46 @@ namespace Modern::Client
 		std::vector<WireU8> frame;
 	};
 
+	// WORLD-ENTRY-002f: an accepted GOTO, as received in a 3035.
+	//
+	// RAN has NO per-tick authoritative position broadcast - 002c section 10 measured
+	// that `GLChar::FrameMove` transmits nothing while a character walks, and the only
+	// position corrections are the event-driven 3064 and 3830 - so this arrives ONCE per
+	// accepted GOTO and is the only position the server ever sends. A client therefore
+	// runs its own predicted walk and uses this to know that the server agreed.
+	//
+	// `currentPosition` is the SERVER's position, which is how a client that has
+	// drifted learns where the server thinks it is. `targetPosition` is the RAW target
+	// the mover asked for, not the point the server's vertical probe resolved to, so a
+	// client that re-probes against it may land somewhere slightly different - which is
+	// exactly what RAN does.
+	struct WorldGotoState
+	{
+		bool received = false;
+
+		// Whose GOTO this was. The sender's, not the receiver's.
+		WireU32 gaeaId = 0;
+
+		// The AUTHORITATIVE movement word as of this GOTO.
+		WireU32 actState = 0;
+
+		// The server's authoritative position when it accepted.
+		float currentPositionX = 0.0f;
+		float currentPositionY = 0.0f;
+		float currentPositionZ = 0.0f;
+
+		// The requested destination, verbatim.
+		float targetPositionX = 0.0f;
+		float targetPositionY = 0.0f;
+		float targetPositionZ = 0.0f;
+
+		// Dead on the server's GOTO path - always 0.0f - and present because it is four
+		// bytes of a fixed-size struct. See GotoProtocol.h.
+		float delay = 0.0f;
+
+		// The frame as received, so a test can assert its size and offsets.
+		std::vector<WireU8> frame;
+	};
 	// Drives the client side of the Agent conversation, over no socket at all.
 	//
 	// The state machine enforces the same ORDERING the server does, so a client bug
@@ -219,6 +264,22 @@ namespace Modern::Client
 		// No gaeaId is sent, because legacy sends none: the server already knows whose
 		// connection this is, which is what makes the 3032 authoritative.
 		Status BuildMoveState(WireU32 actState, std::vector<WireU8>& request);
+// Builds 3034 - the client's own GOTO request.
+		//
+		// `requestedActState` is what the player is pressing, not what the server
+		// will allow, and `claimedCurrent` is where the CLIENT thinks it is. Both are
+		// sent verbatim: the server owns the authoritative position, and `vCurPos`
+		// exists so the server can DETECT disagreement, not so it can be talked into
+		// agreeing. A client that pre-applied the authority rules would make that
+		// check untestable.
+		//
+		// No gaeaId is sent, because legacy sends none (GLContrlPcMsg.h:636-654).
+		// The server learns whose character it is from the Field connection, which is
+		// what makes the request unforgeable.
+		Status BuildGoto(WireU32 requestedActState, Vector3 claimedCurrent,
+		                 Vector3 requestedTarget, std::vector<WireU8>& request);
+
+		// Feeds bytes received from the Field.
 
 		// Feeds bytes received from the Field.
 		//
@@ -262,6 +323,14 @@ namespace Modern::Client
 		const WorldMoveStateState& MoveState() const noexcept { return m_moveState; }
 		std::size_t                MoveStateCount() const noexcept { return m_moveStateCount; }
 
+		// WORLD-ENTRY-002f: the most recent 3035, and how many have arrived.
+		//
+		// "Most recent" and a COUNT for the same reason as MoveState: two players
+		// moving produce a stream, and only the count can distinguish "two accepted
+		// GOTO broadcasts" from "one broadcast seen twice".
+		const WorldGotoState& Goto() const noexcept { return m_goto; }
+		std::size_t          GotoCount() const noexcept { return m_gotoCount; }
+
 		// True once the framer has latched an unrecoverable framing error. A
 		// desynchronised stream cannot resynchronise, so the caller must drop the
 		// connection rather than keep parsing.
@@ -304,6 +373,10 @@ namespace Modern::Client
 		WorldSpawnState                      m_spawn;
 		WorldMoveStateState                  m_moveState;
 		std::size_t                          m_moveStateCount = 0;
+		// WORLD-ENTRY-002f: the most recent 3035 and its count. Same reasoning as the
+		// 3033 pair above.
+		WorldGotoState                       m_goto{};
+		std::size_t                          m_gotoCount = 0;
 
 		bool m_agentFailed = false;
 		bool m_fieldFailed = false;
