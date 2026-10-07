@@ -78,6 +78,9 @@ set(MODERN_NETWORK_SOURCES
     # GOTO (3034/3035) and everything behind it are WORLD-ENTRY-002b.
     MovementStateProtocol.h
     MovementStateProtocol.cpp
+    # WORLD-ENTRY-002h: the UPDATE_STATE protocol - 3046 and 3053.
+    UpdateStateProtocol.h
+    UpdateStateProtocol.cpp
     # WORLD-ENTRY-002f: the GOTO protocol - 3034 and 3035.
     GotoProtocol.h
     GotoProtocol.cpp

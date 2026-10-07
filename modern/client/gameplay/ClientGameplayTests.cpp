@@ -1066,6 +1066,65 @@ MODERN_TEST(ClientCombat_ClientDoesNotRecalculate)
 	CHECK_EQ(client.GetDerivedStats().defense, snapshot.derived.defense);
 }
 
+// WORLD-ENTRY-002h: ApplyResourceUpdate from 3046
+MODERN_TEST(Gameplay_ApplyResourceUpdate_ChangesPresentedPools)
+{
+	auto character = Server::ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	Gameplay::CharacterSnapshot snapshot = character.GetValue().BuildSnapshot().GetValue();
+
+	ClientCharacterState client;
+	client.Apply(snapshot);
+
+	const uint32_t originalHp = client.GetCurrentHp();
+	const uint32_t originalMp = client.GetCurrentMp();
+	const uint32_t originalSp = client.GetCurrentSp();
+
+	// Apply a 3046 with different current values
+	client.ApplyResourceUpdate(42, 17, 99);
+
+	CHECK_EQ(client.GetCurrentHp(), 42u);
+	CHECK_EQ(client.GetCurrentMp(), 17u);
+	CHECK_EQ(client.GetCurrentSp(), 99u);
+
+	// Maxima are NOT changed - they come from derived stats
+	CHECK_EQ(client.GetMaxHp(), originalHp); // was full, so max == original current
+	CHECK_EQ(client.GetDerivedStats().maxHp, snapshot.derived.maxHp);
+	CHECK_EQ(client.GetDerivedStats().maxMp, snapshot.derived.maxMp);
+	CHECK_EQ(client.GetDerivedStats().maxSp, snapshot.derived.maxSp);
+}
+
+MODERN_TEST(Gameplay_ApplyResourceUpdate_NoOpWhenNoSnapshot)
+{
+	ClientCharacterState client;
+	CHECK(!client.HasSnapshot());
+
+	client.ApplyResourceUpdate(100, 200, 300);
+
+	CHECK_EQ(client.GetCurrentHp(), 0u);
+	CHECK_EQ(client.GetCurrentMp(), 0u);
+	CHECK_EQ(client.GetCurrentSp(), 0u);
+}
+
+MODERN_TEST(Gameplay_ApplyResourceUpdate_DoesNotMutateDerivedStats)
+{
+	auto character = Server::ServerCharacter::Create(StandardDefinition());
+	CHECK(character.IsOk());
+	character.GetValue().RestoreResources();
+
+	Gameplay::CharacterSnapshot snapshot = character.GetValue().BuildSnapshot().GetValue();
+	const Stats::DerivedStats originalDerived = snapshot.derived;
+
+	ClientCharacterState client;
+	client.Apply(snapshot);
+
+	client.ApplyResourceUpdate(1, 2, 3);
+
+	CHECK(client.GetDerivedStats() == originalDerived);
+}
+
 
 int main()
 {

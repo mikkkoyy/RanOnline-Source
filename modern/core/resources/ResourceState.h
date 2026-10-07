@@ -161,7 +161,46 @@ namespace Modern::Resources
 		// A character that has no maximum resource yet.
 		ResourceState() = default;
 
-		// Builds the state from one stat result. The pools start *full*.
+		// The authoritative pools of a character whose record already holds
+	// them, plus the recovery configuration to run them with.
+	//
+	// The world-entry path is the producer: the DB's ChaHP/ChaMP/ChaSP
+	// (s_COdbcGameChaGet.cpp:302-303,317) are the authority for BOTH
+	// halves of every pool, and no stat pass has run to build a
+	// `DerivedStats` from - which is exactly why `CreateFull` and
+	// `SyncFrom` cannot serve this path: they take maxima from a stat
+	// result, and `CreateFull` additionally starts every pool FULL,
+	// which would resurrect a character that saved at 47 HP.
+	//
+	// The recovery terms are the caller's, and the world-entry caller
+	// supplies the legacy globals - with no items, passives or facts
+	// in the world model, those are the only terms the legacy formula
+	// has left (GLogixExPC.cpp:3021-3023).
+	struct ResourceRecord
+	{
+		Pool         hp;
+		Pool         mp;
+		Pool         sp;
+
+		PoolRecovery hpRecovery;
+		PoolRecovery mpRecovery;
+		PoolRecovery spRecovery;
+	};
+
+	// Adopts a record verbatim - both halves of every pool, and the
+	// recovery configuration.
+	//
+	// A current value above its maximum is CLAMPED, not refused: the
+	// record is authoritative data, not a request, and `LIMIT`
+	// (GLDefine.h:439) is what legacy does with an over-maximum load
+	// rather than discarding the character. A non-finite recovery term
+	// is refused, for the same reason `SyncFrom` refuses one.
+	//
+	// The remainders start at zero: a fresh session is not owed
+	// anything, and the DB stores no sub-unit carry.
+	static Result<ResourceState> Adopt(const ResourceRecord& record);
+
+	// Builds the state from one stat result. The pools start *full*.
 		//
 		// Full is RAN's behaviour for a new character: `INIT_DATA` calls
 		// `TO_FULL()` on all three when `bNEW` (GLogixExPC.cpp:1255-1264). It is

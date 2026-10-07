@@ -101,7 +101,10 @@ namespace Modern::Server::World
 
 		// Reads the entity id back. NotFound when the character does not exist, so a
 		// caller cannot mistake "no character" for "not in the world".
-		virtual Result<Network::WireU32> ReadGaeaId(WorldCharacterId characterId) const = 0;
+virtual Result<Network::WireU32> ReadGaeaId(WorldCharacterId characterId) const = 0;
+
+		// Replaces an existing character's data, keeping its id. Refuses an unknown id.
+		virtual Status Replace(const WorldCharacter& character) = 0;
 	};
 
 	// A deterministic in-memory repository.

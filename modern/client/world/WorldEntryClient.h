@@ -80,13 +80,11 @@ namespace Modern::Client
 	// network layer into Modern::Client's scope, where an id declared in two places
 	// would silently become an ambiguity - and an ambiguity in a protocol header is a
 	// wire bug waiting to be misdiagnosed as a build problem.
-	using Network::WireU8;
+using Network::WireU8;
 	using Network::WireU16;
-using Modern::Vector3;
+	using Modern::Vector3;
 	using Network::WireU32;
-using Network::WireU32;
-	using Network::Lzo1xCodec;
-	using Network::WireI32;
+using Network::WireI32;
 	using Network::Lzo1xCodec;
 	using Network::ConnectionFramer;
 	// Where the client is in the Agent conversation.
@@ -210,6 +208,47 @@ using Network::WireU32;
 		// The frame as received, so a test can assert its size and offsets.
 		std::vector<WireU8> frame;
 	};
+
+	// WORLD-ENTRY-002h: the authoritative resource state (3046).
+	//
+	// Carries ALL pools (HP/MP/SP/CP) with both current and maximum, plus
+	// identity. The client's presented pools are updated from this; the
+	// server's derived maxima are the authority and do not change from
+	// this packet - the client must NOT overwrite `DerivedStats` with the
+	// wire's maxima.
+	struct WorldUpdateStateState
+	{
+		bool received = false;
+
+		WireU32 hpNow = 0, hpMax = 0;
+		WireU32 mpNow = 0, mpMax = 0;
+		WireU32 spNow = 0, spMax = 0;
+		WireU32 cpNow = 0, cpMax = 0;
+
+		std::string characterName;
+		WireU32     gaeaId   = 0;
+		WireU32     charId   = 0;
+		bool        safeTime = false;
+
+		std::vector<WireU8> frame;
+	};
+
+	// WORLD-ENTRY-002h: the HP broadcast (3053).
+	//
+	// Carries only HP (current+max), gaeaId and safeTime. This is the
+	// staged approximation of legacy's view-scoped broadcast: all
+	// authorized clients receive it, not just those in view/party/PvP.
+	struct WorldUpdateStateBrdState
+	{
+		bool received = false;
+
+		WireU32 gaeaId   = 0;
+		WireU32 hpNow    = 0;
+		WireU32 hpMax    = 0;
+		bool    safeTime = false;
+
+		std::vector<WireU8> frame;
+	};
 	// Drives the client side of the Agent conversation, over no socket at all.
 	//
 	// The state machine enforces the same ORDERING the server does, so a client bug
@@ -331,6 +370,14 @@ using Network::WireU32;
 		const WorldGotoState& Goto() const noexcept { return m_goto; }
 		std::size_t          GotoCount() const noexcept { return m_gotoCount; }
 
+		// WORLD-ENTRY-002h: the most recent 3046 and its count.
+		const WorldUpdateStateState& UpdateState() const noexcept { return m_updateState; }
+		std::size_t                 UpdateStateCount() const noexcept { return m_updateStateCount; }
+
+		// WORLD-ENTRY-002h: the most recent 3053 and its count.
+		const WorldUpdateStateBrdState& UpdateStateBrd() const noexcept { return m_updateStateBrd; }
+		std::size_t                    UpdateStateBrdCount() const noexcept { return m_updateStateBrdCount; }
+
 		// True once the framer has latched an unrecoverable framing error. A
 		// desynchronised stream cannot resynchronise, so the caller must drop the
 		// connection rather than keep parsing.
@@ -380,5 +427,11 @@ using Network::WireU32;
 
 		bool m_agentFailed = false;
 		bool m_fieldFailed = false;
+
+		// WORLD-ENTRY-002h: 3046 and 3053 state.
+		WorldUpdateStateState     m_updateState{};
+		std::size_t               m_updateStateCount = 0;
+		WorldUpdateStateBrdState  m_updateStateBrd{};
+		std::size_t               m_updateStateBrdCount = 0;
 	};
 }

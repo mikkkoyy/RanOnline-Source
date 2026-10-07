@@ -85,6 +85,50 @@ if (state.SyncFrom(derived).IsError())
 		return Result<ResourceState>(std::move(state));
 	}
 
+	Result<ResourceState> ResourceState::Adopt(const ResourceRecord& record)
+	{
+		const PoolRecovery candidates[kResourceKindCount] = {
+			record.hpRecovery, record.mpRecovery, record.spRecovery,
+		};
+
+		for (size_t index = 0; index < kResourceKindCount; ++index)
+		{
+			if (!IsRecoveryUsable(candidates[index]))
+			{
+				return Result<ResourceState>(Status(ErrorCode::InvalidArgument));
+			}
+		}
+
+		ResourceState state;
+
+		const Pool* sources[kResourceKindCount] = {
+			&record.hp, &record.mp, &record.sp,
+		};
+
+		for (size_t index = 0; index < kResourceKindCount; ++index)
+		{
+			const Pool& source = *sources[index];
+			Pool& target = state.m_pools[index];
+
+			target.maximum = source.maximum;
+			// LIMIT (GLDefine.h:439): an over-maximum load clamps
+			// down to the maximum. Legacy never raises `dwNow` to
+			// meet a maximum, so nothing else can be done here.
+			target.current = source.current > source.maximum
+				? source.maximum
+				: source.current;
+
+			state.m_recovery[index] = candidates[index];
+		}
+
+		// A maximum of zero with a non-zero current is clamped to
+		// zero above; zero maxima are otherwise accepted - an empty
+		// pool is a valid state, and `GetFraction` reports 0 for
+		// it without dividing.
+
+		return Result<ResourceState>(std::move(state));
+	}
+
 	Status ResourceState::SyncFrom(const Stats::DerivedStats& derived)
 	{
 		// Refuse a non-finite recovery term rather than storing it. A NaN rate

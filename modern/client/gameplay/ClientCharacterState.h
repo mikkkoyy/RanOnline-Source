@@ -80,6 +80,12 @@ namespace Modern::Client::Gameplay
 		float GetManaFraction() const noexcept;
 		float GetStaminaFraction() const noexcept;
 
+		// WORLD-ENTRY-002h: applies a 3046's CURRENT values to the presented
+		// pools. The maxima in the frame are exposed for assertion but do not
+		// mutate `derived`, which is the server's stat result and the client's
+		// only source of maxima (see the class header note).
+		void ApplyResourceUpdate(uint32_t hp, uint32_t mp, uint32_t sp);
+
 		// ---- Equipment ----
 		//
 		// What the server said is worn. A read-only view: the client cannot

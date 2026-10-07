@@ -168,4 +168,15 @@ const std::string& ClientCharacterState::EmptyName() noexcept
 	{
 		return m_hasSnapshot ? m_snapshot.GetStaminaFraction() : 0.0f;
 	}
+
+	void ClientCharacterState::ApplyResourceUpdate(uint32_t hp, uint32_t mp, uint32_t sp)
+	{
+		if (!m_hasSnapshot)
+		{
+			return;
+		}
+		m_snapshot.hp.current = hp;
+		m_snapshot.mp.current = mp;
+		m_snapshot.sp.current = sp;
+	}
 }

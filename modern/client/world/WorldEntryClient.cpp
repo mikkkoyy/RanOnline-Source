@@ -3,6 +3,7 @@
 #include "LoginProtocol.h"
 #include "LoginResponseProtocol.h"
 #include "NetworkCodec.h"
+#include "UpdateStateProtocol.h"
 
 namespace Modern::Client
 {
@@ -404,49 +405,70 @@ namespace Modern::Client
 				continue;
 			}
 
-// ---- 3035: an accepted GOTO ------------------------------------------------
-			//
-			// Checked BEFORE the spawn test for the same reason the 3033 is: all three
-			// arrive on ONE long-lived Field connection, interleaved. A client that has
-			// spawned and then moved receives 2333, 3033 and 3035 in whatever order the
-			// server produced them.
-			if (Goto::GotoCodec::IsGotoBroadcast(message.header.type))
+// ---- 3053: HP broadcast -----------------------------------------------
+		//
+		// Checked BEFORE the spawn test, for the same reason as 3033/3035: all
+		// arrive on ONE long-lived Field connection, interleaved.
+		if (UpdateState::UpdateStateCodec::IsStateBroadcast(message.header.type))
+		{
+			UpdateState::StateBroadcast broadcast;
+			if (const Status status =
+			        UpdateState::UpdateStateCodec::DecodeStateBroadcast(frame, broadcast);
+			    status.IsError())
 			{
-				Goto::GotoBroadcast broadcast;
-				if (const Status status =
-				        Goto::GotoCodec::DecodeGotoBroadcast(frame, broadcast);
-				    status.IsError())
-				{
-					// Terminal, and differently so from an unknown id. The id is one this
-					// client recognises, so a bad one is a protocol fault worth reporting
-					// rather than something to skip past - and the stream cannot be
-					// trusted to be in the right place afterwards.
-					m_fieldFailed = true;
-					return status;
-				}
-
-				// Copied field by field rather than aliased, so what a test asserts on
-				// is plainly what arrived.
-				WorldGotoState received;
-				received.received          = true;
-				received.gaeaId            = broadcast.gaeaId;
-				received.actState          = broadcast.actState;
-				received.currentPositionX  = broadcast.currentPosition.x;
-				received.currentPositionY  = broadcast.currentPosition.y;
-				received.currentPositionZ  = broadcast.currentPosition.z;
-				received.targetPositionX   = broadcast.targetPosition.x;
-				received.targetPositionY   = broadcast.targetPosition.y;
-				received.targetPositionZ   = broadcast.targetPosition.z;
-				received.delay             = broadcast.delay;
-				received.frame             = frame;
-
-				m_goto = received;
-				++m_gotoCount;
-				continue;
+				m_fieldFailed = true;
+				return status;
 			}
 
-			if (!WorldEntryCodec::IsSpawn(message.header.type))
-			if (!WorldEntryCodec::IsSpawn(message.header.type))
+			WorldUpdateStateBrdState received;
+			received.received = true;
+			received.gaeaId   = broadcast.gaeaId;
+			received.hpNow    = broadcast.hp.now;
+			received.hpMax    = broadcast.hp.max;
+			received.safeTime = broadcast.safeTime;
+			received.frame    = frame;
+
+			m_updateStateBrd = received;
+			++m_updateStateBrdCount;
+			continue;
+		}
+
+		// ---- 3046: authoritative resource state (UPDATE_STATE) ----------
+		//
+		// Checked BEFORE the spawn test, for the same reason as 3033/3035.
+		if (UpdateState::UpdateStateCodec::IsStateUpdate(message.header.type))
+		{
+			UpdateState::StateUpdate update;
+			if (const Status status =
+			        UpdateState::UpdateStateCodec::DecodeStateUpdate(frame, update);
+			    status.IsError())
+			{
+				m_fieldFailed = true;
+				return status;
+			}
+
+			WorldUpdateStateState received;
+			received.received     = true;
+			received.hpNow        = update.hp.now;
+			received.hpMax        = update.hp.max;
+			received.mpNow        = update.mp.now;
+			received.mpMax        = update.mp.max;
+			received.spNow        = update.sp.now;
+			received.spMax        = update.sp.max;
+			received.cpNow        = update.cp.now;
+			received.cpMax        = update.cp.max;
+			received.characterName = update.name;
+			received.gaeaId        = update.gaeaId;
+			received.charId        = update.charId;
+			received.safeTime      = update.safeTime;
+			received.frame         = frame;
+
+			m_updateState = received;
+			++m_updateStateCount;
+			continue;
+		}
+
+		if (!WorldEntryCodec::IsSpawn(message.header.type))
 			{
 				// Not a spawn. Ignored rather than treated as an error, for the same
 				// reason the Agent side ignores unknown ids.

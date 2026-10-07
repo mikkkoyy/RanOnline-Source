@@ -70,9 +70,11 @@
 #include "MovementStateProtocol.h"
 #include "NetworkConnection.h"
 #include "NetworkTypes.h"
+#include "ResourceSyncService.h"
 #include "ServerBatchEncoder.h"
 #include "TcpListener.h"
 #include "TcpTransport.h"
+#include "UpdateStateProtocol.h"
 #include "WorldEntryProtocol.h"
 #include "types/Result.h"
 #include "world/CharacterRepository.h"
@@ -93,38 +95,44 @@
 
 namespace Modern::Server::World
 {
-	enum class FieldEvent : std::uint8_t
-	{
-		Listening,
-		ClientConnected,
+enum class FieldEvent : std::uint8_t
+{
+	Listening,
+	ClientConnected,
 
-		// 2359 accepted against an Agent authorization.
-		IdentityAccepted,
+	// 2359 accepted against an Agent authorization.
+	IdentityAccepted,
 
-		// 2333 sent.
-		SpawnSent,
+	// 2333 sent.
+	SpawnSent,
 
-		// WORLD-ENTRY-002a: a 3032 changed the authoritative state and 3033 went out.
-		// Carries the gaeaId whose state changed.
-		MoveStateSent,
+	// WORLD-ENTRY-002a: a 3032 changed the authoritative state and 3033 went out.
+	// Carries the gaeaId whose state changed.
+	MoveStateSent,
 
-		// A 3032 arrived that did NOT change the authoritative state, so nothing was
-		// sent - legacy's `dwOldActState != m_dwActState` behaviour.
-		MoveStateUnchanged,
+	// A 3032 arrived that did NOT change the authoritative state, so nothing was
+	// sent - legacy's `dwOldActState != m_dwActState` behaviour.
+	MoveStateUnchanged,
 
-		// WORLD-ENTRY-002f: a 3034 was accepted and 3035 went out. Carries the gaeaId
-		// that is now walking.
-		GotoAccepted,
+	// WORLD-ENTRY-002f: a 3034 was accepted and 3035 went out. Carries the gaeaId
+	// that is now walking.
+	GotoAccepted,
 
-		// WORLD-ENTRY-002f: a 3034 was refused and NOTHING was sent - which is exactly
-		// what legacy does for an unreachable destination, a dead character and a
-		// desynchronised client alike. The log line is the only difference from
-		// silence, and it is the difference an operator has.
-		GotoRejected,
+	// WORLD-ENTRY-002f: a 3034 was refused and NOTHING was sent - which is exactly
+	// what legacy does for an unreachable destination, a dead character and a
+	// desynchronised client alike. The log line is the only difference from
+	// silence, and it is the difference an operator has.
+	GotoRejected,
 
-		ClientRejected,
-		ClientDisconnected,
-	};
+	// WORLD-ENTRY-002h: a 3046 was sent to the owning client.
+	ResourceUpdateSent,
+
+	// WORLD-ENTRY-002h: a 3053 was broadcast to other clients.
+	ResourceBroadcastSent,
+
+	ClientRejected,
+	ClientDisconnected,
+};
 
 	const char* ToString(FieldEvent event) noexcept;
 
@@ -169,96 +177,109 @@ namespace Modern::Server::World
 
 	const char* ToString(FieldRefusal refusal) noexcept;
 
-	class FieldRoleRuntime
+class FieldRoleRuntime
+{
+public:
+	FieldRoleRuntime(WorldServerConfig config,
+	                 ICharacterRepository& repository,
+	                 FieldEntryRegistry& registry,
+	                 const MovementStateService& movement,
+	                 FieldLogSink log = {});
+
+	~FieldRoleRuntime();
+
+	FieldRoleRuntime(const FieldRoleRuntime&)            = delete;
+	FieldRoleRuntime& operator=(const FieldRoleRuntime&) = delete;
+
+	// Binds AND starts the accept thread.
+	//
+	// The Field role no longer has a "serve one connection" call: connections are
+	// long-lived now, so serving one to completion from the caller's thread would
+	// block every other client. See the header.
+	Status Start();
+
+	// Stops accepting, closes every live connection so blocked reads return, and
+	// joins every thread. Idempotent, and leaves nothing running.
+	void Stop() noexcept;
+
+	bool IsRunning() const noexcept;
+
+	Network::Endpoint FieldBoundEndpoint() const noexcept { return m_listener.BoundEndpoint(); }
+
+	// Connections served to completion, and connections refused. Both monotonic.
+	// Written by worker threads, so read them only after Stop().
+	std::size_t ServedClientCount() const noexcept { return m_served.load(); }
+	std::size_t RefusedClientCount() const noexcept { return m_refused.load(); }
+
+	// The most recent refusal. Written by worker threads; read after Stop().
+	FieldRefusal       RefusalKind() const noexcept { return m_refusal.load(); }
+	const std::string& RefusalDetail() const noexcept { return m_refusalDetail; }
+
+	Network::WireU32 LastSpawnGaeaId() const noexcept { return m_lastGaeaId.load(); }
+	std::size_t      LastSpawnCharacterId() const noexcept { return m_lastCharacterId.load(); }
+
+	// 3033s sent for state changes, and 3032s that changed nothing.
+	std::size_t MoveStateSentCount() const noexcept { return m_moveSent.load(); }
+	std::size_t MoveStateUnchangedCount() const noexcept { return m_moveUnchanged.load(); }
+
+	// Currently authorized Field sessions. For tests and for the operator log.
+	std::size_t AuthorizedSessionCount() const;
+
+	// WORLD-ENTRY-002f: the movement world, so a test can observe where a
+	// character actually IS.
+	//
+	// Exposed because RAN transmits no authoritative position after the initial
+	// spawn - there is no per-tick position packet, which is a MEASURED fact and
+	// not an omission (002c section 10). The only way to assert "movement happened
+	// after the 3035" is therefore to ask the server, and asking the server must
+	// not mean inventing a packet.
+	const WorldMovementRuntime& Movement() const noexcept { return m_movementWorld; }
+
+	// The same world, mutably, for a runtime that owns it. Only the owning
+	// WorldServerRuntime and the tests take this; a reader wants the const form
+	// above and has no business walking an actor.
+	WorldMovementRuntime& MovementWorld() noexcept { return m_movementWorld; }
+
+	//
+	// A caller that injects elapsed time itself must NOT start the ticker: the two
+	// would both advance every actor and each movement would happen twice. See
+	// WorldMovementRuntime.h.
+	Status StartMovementTicker();
+	void   StopMovementTicker() noexcept;
+
+	// WORLD-ENTRY-002f: where navigation meshes come from.
+	//
+	// BORROWED and optional. Installed before Start(); a Field role with no map
+	// source spawns characters that cannot walk and refuses every 3034 with a
+	// reason naming the map. That is the correct behaviour for a server started
+	// without an asset root, and the reason it is not an error here.
+	//
+	// The production implementation is `Movement::MapRegistryMeshSource`, which
+	// borrows a `Map::MapRegistry` that has already loaded.
+	void ConfigureMovement(const Movement::INavigationMapSource* maps) noexcept
 	{
-	public:
-		FieldRoleRuntime(WorldServerConfig config,
-		                 ICharacterRepository& repository,
-		                 FieldEntryRegistry& registry,
-		                 const MovementStateService& movement,
-		                 FieldLogSink log = {});
+		m_movementWorld.SetMapSource(maps);
+	}
 
-		~FieldRoleRuntime();
+	// 3035s sent and 3034s refused. Monotonic; read after Stop().
+	std::size_t GotoSentCount() const noexcept { return m_gotoSent.load(); }
+	std::size_t GotoRefusedCount() const noexcept { return m_gotoRefused.load(); }
 
-		FieldRoleRuntime(const FieldRoleRuntime&)            = delete;
-		FieldRoleRuntime& operator=(const FieldRoleRuntime&) = delete;
+	// WORLD-ENTRY-002h: the authoritative resource synchronisation service.
+	// Exposed for tests to inject time and observe frames.
+	ResourceSyncService& ResourceSync() noexcept { return m_resources; }
+	const ResourceSyncService& ResourceSync() const noexcept { return m_resources; }
 
-		// Binds AND starts the accept thread.
-		//
-		// The Field role no longer has a "serve one connection" call: connections are
-		// long-lived now, so serving one to completion from the caller's thread would
-		// block every other client. See the header.
-		Status Start();
+	// WORLD-ENTRY-002h: 3046 and 3053 sent counts. Monotonic; read after Stop().
+	std::size_t UpdateStateSentCount() const noexcept { return m_updateStateSent.load(); }
+	std::size_t UpdateStateBrdSentCount() const noexcept { return m_updateStateBrdSent.load(); }
 
-		// Stops accepting, closes every live connection so blocked reads return, and
-		// joins every thread. Idempotent, and leaves nothing running.
-		void Stop() noexcept;
+	// WORLD-ENTRY-002h: starts/stops the resource recovery ticker. Mirrors the
+	// movement ticker API.
+	Status StartResourceTicker();
+	void   StopResourceTicker() noexcept;
 
-		bool IsRunning() const noexcept;
-
-		Network::Endpoint FieldBoundEndpoint() const noexcept { return m_listener.BoundEndpoint(); }
-
-		// Connections served to completion, and connections refused. Both monotonic.
-		// Written by worker threads, so read them only after Stop().
-		std::size_t ServedClientCount() const noexcept { return m_served.load(); }
-		std::size_t RefusedClientCount() const noexcept { return m_refused.load(); }
-
-		// The most recent refusal. Written by worker threads; read after Stop().
-		FieldRefusal       RefusalKind() const noexcept { return m_refusal.load(); }
-		const std::string& RefusalDetail() const noexcept { return m_refusalDetail; }
-
-		Network::WireU32 LastSpawnGaeaId() const noexcept { return m_lastGaeaId.load(); }
-		std::size_t      LastSpawnCharacterId() const noexcept { return m_lastCharacterId.load(); }
-
-		// 3033s sent for state changes, and 3032s that changed nothing.
-		std::size_t MoveStateSentCount() const noexcept { return m_moveSent.load(); }
-		std::size_t MoveStateUnchangedCount() const noexcept { return m_moveUnchanged.load(); }
-
-		// Currently authorized Field sessions. For tests and for the operator log.
-// Currently authorized Field sessions. For tests and for the operator log.
-		std::size_t AuthorizedSessionCount() const;
-
-		// WORLD-ENTRY-002f: the movement world, so a test can observe where a
-		// character actually IS.
-		//
-		// Exposed because RAN transmits no authoritative position after the initial
-		// spawn - there is no per-tick position packet, which is a MEASURED fact and
-		// not an omission (002c section 10). The only way to assert "movement happened
-		// after the 3035" is therefore to ask the server, and asking the server must
-		// not mean inventing a packet.
-		const WorldMovementRuntime& Movement() const noexcept { return m_movementWorld; }
-
-		// The same world, mutably, for a runtime that owns it. Only the owning
-		// WorldServerRuntime and the tests take this; a reader wants the const form
-		// above and has no business walking an actor.
-		WorldMovementRuntime& MovementWorld() noexcept { return m_movementWorld; }
-
-		//
-		// A caller that injects elapsed time itself must NOT start the ticker: the two
-		// would both advance every actor and each movement would happen twice. See
-		// WorldMovementRuntime.h.
-		Status StartMovementTicker();
-		void   StopMovementTicker() noexcept;
-
-		// WORLD-ENTRY-002f: where navigation meshes come from.
-		//
-		// BORROWED and optional. Installed before Start(); a Field role with no map
-		// source spawns characters that cannot walk and refuses every 3034 with a
-		// reason naming the map. That is the correct behaviour for a server started
-		// without an asset root, and the reason it is not an error here.
-		//
-		// The production implementation is `Movement::MapRegistryMeshSource`, which
-		// borrows a `Map::MapRegistry` that has already loaded.
-		void ConfigureMovement(const Movement::INavigationMapSource* maps) noexcept
-		{
-			m_movementWorld.SetMapSource(maps);
-		}
-
-		// 3035s sent and 3034s refused. Monotonic; read after Stop().
-		std::size_t GotoSentCount() const noexcept { return m_gotoSent.load(); }
-		std::size_t GotoRefusedCount() const noexcept { return m_gotoRefused.load(); }
-
-	private:
+private:
 		// One live client connection.
 		//
 		// Owned by its worker thread for the connection's life, and held in the
@@ -340,11 +361,20 @@ namespace Modern::Server::World
 		void BroadcastGoto(const PeerPtr& exclude,
 		                   const Network::Goto::GotoBroadcast& broadcast);
 
+		// WORLD-ENTRY-002h: broadcasts a 3053 (StateBroadcast) to all authorized
+		// peers except `exclude`. Mirrors BroadcastMoveState exactly.
+		void BroadcastResourceState(const PeerPtr& exclude,
+		                            const std::vector<Network::WireU8>& packet);
+
+		// WORLD-ENTRY-002h: writes the authoritative pools back to the repository.
+		// Invoked from the resource sync service's write-back sink.
+		void WriteBackPools(WorldCharacterId characterId,
+		                    const Network::RanWire::DwPair& hp,
+		                    const Network::RanWire::DwPair& mp,
+		                    const Network::RanWire::DwPair& sp);
+
 		Status SendEnveloped(Network::ServerBatchEncoder& batcher, PeerPtr peer,
 		                     const std::vector<Network::WireU8>& inner);
-
-		// Sends one already-enveloped frame to a peer, under its send mutex.
-		Status SendRaw(PeerPtr peer, const std::vector<Network::WireU8>& bytes);
 
 		void Emit(FieldEvent event, std::string text, std::size_t count = 0);
 
@@ -404,5 +434,16 @@ std::atomic<std::size_t> m_gotoSent{0};
 
 		std::atomic<FieldRefusal> m_refusal{FieldRefusal::None};
 		std::string               m_refusalDetail;
+
+		// WORLD-ENTRY-002h: authoritative resource sync.
+		ResourceSyncService m_resources;
+
+		// Resource recovery ticker - mirrors the movement ticker pattern.
+		std::thread m_resourceTickerThread;
+		std::atomic<bool> m_stopResourceTicker{false};
+
+		// 3046/3053 sent counts. Written by sinks on ticker/worker threads.
+		std::atomic<std::size_t> m_updateStateSent{0};
+		std::atomic<std::size_t> m_updateStateBrdSent{0};
 	};
 }

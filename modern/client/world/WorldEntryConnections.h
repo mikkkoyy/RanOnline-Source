@@ -205,6 +205,31 @@ namespace Modern::Client
 		const WorldGotoState& Goto() const noexcept { return m_protocol.Goto(); }
 		std::size_t GotoCount() const noexcept { return m_protocol.GotoCount(); }
 
+		// WORLD-ENTRY-002h: the most recent 3046/3053 and their counts.
+		const WorldUpdateStateState& UpdateState() const noexcept { return m_protocol.UpdateState(); }
+		std::size_t                UpdateStateCount() const noexcept { return m_protocol.UpdateStateCount(); }
+		const WorldUpdateStateBrdState& UpdateStateBrd() const noexcept { return m_protocol.UpdateStateBrd(); }
+		std::size_t                   UpdateStateBrdCount() const noexcept { return m_protocol.UpdateStateBrdCount(); }
+
+		// Reads until `wantedCount` 3046s have arrived in total, the budget
+		// runs out, the peer closes, or something faults.
+		//
+		// Takes a COUNT for the same reason as PumpUntilMoveCount: legacy sends
+		// 3046 on a 1.6s timer and on HP/MP/SP changes, so a client waiting for
+		// "the next one" without knowing how many it already saw would block
+		// forever on a no-op timer tick (legacy sends NOTHING when the state
+		// didn't change - the timer always fires but the pools are full). The
+		// count the test already knows lets the same call express both cases.
+		Status PumpUntilUpdateStateCount(std::size_t wantedCount,
+		                                 int timeoutMilliseconds,
+		                                 std::size_t maxChunkBytes = 0);
+
+		// WORLD-ENTRY-002h: reads until `wantedCount` 3053 broadcasts have
+		// arrived. Same COUNT rationale as 3046.
+		Status PumpUntilUpdateStateBrdCount(std::size_t wantedCount,
+		                                    int timeoutMilliseconds,
+		                                    std::size_t maxChunkBytes = 0);
+
 		std::size_t MessagesHandled() const noexcept { return m_handled; }
 
 		void      Disconnect() noexcept;

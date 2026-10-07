@@ -80,6 +80,11 @@ namespace Modern::Server::World
 		// joined threads would be waiting on a runtime that is still mutating.
 		m_field.StopMovementTicker();
 
+		// WORLD-ENTRY-002h: the resource ticker is stopped before the field role,
+		// for the same reason - it must not advance resources for sessions that
+		// have already been torn down.
+		m_field.StopResourceTicker();
+
 		m_agent.Stop();
 		m_field.Stop();
 		m_running = false;

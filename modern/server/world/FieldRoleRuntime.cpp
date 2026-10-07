@@ -31,16 +31,18 @@ const char* ToString(FieldEvent event) noexcept
 	{
 		switch (event)
 		{
-		case FieldEvent::Listening:           return "Listening";
-		case FieldEvent::ClientConnected:     return "ClientConnected";
-		case FieldEvent::IdentityAccepted:   return "IdentityAccepted";
-		case FieldEvent::SpawnSent:          return "SpawnSent";
-		case FieldEvent::MoveStateSent:      return "MoveStateSent";
-		case FieldEvent::MoveStateUnchanged: return "MoveStateUnchanged";
-		case FieldEvent::GotoAccepted:       return "GotoAccepted";
-		case FieldEvent::GotoRejected:       return "GotoRejected";
+		case FieldEvent::Listening:            return "Listening";
+		case FieldEvent::ClientConnected:      return "ClientConnected";
+		case FieldEvent::IdentityAccepted:    return "IdentityAccepted";
+		case FieldEvent::SpawnSent:           return "SpawnSent";
+		case FieldEvent::MoveStateSent:       return "MoveStateSent";
+		case FieldEvent::MoveStateUnchanged:  return "MoveStateUnchanged";
+		case FieldEvent::GotoAccepted:        return "GotoAccepted";
+		case FieldEvent::GotoRejected:        return "GotoRejected";
+		case FieldEvent::ResourceUpdateSent:  return "ResourceUpdateSent";
+		case FieldEvent::ResourceBroadcastSent: return "ResourceBroadcastSent";
 		case FieldEvent::ClientRejected:      return "ClientRejected";
-		case FieldEvent::ClientDisconnected: return "ClientDisconnected";
+		case FieldEvent::ClientDisconnected:  return "ClientDisconnected";
 		}
 		return "Unrecognised";
 	}
@@ -404,6 +406,9 @@ if (MovementState::MovementStateCodec::IsMoveState(message.header.type))
 		peer->session.SettleClaim();
 		peer->spawned.store(false, std::memory_order_release);
 
+		// WORLD-ENTRY-002h: unregister the resource session.
+		(void)m_resources.UnregisterSession(peer->session.GaeaId());
+
 		{
 			const std::lock_guard<std::mutex> lock(m_peersMutex);
 			for (auto it = m_peers.begin(); it != m_peers.end(); ++it)
@@ -494,6 +499,26 @@ Emit(FieldEvent::SpawnSent, "", spawn.gaeaId);
 		// reason naming the map. Refusing the spawn would turn a missing asset into a
 		// failed login - the wrong diagnosis for the same underlying fault.
 		(void)m_movementWorld.Attach(peer->session.SessionId(), spawn.character);
+
+		// WORLD-ENTRY-002h: register the authoritative resource session.
+		// The peer's own 3046 goes via selfSink; other clients get 3053 via hpSink.
+		const auto characterId = spawn.character.id;
+		m_resources.RegisterSession(
+			spawn.character,
+			[this, peer](const std::vector<WireU8>& frame) {
+				ServerBatchEncoder batcher(peer->codec);
+				(void)SendEnveloped(batcher, peer, frame);
+				m_updateStateSent.fetch_add(1, std::memory_order_relaxed);
+			},
+			[this, peer](const std::vector<WireU8>& frame) {
+				BroadcastResourceState(peer, frame);
+				m_updateStateBrdSent.fetch_add(1, std::memory_order_relaxed);
+			},
+			[this, characterId](const Network::RanWire::DwPair& hp,
+			                    const Network::RanWire::DwPair& mp,
+			                    const Network::RanWire::DwPair& sp) {
+				WriteBackPools(characterId, hp, mp, sp);
+			});
 		return true;
 	}
 
@@ -747,81 +772,168 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 		return m_movementWorld.StartTicker();
 	}
 
-	void FieldRoleRuntime::StopMovementTicker() noexcept
+void FieldRoleRuntime::StopMovementTicker() noexcept
+{
+	m_movementWorld.StopTicker();
+}
+
+// WORLD-ENTRY-002h: resource recovery ticker - mirrors the movement ticker
+// pattern. Idempotent start.
+Status FieldRoleRuntime::StartResourceTicker()
+{
+	if (m_resourceTickerThread.joinable())
 	{
-		m_movementWorld.StopTicker();
+		return Ok();
+	}
+	m_stopResourceTicker.store(false, std::memory_order_release);
+	m_resourceTickerThread = std::thread([this] {
+		auto last = std::chrono::steady_clock::now();
+		while (!m_stopResourceTicker.load(std::memory_order_acquire))
+		{
+			const auto now = std::chrono::steady_clock::now();
+			const float elapsed = std::chrono::duration<float>(now - last).count();
+			last = now;
+
+			if (elapsed > 1.0f)
+			{
+				// Legacy movement ticker clamps at 1s; resource uses same
+				// safeguard against time jumps.
+				// (WorldMovementRuntime.cpp:35)
+				continue;
+			}
+
+			m_resources.Advance(elapsed);
+		}
+	});
+	return Ok();
+}
+
+void FieldRoleRuntime::StopResourceTicker() noexcept
+{
+	if (!m_resourceTickerThread.joinable())
+	{
+		return;
+	}
+	m_stopResourceTicker.store(true, std::memory_order_release);
+	m_resourceTickerThread.join();
+}
+
+void FieldRoleRuntime::BroadcastMoveState(const PeerPtr& exclude,
+	                                          const MovementState::MoveStateBroadcast& broadcast)
+{
+	std::vector<WireU8> packet;
+	if (const Status status =
+	        MovementState::MovementStateCodec::AppendMoveStateBroadcast(packet, broadcast);
+	    status.IsError())
+	{
+		// Already validated a moment ago by the caller, so this cannot fail; refused
+		// rather than ignored so a future change that breaks it is visible.
+		return;
 	}
 
-	void FieldRoleRuntime::BroadcastMoveState(const PeerPtr& exclude,
-	                                          const MovementState::MoveStateBroadcast& broadcast)
+	// The peer list is COPIED under the lock and then used without it.
+	//
+	// Holding m_peersMutex across a send would mean one slow client's broadcast
+	// stalled every other connection's replies AND its own disconnect handling. The
+	// copy is a vector of shared_ptr, so a peer that disconnects mid-broadcast simply
+	// fails its send and is dropped.
+	std::vector<PeerPtr> targets;
 	{
-		std::vector<WireU8> packet;
-		if (const Status status =
-		        MovementState::MovementStateCodec::AppendMoveStateBroadcast(packet, broadcast);
-		    status.IsError())
+		const std::lock_guard<std::mutex> lock(m_peersMutex);
+		targets = m_peers;
+	}
+
+	for (const PeerPtr& peer : targets)
+	{
+		if (peer == exclude)
 		{
-			// Already validated a moment ago by the caller, so this cannot fail; refused
-			// rather than ignored so a future change that breaks it is visible.
+			continue;
+		}
+
+		// Only sessions that have earned a spawn receive movement. A connection that
+		// is mid-handshake has no character in the world to have moved.
+		if (!peer->spawned.load(std::memory_order_acquire))
+		{
+			continue;
+		}
+
+		// Wrapped in an envelope like every other server->client message, because
+		// NetCompressCodec is the established path and a second envelope format
+		// would be the duplication this milestone must avoid.
+		ServerBatchEncoder batcher(peer->codec);
+		(void)SendEnveloped(batcher, peer, packet);
+	}
+}
+
+// WORLD-ENTRY-002h: broadcasts a 3053 (StateBroadcast) to all authorized peers
+// except `exclude`. Mirrors BroadcastMoveState exactly.
+void FieldRoleRuntime::BroadcastResourceState(const PeerPtr& exclude,
+	                                          const std::vector<WireU8>& packet)
+{
+	std::vector<PeerPtr> targets;
+	{
+		const std::lock_guard<std::mutex> lock(m_peersMutex);
+		targets = m_peers;
+	}
+
+	for (const PeerPtr& peer : targets)
+	{
+		if (peer == exclude)
+		{
+			continue;
+		}
+
+		if (!peer->spawned.load(std::memory_order_acquire))
+		{
+			continue;
+		}
+
+		ServerBatchEncoder batcher(peer->codec);
+		(void)SendEnveloped(batcher, peer, packet);
+	}
+}
+
+// WORLD-ENTRY-002h: writes the authoritative pools back to the repository.
+	// Invoked from the resource sync service's write-back sink.
+	void FieldRoleRuntime::WriteBackPools(WorldCharacterId characterId,
+	                                        const Network::RanWire::DwPair& hp,
+	                                        const Network::RanWire::DwPair& mp,
+	                                        const Network::RanWire::DwPair& sp)
+	{
+		auto found = m_repository.Find(characterId);
+		if (found.IsError())
+		{
 			return;
 		}
-
-		// The peer list is COPIED under the lock and then used without it.
-		//
-		// Holding m_peersMutex across a send would mean one slow client's broadcast
-		// stalled every other connection's replies AND its own disconnect handling. The
-		// copy is a vector of shared_ptr, so a peer that disconnects mid-broadcast simply
-		// fails its send and is dropped.
-		std::vector<PeerPtr> targets;
-		{
-			const std::lock_guard<std::mutex> lock(m_peersMutex);
-			targets = m_peers;
-		}
-
-		for (const PeerPtr& peer : targets)
-		{
-			if (peer == exclude)
-			{
-				continue;
-			}
-
-			// Only sessions that have earned a spawn receive movement. A connection that
-			// is mid-handshake has no character in the world to have moved.
-			if (!peer->spawned.load(std::memory_order_acquire))
-			{
-				continue;
-			}
-
-			// Wrapped in an envelope like every other server->client message, because
-			// NetCompressCodec is the established path and a second envelope format
-			// would be the duplication this milestone must avoid.
-			ServerBatchEncoder batcher(peer->codec);
-			(void)SendEnveloped(batcher, peer, packet);
-		}
+		WorldCharacter record = found.GetValue();
+		record.hp = hp;
+		record.mp = mp;
+		record.sp = sp;
+		(void)m_repository.Replace(record);
 	}
 
-	Status FieldRoleRuntime::SendEnveloped(ServerBatchEncoder& batcher, PeerPtr peer,
+Status FieldRoleRuntime::SendEnveloped(ServerBatchEncoder& batcher, PeerPtr peer,
 	                                       const std::vector<WireU8>& inner)
-	{
-		// Same Add-then-Flush as the Agent role: a 16-byte 3033 is far below the
-		// 1000-byte flush trigger, so Add buffers it and the frame must be flushed
-		// explicitly. These are SENT, not held.
-		std::vector<WireU8> pending;
-		const BatchAction   action = batcher.Add(inner, pending);
+{
+	// The per-peer codec is NOT internally synchronised (CompressionCodec.h:
+	// "NOT internally synchronised; a server with concurrent senders should hold
+	// one per thread"). Holding the peer's send mutex across the WHOLE encode-
+	// and-send - not just the transport call - prevents the resource ticker's
+	// broadcast from compressing into the same LZO work buffer the peer's own
+	// worker thread is using at the same time.
+	const std::lock_guard<std::mutex> lock(peer->sendMutex);
 
-		if (action == BatchAction::Buffered)
+	std::vector<WireU8> pending;
+	const BatchAction   action = batcher.Add(inner, pending);
+
+	if (action == BatchAction::Buffered)
+	{
+		if (!batcher.Flush(pending))
 		{
-			if (!batcher.Flush(pending))
-			{
-				return Status(ErrorCode::InvalidState);
-			}
+			return Status(ErrorCode::InvalidState);
 		}
-
-		return SendRaw(peer, pending);
 	}
 
-	Status FieldRoleRuntime::SendRaw(PeerPtr peer, const std::vector<WireU8>& bytes)
-	{
-		const std::lock_guard<std::mutex> lock(peer->sendMutex);
-		return peer->transport.Send(bytes.data(), bytes.size());
-	}
+	return peer->transport.Send(pending.data(), pending.size());
+}
 }

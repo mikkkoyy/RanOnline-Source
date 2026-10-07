@@ -1876,11 +1876,163 @@ namespace
 		}));
 
 		server.Stop();
-		CHECK_EQ(server.Runtime().Field().GotoSentCount(), static_cast<std::size_t>(0));
+CHECK_EQ(server.Runtime().Field().GotoSentCount(), static_cast<std::size_t>(0));
 		CHECK_EQ(server.Runtime().Field().GotoRefusedCount(), static_cast<std::size_t>(1));
 
 	}
 }
+
+// WORLD-ENTRY-002h: authoritative resource sync integration tests
+namespace ModernTests
+{
+
+MODERN_TEST(ResourceSync_ReceivesTheFirst3046AfterTheStateTimer)
+{
+	TestWorldServer server;
+	CHECK(server.Start().IsOk());
+
+	// Start the resource ticker on the server
+	CHECK(server.Runtime().Field().StartResourceTicker().IsOk());
+
+	SpawnedClient client;
+	CHECK(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+	CHECK(client.spawn.received);
+
+	// The character spawns with full HP (3000 for level 10). The timer is
+	// 1.6s with reset-to-zero. Advance 1.7s to fire once.
+	server.Runtime().Field().ResourceSync().Advance(1.7f);
+
+	// Pump the Field connection to receive the 3046
+	CHECK(client.connection.PumpUntilUpdateStateCount(1, kDeadline).IsOk());
+
+	CHECK(client.protocol.UpdateStateCount() == 1);
+	const auto& update = client.protocol.UpdateState();
+	CHECK(update.received);
+	CHECK_EQ(update.gaeaId, client.spawn.gaeaId);
+	CHECK_EQ(update.hpNow, 3000u); // full, no recovery visible yet
+	CHECK_EQ(update.hpMax, 3000u);
+
+	server.Stop();
+	server.Runtime().Field().StopResourceTicker();
+}
+
+MODERN_TEST(ResourceSync_RecoveryAdvancesPoolsOverTime)
+{
+	TestWorldServer server;
+	CHECK(server.Start().IsOk());
+	CHECK(server.Runtime().Field().StartResourceTicker().IsOk());
+
+	SpawnedClient client;
+	CHECK(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+	// Character level 10: hpMax=3000, rate 0.003 -> 9 HP/sec
+	// Spend some HP first so recovery is visible
+	{
+		WireU32 spent = 0;
+		CHECK(server.Runtime().Field().ResourceSync().Spend(
+			client.spawn.gaeaId, Modern::Resources::ResourceKind::Hp, 100, spent).IsOk());
+		CHECK_EQ(spent, 100u);
+	}
+
+	// Advance 1.0s -> 9 HP recovered
+	server.Runtime().Field().ResourceSync().Advance(1.0f);
+
+	CHECK(client.connection.PumpUntilUpdateStateCount(1, kDeadline).IsOk());
+	const auto& update = client.protocol.UpdateState();
+	CHECK_EQ(update.hpNow, 3000u - 100u + 9u); // 2909
+
+	server.Stop();
+	server.Runtime().Field().StopResourceTicker();
+}
+
+MODERN_TEST(ResourceSync_TwoClients_GetOnlyTheirOwn3046)
+{
+	TestWorldServer server;
+	CHECK(server.Start().IsOk());
+	CHECK(server.Runtime().Field().StartResourceTicker().IsOk());
+
+	SpawnedClient clientA;
+	CHECK(clientA.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+	const WireU32 gaeaA = clientA.spawn.gaeaId;
+
+	SpawnedClient clientB;
+	CHECK(clientB.Spawn(server, kUserB, kPassB, kCharB1.value, kDeadline).IsOk());
+	const WireU32 gaeaB = clientB.spawn.gaeaId;
+
+	// Advance timer for both
+	server.Runtime().Field().ResourceSync().Advance(1.7f);
+
+	// Each client should receive exactly ONE 3046 (their own)
+	CHECK(clientA.connection.PumpUntilUpdateStateCount(1, kDeadline).IsOk());
+	CHECK_EQ(clientA.protocol.UpdateStateCount(), 1u);
+	CHECK_EQ(clientA.protocol.UpdateState().gaeaId, gaeaA);
+
+	CHECK(clientB.connection.PumpUntilUpdateStateCount(1, kDeadline).IsOk());
+	CHECK_EQ(clientB.protocol.UpdateStateCount(), 1u);
+	CHECK_EQ(clientB.protocol.UpdateState().gaeaId, gaeaB);
+
+	server.Stop();
+	server.Runtime().Field().StopResourceTicker();
+}
+
+MODERN_TEST(ResourceSync_ApplyDamage_ClientGets3046_OtherGets3053)
+{
+	TestWorldServer server;
+	CHECK(server.Start().IsOk());
+	CHECK(server.Runtime().Field().StartResourceTicker().IsOk());
+
+	SpawnedClient clientA;
+	CHECK(clientA.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+	const WireU32 gaeaA = clientA.spawn.gaeaId;
+
+	SpawnedClient clientB;
+	CHECK(clientB.Spawn(server, kUserB, kPassB, kCharB1.value, kDeadline).IsOk());
+	const WireU32 gaeaB = clientB.spawn.gaeaId;
+
+	// Apply damage to A
+	WireU32 applied = server.Runtime().Field().ResourceSync().ApplyDamage(gaeaA, 500);
+	CHECK_EQ(applied, 500u);
+
+	// A receives 3046 (self)
+	CHECK(clientA.connection.PumpUntilUpdateStateCount(1, kDeadline).IsOk());
+	CHECK_EQ(clientA.protocol.UpdateStateCount(), 1u);
+	CHECK_EQ(clientA.protocol.UpdateState().hpNow, 3000u - 500u);
+
+	// B receives 3053 (broadcast)
+	CHECK(clientB.connection.PumpUntilUpdateStateBrdCount(1, kDeadline).IsOk());
+	CHECK_EQ(clientB.protocol.UpdateStateBrdCount(), 1u);
+	CHECK_EQ(clientB.protocol.UpdateStateBrd().gaeaId, gaeaA);
+	CHECK_EQ(clientB.protocol.UpdateStateBrd().hpNow, 3000u - 500u);
+
+	server.Stop();
+	server.Runtime().Field().StopResourceTicker();
+}
+
+MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
+{
+	TestWorldServer server;
+	CHECK(server.Start().IsOk());
+	CHECK(server.Runtime().Field().StartResourceTicker().IsOk());
+
+	SpawnedClient client;
+	CHECK(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+	// Spend to trigger an event-driven 3046
+	WireU32 spent = 0;
+	CHECK(server.Runtime().Field().ResourceSync().Spend(
+		client.spawn.gaeaId, Modern::Resources::ResourceKind::Mp, 50, spent).IsOk());
+
+	// Pump with 1-byte fragments
+	CHECK(client.connection.PumpUntilUpdateStateCount(1, kDeadline, 1).IsOk());
+
+	CHECK_EQ(client.protocol.UpdateStateCount(), 1u);
+	CHECK_EQ(client.protocol.UpdateState().mpNow, 1500u - 50u);
+
+	server.Stop();
+	server.Runtime().Field().StopResourceTicker();
+}
+
+} // namespace ModernTests
 
 int main()
 {
