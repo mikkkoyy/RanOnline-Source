@@ -400,10 +400,51 @@ namespace Modern::Client
 				received.actState = broadcast.actState;
 				received.frame    = frame;
 
-				m_moveState = received;
-				++m_moveStateCount;
-				continue;
+			m_moveState = received;
+			++m_moveStateCount;
+			continue;
+		}
+
+		// ---- 3035: an accepted GOTO -----------------------------------------
+		//
+		// Checked BEFORE the spawn test for the same reason the 3033 is: all
+		// three arrive on ONE long-lived Field connection, interleaved. A client
+		// that has spawned and then moved receives 2333, 3033 and 3035 in
+		// whatever order the server produced them.
+		if (Goto::GotoCodec::IsGotoBroadcast(message.header.type))
+		{
+			Goto::GotoBroadcast broadcast;
+			if (const Status status =
+			        Goto::GotoCodec::DecodeGotoBroadcast(frame, broadcast);
+			    status.IsError())
+			{
+				// Terminal, and differently so from an unknown id. The id is one
+				// this client recognises, so a bad one is a protocol fault worth
+				// reporting rather than something to skip past - and the stream
+				// cannot be trusted to be in the right place afterwards.
+				m_fieldFailed = true;
+				return status;
 			}
+
+			// Copied field by field rather than aliased, so what a test asserts on
+			// is plainly what arrived.
+			WorldGotoState received;
+			received.received          = true;
+			received.gaeaId            = broadcast.gaeaId;
+			received.actState          = broadcast.actState;
+			received.currentPositionX  = broadcast.currentPosition.x;
+			received.currentPositionY  = broadcast.currentPosition.y;
+			received.currentPositionZ  = broadcast.currentPosition.z;
+			received.targetPositionX   = broadcast.targetPosition.x;
+			received.targetPositionY   = broadcast.targetPosition.y;
+			received.targetPositionZ   = broadcast.targetPosition.z;
+			received.delay             = broadcast.delay;
+			received.frame             = frame;
+
+			m_goto = received;
+			++m_gotoCount;
+			continue;
+		}
 
 // ---- 3053: HP broadcast -----------------------------------------------
 		//

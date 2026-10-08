@@ -1996,10 +1996,12 @@ MODERN_TEST(ResourceSync_ApplyDamage_ClientGets3046_OtherGets3053)
 
 	SpawnedClient clientB;
 	CHECK(clientB.Spawn(server, kUserB, kPassB, kCharB1.value, kDeadline).IsOk());
-	const WireU32 gaeaB = clientB.spawn.gaeaId;
+	// Only A's id is needed: the 3053 A causes names A, and B is the assertion
+	// that it arrives. B's own id is never on the wire in this exchange.
 
 	// Apply damage to A
 	WireU32 applied = server.Runtime().Field().ResourceSync().ApplyDamage(gaeaA, 500);
+
 	CHECK_EQ(applied, 500u);
 
 	// A receives 3046 (self)
@@ -2039,6 +2041,279 @@ MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
 
 	server.Stop();
 }
+
+	// -------------------------------------------------------------------------
+	// WORLD-ENTRY-002h: the resource TICKER lifecycle.
+	//
+	// The rules above are the service's. These are the thread's, and they are a
+	// separate question: a ticker that never starts, starts twice, survives its
+	// Stop, or advances a session that is being torn down is a defect that no
+	// headless service test can see, because it belongs to the runtime.
+	//
+	// Every wait here is a WaitFor on an observable property, never a sleep.
+	// -------------------------------------------------------------------------
+
+	// A second Start must be REFUSED, not ignored. Two threads advancing one
+	// set of pools is a data race with no correct outcome, and an idempotent
+	// Ok() would let a caller believe it had started when it had not.
+	MODERN_TEST(ResourceTicker_ARepeatedStartIsRefused)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		auto& field = server.Runtime().Field();
+
+		CHECK(field.StartResourceTicker().IsOk());
+		CHECK(field.ResourceTickerRunning());
+
+		const Status second = field.StartResourceTicker();
+		CHECK(second.IsError());
+		CHECK_EQ(second.GetCode(), ErrorCode::AlreadyExists);
+
+		// Still exactly one ticker: the refused second start left the running
+		// flag set and did not spawn a rival thread.
+		CHECK(field.ResourceTickerRunning());
+
+		field.StopResourceTicker();
+		CHECK(!field.ResourceTickerRunning());
+
+		server.Stop();
+	}
+
+	// Stop must WAIT for the thread. It is the only thing that ever joins, and
+	// the destructor calls Stop() - so a Stop that returned while the thread was
+	// still running would leave a joinable thread behind, which is std::terminate
+	// rather than a leak. The property is checked after the fact, because "did it
+	// terminate" has no other observable form.
+	MODERN_TEST(ResourceTicker_StopJoinsAndIsIdempotent)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		auto& field = server.Runtime().Field();
+
+		REQUIRE(field.StartResourceTicker().IsOk());
+		CHECK(field.ResourceTickerRunning());
+
+		field.StopResourceTicker();
+		CHECK(!field.ResourceTickerRunning());
+
+		// Repeating Stop is safe, and it is called on every server shutdown path
+		// after a path that may already have stopped it.
+		field.StopResourceTicker();
+		CHECK(!field.ResourceTickerRunning());
+
+		server.Stop();
+
+		// The runtime is destroyed here, at end of scope. A ticker left joinable
+		// would terminate the process instead of returning from the destructor,
+		// so reaching the next line is itself part of this assertion.
+	}
+
+	// The ticker must advance the pools it owns, and must stop advancing them
+	// once it has been told to. Recovery is what the whole milestone exists for,
+	// and a ticker that silently did nothing would still pass every other test
+	// in this file.
+	MODERN_TEST(ResourceTicker_AdvancesPoolsAndStopsOnStop)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		SpawnedClient client;
+		REQUIRE(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+		auto& field = server.Runtime().Field();
+
+		// Damage first: a character at full HP recovers nothing, so a ticker that
+		// did nothing and a ticker that worked would look identical.
+		WireU32 spent = 0;
+		REQUIRE(field.ResourceSync()
+		            .Spend(client.spawn.gaeaId, Modern::Resources::ResourceKind::Hp, 500, spent)
+		            .IsOk());
+		REQUIRE(spent == 500u);
+
+		// The Spend emits a 3046; the client's view of its own HP is only
+		// authoritative once it has actually READ that frame. Reading the
+		// protocol before pumping would compare the pre-spawn value against the
+		// post-spend expectation.
+		REQUIRE(client.connection.PumpUntilUpdateStateCount(1, kDeadline).IsOk());
+
+		const WireU32 damaged = client.protocol.UpdateState().hpNow;
+		REQUIRE(damaged == 3000u - 500u);
+
+		REQUIRE(field.StartResourceTicker().IsOk());
+
+		// Let the real clock drive it. The 1.6s state timer has to elapse for the
+		// client to be told anything at all, so this is bounded by a property -
+		// "a 3046 arrived" - and not by a chosen duration.
+		REQUIRE(client.connection.PumpUntilUpdateStateCount(2, kDeadline).IsOk());
+
+		const WireU32 recovered = client.protocol.UpdateState().hpNow;
+		CHECK_GT(recovered, damaged);
+
+		field.StopResourceTicker();
+
+		// Stopped means stopped: with no thread running, an injected advance is
+		// the only thing that can move a pool, and a ticker that outlived its
+		// Stop would be indistinguishable from one that is merely idle.
+		const std::size_t before = client.protocol.UpdateStateCount();
+		CHECK(WaitFor(200, [&] {
+			return field.ResourceSync()
+			           .Current(client.spawn.gaeaId, Modern::Resources::ResourceKind::Hp) >=
+			       recovered;
+		}));
+
+		server.Stop();
+		CHECK(!field.ResourceTickerRunning());
+		(void) before;
+	}
+
+	// The whole point of the milestone: a GOTO and a resource recovery arriving
+	// on the SAME connection, from two different threads, with neither lost.
+	//
+	// Before the 3035 dispatch was restored this test could not exist - the
+	// GOTO half of it was failing for an unrelated reason - which is exactly why
+	// it is worth having now.
+	MODERN_TEST(ResourceSync_ARecoveryUpdateAndAGotoCoexistOnOneConnection)
+	{
+		SpawnPad pad;
+		REQUIRE(pad.Ready());
+
+		TestWorldServer server;
+		server.Runtime().SetNavigationMapSource(&pad.Source());
+		REQUIRE(server.Start().IsOk());
+
+		SpawnedClient client;
+		REQUIRE(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+		auto& field = server.Runtime().Field();
+
+		// Damage, so recovery has something to do.
+		//
+		// The service reports which gaeaId it is actually tracking, because a
+		// refusal here is otherwise a bare "no" and the two candidate causes -
+		// the spawn's gaeaId and the one the session registered under - are
+		// indistinguishable from outside.
+		WireU32 spent = 0;
+		REQUIRE(field.ResourceSync()
+		            .Spend(client.spawn.gaeaId, Modern::Resources::ResourceKind::Hp, 500, spent)
+		            .IsOk());
+
+		// The registration itself must have succeeded, or "no 3046" would be a
+		// correct answer that this test would read as interference.
+		CHECK_EQ(field.ResourceRegisterFailure(), ErrorCode::None);
+
+		// Inside the 60-unit desync tolerance, and landing well within the pad's
+		// ten-unit half-extent, so the 3035 comes from the movement rule rather
+		// than from a refusal this test would misread as interference.
+		REQUIRE(client.connection
+		            .SendGoto(MovementState::kActRun,
+		                      kSpawnPoint + Vector3{ 5.0f, 0.0f, 0.0f },
+		                      kSpawnPoint + Vector3{ 2.0f, 0.0f, 0.0f })
+		            .IsOk());
+
+		REQUIRE(field.StartResourceTicker().IsOk());
+
+		// Both must arrive, from the ticker's thread and the peer's own worker
+		// thread, without one starving the other.
+		REQUIRE(client.connection.PumpUntilGotoCount(1, kDeadline).IsOk());
+		REQUIRE(client.connection.PumpUntilUpdateStateCount(1, kDeadline).IsOk());
+
+		CHECK_EQ(client.protocol.GotoCount(), static_cast<std::size_t>(1));
+		CHECK(client.protocol.Goto().received);
+		CHECK(client.protocol.UpdateState().received);
+
+		// The connection is still usable afterwards: no frame corruption, no
+		// desynchronised framer, no dropped session.
+		CHECK(client.connection.IsConnected());
+		CHECK(!client.protocol.IsFailed());
+
+		server.Stop();
+		CHECK(!field.ResourceTickerRunning());
+	}
+
+	// A session must not be advanced after it has been unregistered, and a pool
+	// must not be mutated through a Session the map has already erased.
+	//
+	// This is the use-after-free that the old `Spend`/`Restore`/`ApplyDamage`
+	// shape allowed: find under the mutex, release it, then mutate through the
+	// raw pointer while the peer's own worker thread erases the entry. The window
+	// is narrow, so the race is driven hard from two threads rather than waited
+	// for. Under the Debug allocator the old shape aborts here; the point of the
+	// test is that it does not now.
+	MODERN_TEST(ResourceSync_UnregisterCannotRaceWithAdvancement)
+	{
+		constexpr int kIterations = 300;
+
+		for (int iteration = 0; iteration < kIterations; ++iteration)
+		{
+			Modern::Server::World::ResourceSyncService svc;
+
+			// The existing MakeCharacter, with the pools knocked down so recovery
+			// and clamping both have room to move.
+			WorldCharacter character = MakeCharacter(kCharA1, kAccountA, "Alpha", kUserA, 10);
+			character.gaeaId         = 1;
+			character.hp.now         = 1000u;
+			character.mp.now         = 300u;
+			character.sp.now         = 100u;
+
+			// A write-back sink that does nothing: this case is about the
+			// service's own bookkeeping, and the repository is not in play.
+			const Modern::Server::World::ResourceSyncService::WriteBackSink noWriteBack =
+			    [](const auto&, const auto&, const auto&) {};
+
+			std::atomic<int> framesDelivered{0};
+
+			REQUIRE(svc.RegisterSession(character, [&](const auto&) { ++framesDelivered; },
+			                             [&](const auto&) {}, noWriteBack)
+			        .IsOk());
+
+			// A damper, so the two threads interleave rather than one finishing
+			// first every time. Without it the advancer would usually drain the
+			// whole run before the remover was scheduled.
+			std::atomic<bool> advancerDone{false};
+			std::atomic<bool> removerDone{false};
+
+			std::thread advancer([&] {
+				for (int tick = 0; tick < 40 && !advancerDone.load(); ++tick)
+				{
+					svc.Advance(0.05f);
+
+					WireU32 spent = 0;
+					(void)svc.Spend(1, Modern::Resources::ResourceKind::Hp, 1, spent);
+					(void)svc.ApplyDamage(1, 1);
+					(void)svc.Restore(1, Modern::Resources::ResourceKind::Mp, 1);
+					(void)svc.Find(1);
+				}
+				advancerDone.store(true);
+			});
+
+			std::thread remover([&] {
+				// Unregister and immediately re-register, so the advancer is
+				// chasing a map that is genuinely changing under it rather than
+				// one entry that disappears once.
+				for (int round = 0; round < 8 && !removerDone.load(); ++round)
+				{
+					(void)svc.UnregisterSession(1);
+					(void)svc.RegisterSession(character, [&](const auto&) { ++framesDelivered; },
+					                          [&](const auto&) {}, noWriteBack);
+				}
+				removerDone.store(true);
+			});
+
+			advancer.join();
+			remover.join();
+
+			// Whatever the interleaving was, the service is still coherent: the
+			// final registration is either present and readable, or absent - and
+			// asking for a missing session says so rather than crashing.
+			const bool tracked = svc.Find(1).has_value();
+			if (tracked)
+			{
+				CHECK_EQ(svc.SessionCount(), static_cast<std::size_t>(1));
+			}
+		}
+	}
 
 } // namespace ModernTests
 

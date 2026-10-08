@@ -23,9 +23,25 @@ namespace Modern::Server::World
         }
 
         Modern::Resources::ResourceState::ResourceRecord record;
-        record.hp = { character.hp.now, character.hp.max };
-        record.mp = { character.mp.now, character.mp.max };
-        record.sp = { character.sp.now, character.sp.max };
+
+        // Field-named, and deliberately NOT brace-initialised from the DwPair.
+        //
+        // The two types have OPPOSITE field order:
+        //     RanWire::DwPair                = { now,  max   }
+        //     Resources::Pool                = { maximum, current }
+        //
+        // so `record.hp = { character.hp.now, character.hp.max }` compiles, reads
+        // as obvious, and quietly puts the CURRENT value in the MAXIMUM slot. The
+        // effect is not a cosmetic slip: the character's real maximum is lost, so
+        // recovery accrues against the wounded value, Restore clamps at the wounded
+        // value - which makes damage permanent - and every 3046 tells the client a
+        // maximum that is not the character's.
+        record.hp.maximum = character.hp.max;
+        record.hp.current = character.hp.now;
+        record.mp.maximum = character.mp.max;
+        record.mp.current = character.mp.now;
+        record.sp.maximum = character.sp.max;
+        record.sp.current = character.sp.now;
 
         // Legacy globals - no items, passives or facts in the world model
         // yet. StatCalculator mirrors these:
@@ -165,6 +181,86 @@ namespace Modern::Server::World
         (void)hpQueue;
     }
 
+    // -------------------------------------------------------------------------
+    // Frame construction and delivery.
+    //
+    // Both require m_mutex held and touch no I/O; Deliver takes neither the lock
+    // nor any reference to a Session.
+    // -------------------------------------------------------------------------
+
+    void ResourceSyncService::BuildSelfFrame(const Session& session, Outgoing& out)
+    {
+        std::vector<WireU8> frame;
+        const Status st = Network::UpdateState::UpdateStateCodec::AppendStateUpdate(
+            frame,
+            {
+                { session.state.GetCurrent(Resources::ResourceKind::Hp),
+                  session.state.GetMaximum(Resources::ResourceKind::Hp) },
+                { session.state.GetCurrent(Resources::ResourceKind::Mp),
+                  session.state.GetMaximum(Resources::ResourceKind::Mp) },
+                { session.state.GetCurrent(Resources::ResourceKind::Sp),
+                  session.state.GetMaximum(Resources::ResourceKind::Sp) },
+                { 0, 0 },
+                session.name,
+                session.gaeaId,
+                session.characterId,
+                false
+            });
+        if (st.IsError())
+        {
+            return;
+        }
+
+        out.hasSelf   = true;
+        out.self      = session.selfSink;
+        out.selfFrame = std::move(frame);
+        out.writeBack = session.writeBackSink;
+        out.hp        = { session.state.GetCurrent(Resources::ResourceKind::Hp),
+                          session.state.GetMaximum(Resources::ResourceKind::Hp) };
+        out.mp        = { session.state.GetCurrent(Resources::ResourceKind::Mp),
+                          session.state.GetMaximum(Resources::ResourceKind::Mp) };
+        out.sp        = { session.state.GetCurrent(Resources::ResourceKind::Sp),
+                          session.state.GetMaximum(Resources::ResourceKind::Sp) };
+    }
+
+    void ResourceSyncService::BuildHpFrame(const Session& session, Outgoing& out)
+    {
+        std::vector<WireU8> frame;
+        const Status st = Network::UpdateState::UpdateStateCodec::AppendStateBroadcast(
+            frame,
+            {
+                session.gaeaId,
+                { session.state.GetCurrent(Resources::ResourceKind::Hp),
+                  session.state.GetMaximum(Resources::ResourceKind::Hp) },
+                false
+            });
+        if (st.IsError())
+        {
+            return;
+        }
+
+        out.hasHp   = true;
+        out.hpSink  = session.hpSink;
+        out.hpFrame = std::move(frame);
+    }
+
+    void ResourceSyncService::Deliver(const Outgoing& out)
+    {
+        // Self first, then the write-back, then the broadcast. The write-back
+        // updates the repository and the broadcast tells everyone else, so a
+        // listener that reacts to a 3053 by reading the character must not be
+        // able to observe it before the record behind it has been updated.
+        if (out.hasSelf)
+        {
+            out.self(out.selfFrame);
+            out.writeBack(out.hp, out.mp, out.sp);
+        }
+        if (out.hasHp)
+        {
+            out.hpSink(out.hpFrame);
+        }
+    }
+
     Status ResourceSyncService::Spend(WireU32 gaeaId,
                                        Resources::ResourceKind kind,
                                        WireU32 amount,
@@ -177,81 +273,43 @@ namespace Modern::Server::World
             return Ok();
         }
 
-        Session* session = nullptr;
+        // ONE lock acquisition, held across the lookup, the mutation and the
+        // frame encoding. The previous shape - find under the lock, release it,
+        // then mutate through the raw pointer - let UnregisterSession erase the
+        // map entry and rebalance the tree while this thread was still reading
+        // and writing through the pointer it had obtained.
+        Outgoing out;
         {
-            std::lock_guard lock(m_mutex);
-            auto it = m_sessions.find(gaeaId);
+            const std::lock_guard lock(m_mutex);
+
+            const auto it = m_sessions.find(gaeaId);
             if (it == m_sessions.end())
             {
                 return Status(ErrorCode::NotFound);
             }
-            session = &it->second;
-        }
+            Session& session = it->second;
 
-        const WireU32 current = session->state.GetCurrent(kind);
-        if (current == 0)
-        {
-            return Ok();
-        }
-
-        const WireU32 actual = session->state.Spend(kind, amount);
-        if (actual == 0)
-        {
-            return Ok();
-        }
-
-        spent = actual;
-
-        // Emit 3046 self
-        {
-            std::vector<WireU8> frame;
-            const WireU32 hpNow = session->state.GetCurrent(Resources::ResourceKind::Hp);
-            const WireU32 hpMax = session->state.GetMaximum(Resources::ResourceKind::Hp);
-            const WireU32 mpNow = session->state.GetCurrent(Resources::ResourceKind::Mp);
-            const WireU32 mpMax = session->state.GetMaximum(Resources::ResourceKind::Mp);
-            const WireU32 spNow = session->state.GetCurrent(Resources::ResourceKind::Sp);
-            const WireU32 spMax = session->state.GetMaximum(Resources::ResourceKind::Sp);
-
-            if (const Status st = Network::UpdateState::UpdateStateCodec::AppendStateUpdate(frame,
-                {
-                    { hpNow, hpMax },
-                    { mpNow, mpMax },
-                    { spNow, spMax },
-                    { 0, 0 },
-                    session->name,
-                    session->gaeaId,
-                    session->characterId,
-                    false
-                });
-                st.IsOk())
+            if (session.state.GetCurrent(kind) == 0)
             {
-                SelfFrameSink selfCopy = session->selfSink;
-                WriteBackSink wbCopy   = session->writeBackSink;
-                selfCopy(frame);
-                wbCopy({ hpNow, hpMax }, { mpNow, mpMax }, { spNow, spMax });
+                return Ok();
+            }
+
+            const WireU32 actual = session.state.Spend(kind, amount);
+            if (actual == 0)
+            {
+                return Ok();
+            }
+
+            spent = actual;
+
+            BuildSelfFrame(session, out);
+            if (kind == Resources::ResourceKind::Hp)
+            {
+                BuildHpFrame(session, out);
             }
         }
 
-        // HP spend also emits 3053
-        if (kind == Resources::ResourceKind::Hp)
-        {
-            std::vector<WireU8> frame;
-            const WireU32 hpNow = session->state.GetCurrent(Resources::ResourceKind::Hp);
-            const WireU32 hpMax = session->state.GetMaximum(Resources::ResourceKind::Hp);
-
-            if (const Status st = Network::UpdateState::UpdateStateCodec::AppendStateBroadcast(frame,
-                {
-                    session->gaeaId,
-                    { hpNow, hpMax },
-                    false
-                });
-                st.IsOk())
-            {
-                HpFrameSink hpCopy = session->hpSink;
-                hpCopy(frame);
-            }
-        }
-
+        Deliver(out);
         return Ok();
     }
 
@@ -264,76 +322,32 @@ namespace Modern::Server::World
             return Ok();
         }
 
-        Session* session = nullptr;
+        Outgoing out;
         {
-            std::lock_guard lock(m_mutex);
-            auto it = m_sessions.find(gaeaId);
+            const std::lock_guard lock(m_mutex);
+
+            const auto it = m_sessions.find(gaeaId);
             if (it == m_sessions.end())
             {
                 return Status(ErrorCode::NotFound);
             }
-            session = &it->second;
-        }
+            Session& session = it->second;
 
-        const WireU32 before = session->state.GetCurrent(kind);
-        session->state.Restore(kind, amount);
-        const WireU32 after = session->state.GetCurrent(kind);
-
-        if (before == after)
-        {
-            return Ok();
-        }
-
-        // Emit 3046 self
-        {
-            std::vector<WireU8> frame;
-            const WireU32 hpNow = session->state.GetCurrent(Resources::ResourceKind::Hp);
-            const WireU32 hpMax = session->state.GetMaximum(Resources::ResourceKind::Hp);
-            const WireU32 mpNow = session->state.GetCurrent(Resources::ResourceKind::Mp);
-            const WireU32 mpMax = session->state.GetMaximum(Resources::ResourceKind::Mp);
-            const WireU32 spNow = session->state.GetCurrent(Resources::ResourceKind::Sp);
-            const WireU32 spMax = session->state.GetMaximum(Resources::ResourceKind::Sp);
-
-            if (const Status st = Network::UpdateState::UpdateStateCodec::AppendStateUpdate(frame,
-                {
-                    { hpNow, hpMax },
-                    { mpNow, mpMax },
-                    { spNow, spMax },
-                    { 0, 0 },
-                    session->name,
-                    session->gaeaId,
-                    session->characterId,
-                    false
-                });
-                st.IsOk())
+            const WireU32 before = session.state.GetCurrent(kind);
+            session.state.Restore(kind, amount);
+            if (before == session.state.GetCurrent(kind))
             {
-                SelfFrameSink selfCopy = session->selfSink;
-                WriteBackSink wbCopy   = session->writeBackSink;
-                selfCopy(frame);
-                wbCopy({ hpNow, hpMax }, { mpNow, mpMax }, { spNow, spMax });
+                return Ok();
+            }
+
+            BuildSelfFrame(session, out);
+            if (kind == Resources::ResourceKind::Hp)
+            {
+                BuildHpFrame(session, out);
             }
         }
 
-        // HP restore also emits 3053
-        if (kind == Resources::ResourceKind::Hp)
-        {
-            std::vector<WireU8> frame;
-            const WireU32 hpNow = session->state.GetCurrent(Resources::ResourceKind::Hp);
-            const WireU32 hpMax = session->state.GetMaximum(Resources::ResourceKind::Hp);
-
-            if (const Status st = Network::UpdateState::UpdateStateCodec::AppendStateBroadcast(frame,
-                {
-                    session->gaeaId,
-                    { hpNow, hpMax },
-                    false
-                });
-                st.IsOk())
-            {
-                HpFrameSink hpCopy = session->hpSink;
-                hpCopy(frame);
-            }
-        }
-
+        Deliver(out);
         return Ok();
     }
 
@@ -344,95 +358,64 @@ namespace Modern::Server::World
             return 0;
         }
 
-        Session* session = nullptr;
+        WireU32 applied = 0;
+        Outgoing out;
         {
-            std::lock_guard lock(m_mutex);
-            auto it = m_sessions.find(gaeaId);
+            const std::lock_guard lock(m_mutex);
+
+            const auto it = m_sessions.find(gaeaId);
             if (it == m_sessions.end())
             {
                 return 0;
             }
-            session = &it->second;
-        }
+            Session& session = it->second;
 
-        const WireU32 before = session->state.GetCurrent(Resources::ResourceKind::Hp);
-        if (before == 0)
-        {
-            return 0;
-        }
-
-        const WireU32 actual = session->state.ApplyDamage(amount);
-        if (actual == 0)
-        {
-            return 0;
-        }
-
-        // Emit 3046 self
-        {
-            std::vector<WireU8> frame;
-            const WireU32 hpNow = session->state.GetCurrent(Resources::ResourceKind::Hp);
-            const WireU32 hpMax = session->state.GetMaximum(Resources::ResourceKind::Hp);
-            const WireU32 mpNow = session->state.GetCurrent(Resources::ResourceKind::Mp);
-            const WireU32 mpMax = session->state.GetMaximum(Resources::ResourceKind::Mp);
-            const WireU32 spNow = session->state.GetCurrent(Resources::ResourceKind::Sp);
-            const WireU32 spMax = session->state.GetMaximum(Resources::ResourceKind::Sp);
-
-            if (const Status st = Network::UpdateState::UpdateStateCodec::AppendStateUpdate(frame,
-                {
-                    { hpNow, hpMax },
-                    { mpNow, mpMax },
-                    { spNow, spMax },
-                    { 0, 0 },
-                    session->name,
-                    session->gaeaId,
-                    session->characterId,
-                    false
-                });
-                st.IsOk())
+            if (session.state.GetCurrent(Resources::ResourceKind::Hp) == 0)
             {
-                SelfFrameSink selfCopy = session->selfSink;
-                WriteBackSink wbCopy   = session->writeBackSink;
-                selfCopy(frame);
-                wbCopy({ hpNow, hpMax }, { mpNow, mpMax }, { spNow, spMax });
+                return 0;
             }
-        }
 
-        // Emit 3053 broadcast
-        {
-            std::vector<WireU8> frame;
-            const WireU32 hpNow = session->state.GetCurrent(Resources::ResourceKind::Hp);
-            const WireU32 hpMax = session->state.GetMaximum(Resources::ResourceKind::Hp);
-
-            if (const Status st = Network::UpdateState::UpdateStateCodec::AppendStateBroadcast(frame,
-                {
-                    session->gaeaId,
-                    { hpNow, hpMax },
-                    false
-                });
-                st.IsOk())
+            applied = session.state.ApplyDamage(amount);
+            if (applied == 0)
             {
-                HpFrameSink hpCopy = session->hpSink;
-                hpCopy(frame);
+                return 0;
             }
+
+            BuildSelfFrame(session, out);
+            BuildHpFrame(session, out);
         }
 
-        return actual;
+        Deliver(out);
+        return applied;
     }
 
-    const Resources::ResourceState* ResourceSyncService::Find(WireU32 gaeaId) const
+    std::optional<Resources::ResourceState> ResourceSyncService::Find(WireU32 gaeaId) const
     {
-        std::lock_guard lock(m_mutex);
+        const std::lock_guard lock(m_mutex);
         const auto it = m_sessions.find(gaeaId);
         if (it == m_sessions.end())
         {
-            return nullptr;
+            return std::nullopt;
         }
-        return &it->second.state;
+        return it->second.state;
+    }
+
+    WireU32 ResourceSyncService::Current(WireU32 gaeaId,
+                                          Resources::ResourceKind kind,
+                                          WireU32 fallback) const
+    {
+        const std::lock_guard lock(m_mutex);
+        const auto it = m_sessions.find(gaeaId);
+        if (it == m_sessions.end())
+        {
+            return fallback;
+        }
+        return it->second.state.GetCurrent(kind);
     }
 
     std::size_t ResourceSyncService::SessionCount() const noexcept
     {
-        std::lock_guard lock(m_mutex);
+        const std::lock_guard lock(m_mutex);
         return m_sessions.size();
     }
 }

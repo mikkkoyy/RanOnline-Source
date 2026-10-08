@@ -222,3 +222,23 @@ struct Describer<Modern::detail::StrongId<Tag, Underlying>>
 
 #define CHECK_LE(actual, expected) \
     ::ModernTests::CheckImpl((actual) <= (expected), #actual " <= " #expected, __FILE__, __LINE__)
+
+// REQUIRE is CHECK with a bail-out: on failure it records the failure AND
+// returns from the test, so the rest of the case cannot run against a
+// precondition that did not hold.
+//
+// It exists because a non-fatal CHECK is only safe when the code after it
+// tolerates the failure. Dereferencing a std::optional is the case that does
+// not: `CHECK(opt.has_value()); opt->GetCurrent(...)` reads the success
+// value, flags a failure, and then dereferences nullopt anyway - which is an
+// access violation, not a test failure, and takes the whole executable down
+// with it rather than reporting the one broken assertion.
+#define REQUIRE(expr)                                                          \
+    do                                                                         \
+    {                                                                          \
+        if (!(expr))                                                           \
+        {                                                                      \
+            ::ModernTests::CheckImpl(false, #expr, __FILE__, __LINE__);        \
+            return;                                                            \
+        }                                                                      \
+    } while (false)

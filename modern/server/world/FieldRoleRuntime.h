@@ -274,6 +274,20 @@ public:
 	std::size_t UpdateStateSentCount() const noexcept { return m_updateStateSent.load(); }
 	std::size_t UpdateStateBrdSentCount() const noexcept { return m_updateStateBrdSent.load(); }
 
+	// WORLD-ENTRY-002h: the last error RegisterSession returned, or None. Read after
+	// Stop(). Exposed because a failed registration is invisible on the wire.
+	ErrorCode ResourceRegisterFailure() const noexcept
+	{
+		return m_resourceRegisterFailure.load(std::memory_order_acquire);
+	}
+
+	// WORLD-ENTRY-002h: whether the resource ticker thread is running. True between a
+	// successful StartResourceTicker and the Stop that actually joins it.
+	bool ResourceTickerRunning() const noexcept
+	{
+		return m_resourceTickerRunning.load(std::memory_order_acquire);
+	}
+
 	// WORLD-ENTRY-002h: starts/stops the resource recovery ticker. Mirrors the
 	// movement ticker API.
 	Status StartResourceTicker();
@@ -376,6 +390,11 @@ private:
 		Status SendEnveloped(Network::ServerBatchEncoder& batcher, PeerPtr peer,
 		                     const std::vector<Network::WireU8>& inner);
 
+		// WORLD-ENTRY-002h: the resource ticker loop. Runs on its own thread,
+		// advancing resource pools at a fixed slice rate. Mirrors the movement
+		// ticker loop pattern.
+		void ResourceTickerLoop();
+
 		void Emit(FieldEvent event, std::string text, std::size_t count = 0);
 
 		WorldServerConfig      m_config;
@@ -439,11 +458,22 @@ std::atomic<std::size_t> m_gotoSent{0};
 		ResourceSyncService m_resources;
 
 		// Resource recovery ticker - mirrors the movement ticker pattern.
+		// Uses atomic running flag with exchange semantics for correct start/stop lifecycle.
 		std::thread m_resourceTickerThread;
 		std::atomic<bool> m_stopResourceTicker{false};
+		std::atomic<bool> m_resourceTickerRunning{false};
 
 		// 3046/3053 sent counts. Written by sinks on ticker/worker threads.
 		std::atomic<std::size_t> m_updateStateSent{0};
 		std::atomic<std::size_t> m_updateStateBrdSent{0};
+
+	// WORLD-ENTRY-002h: the last RegisterSession error. None means every spawn so
+	// far was tracked by the resource service.
+	//
+	// Registering before the 2333 is what makes this always None in practice: a
+	// refusal now fails the spawn, so a client that reads a spawn has a session.
+	// The field is kept because "never observed" and "observed and recovered" are
+	// different claims, and only the second one is provable from a counter.
+	std::atomic<ErrorCode> m_resourceRegisterFailure{ErrorCode::None};
 	};
 }

@@ -1091,6 +1091,8 @@ MODERN_TEST(Gameplay_ApplyResourceUpdate_ChangesPresentedPools)
 
 	// Maxima are NOT changed - they come from derived stats
 	CHECK_EQ(client.GetMaxHp(), originalHp); // was full, so max == original current
+	CHECK_EQ(client.GetMaxMp(), originalMp);
+	CHECK_EQ(client.GetMaxSp(), originalSp);
 	CHECK_EQ(client.GetDerivedStats().maxHp, snapshot.derived.maxHp);
 	CHECK_EQ(client.GetDerivedStats().maxMp, snapshot.derived.maxMp);
 	CHECK_EQ(client.GetDerivedStats().maxSp, snapshot.derived.maxSp);

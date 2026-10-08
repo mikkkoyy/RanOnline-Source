@@ -9,6 +9,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -63,8 +64,22 @@ namespace Modern::Server::World
         Network::WireU32 ApplyDamage(Network::WireU32 gaeaId,
                                       Network::WireU32 amount);
 
-        // Returns the resource state for `gaeaId`, or nullptr if not found.
-        const Resources::ResourceState* Find(Network::WireU32 gaeaId) const;
+        // Returns a COPY of the resource state for `gaeaId`, or nullopt if not
+        // tracked.
+        //
+        // A copy, and not a pointer into m_sessions, because the map is erased
+        // by UnregisterSession on the peer's own worker thread. A returned
+        // pointer would be a dangling reference the instant a client
+        // disconnects, and the lifetime of the thing it pointed at would
+        // depend on which thread happened to call next. Copying one small
+        // record under the mutex is not a cost worth that ambiguity.
+        std::optional<Resources::ResourceState> Find(Network::WireU32 gaeaId) const;
+
+        // Pool value for `gaeaId`, or `fallback` when `gaeaId` is not tracked.
+        // The convenient, and equally safe, form of Find for a single number.
+        Network::WireU32 Current(Network::WireU32 gaeaId,
+                                 Resources::ResourceKind kind,
+                                 Network::WireU32 fallback = 0) const;
 
         // Number of registered sessions.
         std::size_t SessionCount() const noexcept;
@@ -91,16 +106,41 @@ namespace Modern::Server::World
             WriteBackSink                writeBackSink;
         };
 
-        // Emits a 3046 self frame for the session. Called with m_mutex held
-        // for mutation, but the sink is copied and invoked after unlock.
-        void EmitSelfFrame(Session& session);
+        // Everything one mutation wants to say to the outside world, captured
+        // while the session is known to exist.
+        //
+        // The sinks may write to a socket, and a sink that blocks while
+        // m_mutex is held would stop the ticker, every other session's
+        // recovery, and the peer's own disconnect path. So the mutation runs
+        // under the lock and the CALLBACKS are copied into one of these; the
+        // frame is encoded once, under the lock, rather than re-encoded later
+        // against a session that may no longer be there.
+        struct Outgoing
+        {
+            bool                hasSelf = false;
+            SelfFrameSink       self;
+            std::vector<Network::WireU8> selfFrame;
+            WriteBackSink       writeBack;
+            Network::RanWire::DwPair hp{};
+            Network::RanWire::DwPair mp{};
+            Network::RanWire::DwPair sp{};
 
-        // Emits a 3053 broadcast frame for the session. Called with m_mutex
-        // held; sink copied and invoked after unlock.
-        void EmitHpBroadcast(Session& session);
+            bool                hasHp = false;
+            HpFrameSink         hpSink;
+            std::vector<Network::WireU8> hpFrame;
+        };
 
-        // Invokes the write-back sink with the session's current pools.
-        void InvokeWriteBack(Session& session);
+        // Encodes the 3046 for `session` and records it in `out`. Mutates
+        // nothing. Requires m_mutex held.
+        static void BuildSelfFrame(const Session& session, Outgoing& out);
+
+        // Encodes the 3053 for `session` and records it in `out`. Requires
+        // m_mutex held.
+        static void BuildHpFrame(const Session& session, Outgoing& out);
+
+        // Invokes the recorded callbacks. Takes NO lock, and takes no
+        // reference to any Session - which is the entire point of Outgoing.
+        static void Deliver(const Outgoing& out);
 
         mutable std::mutex m_mutex;
         std::map<Network::WireU32, Session> m_sessions;

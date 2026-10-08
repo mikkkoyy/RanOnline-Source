@@ -8,8 +8,8 @@ namespace Modern::Server::World
 {
 	using namespace Modern::Network;
 
-	namespace
-	{
+namespace
+{
 		// Bounds ONE message read, not the whole conversation.
 		//
 		// Per message, because the conversation is now unbounded - a client may hold a
@@ -25,6 +25,11 @@ namespace Modern::Server::World
 		constexpr int kAcceptSliceMilliseconds = 200;
 
 		constexpr std::size_t kReadBufferSize = 2048;
+
+		// WORLD-ENTRY-002h: resource ticker constants - mirror the movement ticker
+		// pattern for consistent timing behavior.
+		constexpr int kTickerSliceMilliseconds = 4;
+		constexpr float kMaximumTickSeconds = 1.0f;
 	}
 
 const char* ToString(FieldEvent event) noexcept
@@ -137,10 +142,22 @@ const char* ToString(FieldEvent event) noexcept
 
 	void FieldRoleRuntime::Stop() noexcept
 	{
-		if (!m_listener.IsListening() && !m_acceptThread.joinable())
+		// WORLD-ENTRY-002h: the resource ticker counts as "running" for the purposes
+		// of this early-out. A role whose ticker was started without a listening
+		// field (the headless resource tests do exactly that) used to return here and
+		// leave a JOINABLE thread behind, which is std::terminate when the runtime is
+		// destroyed - the destructor calls Stop(), and Stop() is the only thing that
+		// ever joins.
+		if (!m_listener.IsListening() && !m_acceptThread.joinable() &&
+		    !m_resourceTickerRunning.load(std::memory_order_acquire))
 		{
 			return;
 		}
+
+		// Stopped FIRST, before anything else, because it is the only thread that is
+		// not driven by this function's own shutdown sequence and the only one that
+		// can call into the resource service while sessions are being torn down.
+		StopResourceTicker();
 
 		m_stopAccept.store(true, std::memory_order_release);
 
@@ -160,6 +177,10 @@ const char* ToString(FieldEvent event) noexcept
 				peer->transport.Disconnect();
 			}
 		}
+
+		// WORLD-ENTRY-002h: the resource ticker is stopped at the TOP of this
+		// function, before the listener and the peers, so it cannot advance
+		// resources for a session that is about to be unregistered.
 
 		if (m_acceptThread.joinable())
 		{
@@ -480,17 +501,77 @@ if (MovementState::MovementStateCodec::IsMoveState(message.header.type))
 			return false;
 		}
 
+		// WORLD-ENTRY-002h: the authoritative resource session is REGISTERED BEFORE
+		// the 2333 goes out, and a refusal here refuses the spawn.
+		//
+		// The ordering is the point. A spawn packet is what tells a client - and every
+		// caller acting for it - that the character is in the world, so the moment the
+		// 2333 is on the wire the session must already be findable. Registering after
+		// the send leaves a window in which a client that has already read its spawn
+		// gets NotFound from Spend/Restore/ApplyDamage for its own character, which
+		// presents as "the server ignores my HP" and is a race, not a rule.
+		//
+		// It is therefore FATAL to the spawn here, unlike the movement Attach below.
+		// The Attach is allowed to fail because a missing mesh still leaves a playable
+		// character whose GOTO answers name the map; a missing resource session leaves
+		// a character with no authoritative pools at all, and there is nothing later
+		// that can repair it - the session is registered once, at spawn.
+		const auto characterId = spawn.character.id;
+		if (const Status registered = m_resources.RegisterSession(
+		        spawn.character,
+		        [this, peer](const std::vector<WireU8>& frame) {
+			        ServerBatchEncoder batcher(peer->codec);
+			        (void)SendEnveloped(batcher, peer, frame);
+			        m_updateStateSent.fetch_add(1, std::memory_order_relaxed);
+		        },
+		        [this, peer](const std::vector<WireU8>& frame) {
+			        BroadcastResourceState(peer, frame);
+			        m_updateStateBrdSent.fetch_add(1, std::memory_order_relaxed);
+		        },
+		        [this, characterId](const Network::RanWire::DwPair& hp,
+			                    const Network::RanWire::DwPair& mp,
+			                    const Network::RanWire::DwPair& sp) {
+			        WriteBackPools(characterId, hp, mp, sp);
+		        });
+		    registered.IsError())
+		{
+			m_resourceRegisterFailure.store(registered.GetCode(), std::memory_order_release);
+			m_refusal.store(FieldRefusal::IdentityRejected, std::memory_order_release);
+			m_refusalDetail = "resource registration refused: ";
+			m_refusalDetail += registered.GetMessage();
+			return false;
+		}
+
+		m_lastGaeaId.store(spawn.gaeaId, std::memory_order_release);
+		m_lastCharacterId.store(spawn.character.id.value, std::memory_order_release);
+
+		// The flag is raised BEFORE the packet is sent, not after it.
+		//
+		// It gates every broadcast: 3033, 3035 and 3053 all skip a peer whose
+		// `spawned` flag is still false. A client whose Spawn() has returned has,
+		// by construction, already read its 2333 - so setting the flag after the
+		// send left a window in which a fully spawned, fully connected player was
+		// invisible to everyone else's broadcast, and the only symptom was a 3053
+		// that never arrived for a character standing right there. The packet tells
+		// the CLIENT it spawned; the flag tells the SERVER, and it must be true no
+		// later than the moment the client can act on it.
+		peer->spawned.store(true, std::memory_order_release);
+
 		if (const Status sent = SendEnveloped(batcher, peer, spawn.frame); sent.IsError())
 		{
+			// Both effects of this spawn are undone HERE rather than left to the
+			// peer teardown, because the teardown only runs if a worker is still
+			// alive - and the honest place to undo a step is immediately after the
+			// step whose failure made it wrong.
+			peer->spawned.store(false, std::memory_order_release);
+			(void)m_resources.UnregisterSession(spawn.gaeaId);
+
 			m_refusal.store(FieldRefusal::SendFailed, std::memory_order_release);
 			m_refusalDetail = "send failed: ";
 			m_refusalDetail += sent.GetMessage();
 			return false;
 		}
 
-		m_lastGaeaId.store(spawn.gaeaId, std::memory_order_release);
-		m_lastCharacterId.store(spawn.character.id.value, std::memory_order_release);
-		peer->spawned.store(true, std::memory_order_release);
 Emit(FieldEvent::SpawnSent, "", spawn.gaeaId);
 
 		// WORLD-ENTRY-002f: give the character an actor on its map. A failure here is
@@ -499,26 +580,6 @@ Emit(FieldEvent::SpawnSent, "", spawn.gaeaId);
 		// reason naming the map. Refusing the spawn would turn a missing asset into a
 		// failed login - the wrong diagnosis for the same underlying fault.
 		(void)m_movementWorld.Attach(peer->session.SessionId(), spawn.character);
-
-		// WORLD-ENTRY-002h: register the authoritative resource session.
-		// The peer's own 3046 goes via selfSink; other clients get 3053 via hpSink.
-		const auto characterId = spawn.character.id;
-		m_resources.RegisterSession(
-			spawn.character,
-			[this, peer](const std::vector<WireU8>& frame) {
-				ServerBatchEncoder batcher(peer->codec);
-				(void)SendEnveloped(batcher, peer, frame);
-				m_updateStateSent.fetch_add(1, std::memory_order_relaxed);
-			},
-			[this, peer](const std::vector<WireU8>& frame) {
-				BroadcastResourceState(peer, frame);
-				m_updateStateBrdSent.fetch_add(1, std::memory_order_relaxed);
-			},
-			[this, characterId](const Network::RanWire::DwPair& hp,
-			                    const Network::RanWire::DwPair& mp,
-			                    const Network::RanWire::DwPair& sp) {
-				WriteBackPools(characterId, hp, mp, sp);
-			});
 		return true;
 	}
 
@@ -781,41 +842,67 @@ void FieldRoleRuntime::StopMovementTicker() noexcept
 // pattern. Idempotent start.
 Status FieldRoleRuntime::StartResourceTicker()
 {
-	if (m_resourceTickerThread.joinable())
+	if (m_resourceTickerRunning.exchange(true, std::memory_order_acq_rel))
 	{
-		return Ok();
+		// Refused rather than silently ignored: a second Start would be a second
+		// thread advancing the same resource pools, and two threads advancing
+		// the same state is a data race with no correct outcome.
+		return Status(ErrorCode::AlreadyExists);
 	}
+
 	m_stopResourceTicker.store(false, std::memory_order_release);
-	m_resourceTickerThread = std::thread([this] {
-		auto last = std::chrono::steady_clock::now();
-		while (!m_stopResourceTicker.load(std::memory_order_acquire))
-		{
-			const auto now = std::chrono::steady_clock::now();
-			const float elapsed = std::chrono::duration<float>(now - last).count();
-			last = now;
-
-			if (elapsed > 1.0f)
-			{
-				// Legacy movement ticker clamps at 1s; resource uses same
-				// safeguard against time jumps.
-				// (WorldMovementRuntime.cpp:35)
-				continue;
-			}
-
-			m_resources.Advance(elapsed);
-		}
-	});
+	m_resourceTickerThread = std::thread([this] { ResourceTickerLoop(); });
 	return Ok();
 }
 
 void FieldRoleRuntime::StopResourceTicker() noexcept
 {
-	if (!m_resourceTickerThread.joinable())
+	if (!m_resourceTickerRunning.exchange(false, std::memory_order_acq_rel))
 	{
 		return;
 	}
+
 	m_stopResourceTicker.store(true, std::memory_order_release);
-	m_resourceTickerThread.join();
+	if (m_resourceTickerThread.joinable())
+	{
+		m_resourceTickerThread.join();
+	}
+}
+
+void FieldRoleRuntime::ResourceTickerLoop()
+{
+	auto previous = std::chrono::steady_clock::now();
+
+	while (!m_stopResourceTicker.load(std::memory_order_acquire))
+	{
+		// MEASURED, not assumed. The delta between two real instants drives
+		// recovery. A character at max HP recovers 0; a character at half HP
+		// recovers proportional to elapsed time. This loop runs at a fixed
+		// slice rate, not as fast as possible, which is the same design as
+		// the movement ticker.
+		std::this_thread::sleep_for(std::chrono::milliseconds(kTickerSliceMilliseconds));
+
+		const auto now = std::chrono::steady_clock::now();
+
+		float elapsed = std::chrono::duration<float>(now - previous).count();
+		previous = now;
+
+		if (elapsed < 0.0f)
+		{
+			// Not reachable with a monotonic clock, and handled rather than passed
+			// on: a negative delta would subtract from pools.
+			elapsed = 0.0f;
+		}
+		if (elapsed > kMaximumTickSeconds)
+		{
+			elapsed = kMaximumTickSeconds;
+		}
+
+		if (elapsed > 0.0f)
+		{
+			(void)m_resources.Advance(elapsed);
+		}
+	}
 }
 
 void FieldRoleRuntime::BroadcastMoveState(const PeerPtr& exclude,

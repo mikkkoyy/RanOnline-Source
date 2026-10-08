@@ -142,3 +142,43 @@ Asserting those counters straight after a client-side pump fails roughly one run
 five. Every such assertion here goes through `WaitFor`, which is the file's existing
 answer to exactly this race — as it is for the two-client broadcast, where the server
 skips a peer it has not yet marked spawned.
+## Follow-up: the GOTO tests were failing in 002H, and it was not the ticker
+
+WORLD-ENTRY-002H recorded the four failing GOTO TCP tests as "pre-existing at
+3bf04fa". They were real, and the cause was a defect this milestone owned.
+
+### Root cause
+
+`WorldEntryClient::PumpField` dispatches each message on the Field connection in
+turn: 3033, then 3035, then (from 002H) 3053 and 3046, and finally the 2333
+spawn test. Adding the 3053 and 3046 blocks REPLACED the 3035 block rather than
+preceding it. Every 3035 therefore reached the "not a spawn" branch and was
+silently discarded, leaving `m_gotoCount` at zero and `Goto()` unreceived.
+
+The evidence that placed the fault in the client, and not in the server or the
+resource ticker:
+
+- `FieldRoleRuntime::GotoSentCount() == 1` **passed** in the boundary test at the
+  same moment `client.connection.GotoCount() == 0` **failed**. The server had
+  built, encoded and sent the 3035; the client discarded it on arrival.
+- The GOTO tests never call `StartResourceTicker()`, so no ticker thread existed
+  during the failing runs. The hypothesis that the ticker starved the GOTO worker
+  was therefore false before it was tested, and the tests failed identically with
+  the ticker disabled.
+
+### Fix
+
+The 3035 dispatch block is restored ahead of the spawn test, alongside the 3046
+and 3053 blocks. The GOTO tests pass in Debug and in Release, 20 consecutive runs
+each, with no sleeps added and no deadlines raised.
+
+### Test count change
+
+`ModernWorldEntryTcpTests` grew from 24 to 29 cases. The five additions belong to
+002H rather than to GOTO, and are listed in
+`WORLD-ENTRY-002H-AUTHORITATIVE-RESOURCE-SYNC.md`: three ticker-lifecycle cases,
+one case proving a GOTO and a recovery update coexist on one connection, and one
+driving the unregister/advance race from two threads.
+
+`ModernWorldEntryTcpTests` | 5 | the real `2359 -> 2333 -> 3034 -> 3035` exchange
+(29 total after 002H; the GOTO group itself is unchanged at 5).

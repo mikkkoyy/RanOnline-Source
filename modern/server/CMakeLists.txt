@@ -129,7 +129,7 @@ add_executable(ModernServerTests
     # injected-time Tick progression, snapshots and multi-actor isolation.
     WorldMovementRuntimeTests.cpp
     # WORLD-ENTRY-002h: the authoritative resource synchronisation service.
-    # ResourceSyncServiceTests.cpp  (temporarily disabled - test file needs fixes)
+    ResourceSyncServiceTests.cpp
 )
 
 target_include_directories(ModernServerTests PRIVATE
