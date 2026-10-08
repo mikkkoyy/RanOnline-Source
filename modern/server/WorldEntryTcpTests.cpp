@@ -1920,7 +1920,8 @@ MODERN_TEST(ResourceSync_RecoveryAdvancesPoolsOverTime)
 {
 	TestWorldServer server;
 	CHECK(server.Start().IsOk());
-	CHECK(server.Runtime().Field().StartResourceTicker().IsOk());
+	// NOTE: Do NOT start the resource ticker here. This test manually
+	// controls time via Advance() and the ticker would race with it.
 
 	SpawnedClient client;
 	CHECK(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
@@ -1934,22 +1935,30 @@ MODERN_TEST(ResourceSync_RecoveryAdvancesPoolsOverTime)
 		CHECK_EQ(spent, 100u);
 	}
 
-	// Advance 1.0s -> 9 HP recovered
-	server.Runtime().Field().ResourceSync().Advance(1.0f);
-
+	// The Spend emitted a 3046. Wait for it to arrive.
 	CHECK(client.connection.PumpUntilUpdateStateCount(1, kDeadline).IsOk());
+	const auto initialHp = client.protocol.UpdateState().hpNow;
+	CHECK_EQ(initialHp, 2900u);
+
+	// Advance 1.7s -> timer fires (1.6s threshold, reset-to-zero) AND recovery occurs.
+	// Legacy: recovery happens every frame, but 3046 only sent on 1.6s timer.
+	// Recovery amount = elapsed * rate * max = 1.7 * 0.003 * 3000 = 15.3 -> 15 HP.
+	server.Runtime().Field().ResourceSync().Advance(1.7f);
+
+	// Wait for the NEXT 3046 (the timer update with recovered HP).
+	CHECK(client.connection.PumpUntilUpdateStateCount(2, kDeadline).IsOk());
 	const auto& update = client.protocol.UpdateState();
-	CHECK_EQ(update.hpNow, 3000u - 100u + 9u); // 2909
+	CHECK_EQ(update.hpNow, 3000u - 100u + 15u); // 2915
 
 	server.Stop();
-	server.Runtime().Field().StopResourceTicker();
 }
 
 MODERN_TEST(ResourceSync_TwoClients_GetOnlyTheirOwn3046)
 {
 	TestWorldServer server;
 	CHECK(server.Start().IsOk());
-	CHECK(server.Runtime().Field().StartResourceTicker().IsOk());
+	// NOTE: Do NOT start the resource ticker here. This test manually
+	// controls time via Advance() and the ticker would race with it.
 
 	SpawnedClient clientA;
 	CHECK(clientA.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
@@ -1972,14 +1981,14 @@ MODERN_TEST(ResourceSync_TwoClients_GetOnlyTheirOwn3046)
 	CHECK_EQ(clientB.protocol.UpdateState().gaeaId, gaeaB);
 
 	server.Stop();
-	server.Runtime().Field().StopResourceTicker();
 }
 
 MODERN_TEST(ResourceSync_ApplyDamage_ClientGets3046_OtherGets3053)
 {
 	TestWorldServer server;
 	CHECK(server.Start().IsOk());
-	CHECK(server.Runtime().Field().StartResourceTicker().IsOk());
+	// NOTE: Do NOT start the resource ticker here. This test manually
+	// triggers events and the ticker would race with it.
 
 	SpawnedClient clientA;
 	CHECK(clientA.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
@@ -2005,14 +2014,14 @@ MODERN_TEST(ResourceSync_ApplyDamage_ClientGets3046_OtherGets3053)
 	CHECK_EQ(clientB.protocol.UpdateStateBrd().hpNow, 3000u - 500u);
 
 	server.Stop();
-	server.Runtime().Field().StopResourceTicker();
 }
 
 MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
 {
 	TestWorldServer server;
 	CHECK(server.Start().IsOk());
-	CHECK(server.Runtime().Field().StartResourceTicker().IsOk());
+	// NOTE: Do NOT start the resource ticker here. This test manually
+	// triggers events and the ticker would race with it.
 
 	SpawnedClient client;
 	CHECK(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
@@ -2029,7 +2038,6 @@ MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
 	CHECK_EQ(client.protocol.UpdateState().mpNow, 1500u - 50u);
 
 	server.Stop();
-	server.Runtime().Field().StopResourceTicker();
 }
 
 } // namespace ModernTests
