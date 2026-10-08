@@ -430,11 +430,29 @@ namespace
 		outcome.gaeaId      = protocol.Redirect().gaeaId;
 		outcome.agentOk     = true;
 
-		// The Agent role closes after the 2358, so the first connection is done. It is
-		// NOT reused and its transport is not moved anywhere.
-		agent.Disconnect();
-
 		// ---- connection #2: the Field ------------------------------------
+		//
+		// The Agent socket is deliberately still OPEN here, and that is load-bearing.
+		//
+		// It used to be closed immediately above this point, which released its
+		// ephemeral source port before the Field socket asked the OS for one. TCP
+		// guarantees nothing about a port freed a moment earlier: Windows readily
+		// hands the same local port straight back, so `agentSourcePort ==
+		// fieldSourcePort` was reachable against a perfectly correct server. The
+		// "four distinct sockets" assertions then failed on roughly one run in
+		// eighty, which is a flaky test asserting a guarantee the network does not
+		// make - not a server defect.
+		//
+		// Holding the Agent socket across the Field connect makes the claim
+		// deterministic instead of lucky. While that socket is open its local port
+		// is bound, and two live sockets cannot share a local port when they
+		// target different endpoints - which the Agent and Field roles always do,
+		// because they are two listeners on two OS-assigned ports.
+		//
+		// Nothing is weakened: both sockets are still established, both ports are
+		// still real, and the assertion still fails if the two legs were ever the
+		// same connection. What stops being ambiguous is the OS port allocator,
+		// not the test.
 		FieldConnection field(protocol);
 		if (const Status status = field.Connect(protocol.Redirect(), kDeadline);
 		    status.IsError())
@@ -444,6 +462,15 @@ namespace
 			return outcome;
 		}
 		outcome.fieldSourcePort = field.LocalEndpoint().port;
+
+		// Released only now, once the Field socket exists. The Agent role closed
+		// its own end after the 2358, so this is bookkeeping either way: the
+		// transport is NOT reused and is not moved anywhere.
+		//
+		// ~AgentConnection would do exactly this on every early return above, so
+		// the explicit call is not required for correctness - it is here because
+		// the ORDERING is the thing under test and should be visible in the code.
+		agent.Disconnect();
 
 		FieldIdentity identity;
 		identity.joinType       = WorldEntry::kJoinTypeFirst;
