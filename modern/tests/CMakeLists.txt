@@ -107,3 +107,41 @@ add_test(NAME ModernTcpTransportTests COMMAND ModernTcpTransportTests)
 # enable_testing() is called by the top-level CMakeLists.txt, which is where
 # CTest needs it in order to reach this directory.
 add_test(NAME ModernCoreTests COMMAND ModernCoreTests)
+
+# ---------------------------------------------------------------------------
+# TEST STALL WATCHDOG - self-test.
+#
+# This one is DELIBERATELY NOT add_test()'d.
+#
+# The watchdog in TestHarness.h terminates its own process on a stall, so if
+# this binary ran inside the ordinary CTest suite it would end the whole run and
+# make an unrelated failure look like a suite-wide crash. It is built and run
+# explicitly:
+#
+#     build-debug\Debug\ModernWatchdogSelfTests.exe
+#
+# and judges itself by exit code (0 = the watchdog behaved, 1 = it did not).
+# Keeping it out of add_test is the isolation the self-test needs - see the
+# comment block at the top of WatchdogSelfTests.cpp.
+#
+# It links Modern for ONE reason: TestHarness.h includes Modern's headers, so
+# without them this file does not even compile. The self-test itself exercises
+# no Modern behaviour - it registers a test that blocks forever and checks that
+# the shared watchdog kills the process - so a failure here is the guard's, not
+# the game's.
+# ---------------------------------------------------------------------------
+add_executable(ModernWatchdogSelfTests
+    WatchdogSelfTests.cpp
+)
+
+target_link_libraries(ModernWatchdogSelfTests PRIVATE Modern)
+
+target_include_directories(ModernWatchdogSelfTests PRIVATE
+    ${CMAKE_SOURCE_DIR}/modern/tests
+)
+
+target_compile_features(ModernWatchdogSelfTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernWatchdogSelfTests PRIVATE /W4 /permissive- /utf-8)
+endif()
