@@ -209,6 +209,56 @@ using Network::WireI32;
 		std::vector<WireU8> frame;
 	};
 
+	// WORLD-ENTRY-002i: an ATTACK another character made (3037).
+	//
+	// `gaeaId` is the ATTACKER's id - the server always fills dwGaeaID with the
+	// swinging character, never the target (the same convention 3033 and 3035
+	// follow). `targetCrow`/`targetId` name what was hit.
+	//
+	// There is deliberately no damage field: this milestone applies none.
+	struct WorldAttackBrdState
+	{
+		bool received = false;
+
+		WireU32 gaeaId     = 0;
+		WireU32 targetCrow = 0;
+		WireU32 targetId   = 0;
+		WireU32 aniSel     = 0;
+
+		// The frame as received, so a test can assert its size and offsets.
+		std::vector<WireU8> frame;
+	};
+
+	// WORLD-ENTRY-002i: THIS client's own attack was refused (3041).
+	//
+	// The only attack refusal that reaches the wire at all. Legacy sends it on
+	// the out-of-range branch (GLCharMsg.cpp:352-355); every other refusal is
+	// silent, so a client that sees nothing has been refused too.
+	struct WorldAttackAvoidState
+	{
+		bool received = false;
+
+		WireU32 targetCrow = 0;
+		WireU32 targetId   = 0;
+
+		std::vector<WireU8> frame;
+	};
+
+	// WORLD-ENTRY-002i: someone ELSE's attack was refused (3042).
+	//
+	// Sent to every other authorized peer, never to the attacker - the attacker
+	// has its own 3041. Same delivery shape as 3033/3035/3053.
+	struct WorldAttackAvoidBrdState
+	{
+		bool received = false;
+
+		WireU32 gaeaId     = 0;
+		WireU32 targetCrow = 0;
+		WireU32 targetId   = 0;
+
+		std::vector<WireU8> frame;
+	};
+
 	// WORLD-ENTRY-002h: the authoritative resource state (3046).
 	//
 	// Carries ALL pools (HP/MP/SP/CP) with both current and maximum, plus
@@ -371,6 +421,17 @@ using Network::WireI32;
 		std::size_t          GotoCount() const noexcept { return m_gotoCount; }
 
 		// WORLD-ENTRY-002h: the most recent 3046 and its count.
+		// WORLD-ENTRY-002i: the most recent 3037/3041/3042 and their counts.
+		const WorldAttackBrdState& Attack() const noexcept { return m_attack; }
+		std::size_t                AttackCount() const noexcept { return m_attackCount; }
+		const WorldAttackAvoidState& AttackAvoid() const noexcept { return m_attackAvoid; }
+		std::size_t AttackAvoidCount() const noexcept { return m_attackAvoidCount; }
+		const WorldAttackAvoidBrdState& AttackAvoidBrd() const noexcept
+		{
+			return m_attackAvoidBrd;
+		}
+		std::size_t AttackAvoidBrdCount() const noexcept { return m_attackAvoidBrdCount; }
+
 		const WorldUpdateStateState& UpdateState() const noexcept { return m_updateState; }
 		std::size_t                 UpdateStateCount() const noexcept { return m_updateStateCount; }
 
@@ -429,7 +490,15 @@ using Network::WireI32;
 		bool m_fieldFailed = false;
 
 		// WORLD-ENTRY-002h: 3046 and 3053 state.
-		WorldUpdateStateState     m_updateState{};
+		// WORLD-ENTRY-002i: 3037/3041/3042 state and counts.
+		WorldAttackBrdState     m_attack;
+		std::size_t             m_attackCount = 0;
+		WorldAttackAvoidState   m_attackAvoid;
+		std::size_t             m_attackAvoidCount = 0;
+		WorldAttackAvoidBrdState m_attackAvoidBrd;
+		std::size_t             m_attackAvoidBrdCount = 0;
+
+		WorldUpdateStateState m_updateState;
 		std::size_t               m_updateStateCount = 0;
 		WorldUpdateStateBrdState  m_updateStateBrd{};
 		std::size_t               m_updateStateBrdCount = 0;

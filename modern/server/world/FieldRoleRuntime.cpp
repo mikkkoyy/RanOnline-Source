@@ -46,6 +46,9 @@ const char* ToString(FieldEvent event) noexcept
 		case FieldEvent::GotoRejected:        return "GotoRejected";
 		case FieldEvent::ResourceUpdateSent:  return "ResourceUpdateSent";
 		case FieldEvent::ResourceBroadcastSent: return "ResourceBroadcastSent";
+	case FieldEvent::AttackAccepted:        return "AttackAccepted";
+	case FieldEvent::AttackAvoidSent:       return "AttackAvoidSent";
+	case FieldEvent::AttackRejected:        return "AttackRejected";
 		case FieldEvent::ClientRejected:      return "ClientRejected";
 		case FieldEvent::ClientDisconnected:  return "ClientDisconnected";
 		}
@@ -65,7 +68,8 @@ const char* ToString(FieldEvent event) noexcept
 		case FieldRefusal::ReceiveFailed:    return "ReceiveFailed";
 		case FieldRefusal::IdentityRejected: return "IdentityRejected";
 		case FieldRefusal::NotSpawned:       return "NotSpawned";
-		case FieldRefusal::GotoBeforeSpawn:  return "GotoBeforeSpawn";
+		case FieldRefusal::AttackBeforeSpawn: return "AttackBeforeSpawn";
+	case FieldRefusal::GotoBeforeSpawn:  return "GotoBeforeSpawn";
 		}
 		return "Unrecognised";
 	}
@@ -365,6 +369,27 @@ if (MovementState::MovementStateCodec::IsMoveState(message.header.type))
 				}
 				continue;
 			}
+			// ---- 3036 -------------------------------------------------------
+			//
+			// Dispatched with 3032 and 3034, and BEFORE 2359, for the same reason: a
+			// gameplay message is what this connection exists for once it has spawned,
+			// and recognising it first keeps the "not spawned yet" refusal from being
+			// reported as an unexpected id.
+			//
+			// Only a MALFORMED 3036 refuses the connection. A well-formed one that the
+			// rule rejects - out of range, unknown target, a mob - leaves the
+			// connection exactly as usable as it was, because a client that aimed at
+			// nothing has not misbehaved.
+			if (Network::Attack::AttackCodec::IsAttack(message.header.type))
+			{
+				if (!HandleAttack(peer, batcher, message))
+				{
+					refused = true;
+					break;
+				}
+				continue;
+			}
+
 			// ---- 2359 --------------------------------------------------------
 			if (WorldEntryCodec::IsFieldIdentity(message.header.type))
 			{
@@ -827,6 +852,290 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 		}
 	}
 
+
+		FieldRoleRuntime::PeerPtr FieldRoleRuntime::FindTargetPeer(Network::WireU32 gaeaId)
+	{
+		if (gaeaId == 0)
+		{
+			return nullptr;
+		}
+
+		// The list is COPIED under the lock and searched without it, for the reason
+		// BroadcastGoto gives: holding m_peersMutex across a search that a peer could
+		// be unregistering from would be a lock-order hazard, and the copy is a vector
+		// of shared_ptr, so a peer that disconnects mid-search simply fails to match.
+		std::vector<PeerPtr> targets;
+		{
+			const std::lock_guard<std::mutex> lock(m_peersMutex);
+			targets = m_peers;
+		}
+
+		for (const PeerPtr& peer : targets)
+		{
+			// `spawned` is the same gate every broadcast uses. It is written under the
+			// spawn path and read here, so it is loaded rather than assumed - a peer
+			// mid-spawn must never be attackable before it has a world position.
+			if (!peer->spawned.load(std::memory_order_acquire))
+			{
+				continue;
+			}
+
+			// A gaeaId of 0 is never a valid identity: WorldEntryProtocol reserves it
+			// as kInvalidGaeaId, so refusing it here cannot exclude a real character.
+			if (peer->session.GaeaId() == gaeaId)
+			{
+				return peer;
+			}
+		}
+
+		return nullptr;
+	}
+
+	Vector3 FieldRoleRuntime::AuthoritativePosition(Network::WireU64 sessionId,
+	                                                const WorldCharacter* character,
+	                                                const Vector3& fallback) const
+	{
+		ActorSnapshot snapshot;
+
+		// `hasMesh` is checked alongside the snapshot, and that check is the whole
+		// point of this function.
+		//
+		// WorldMovementRuntime::Attach only calls `Actor::Create` when a mesh
+		// resolves. With no map source, every character is still ATTACHED - so a
+		// Snapshot succeeds - but its actor was never created, and the actor's
+		// position is still its default placeholder rather than a place in the
+		// world. Taking snapshot.position in that state reports every meshless
+		// character as standing at the same spot, which silently made the attack
+		// range check inert: every pair measured distance zero, every attack was
+		// in range, and nothing could ever be refused for being too far.
+		//
+		// This was found by a test that could not provoke an out-of-range refusal
+		// at all - the acceptance path kept winning. The fix is to prefer the
+		// actor's position only when the actor has a real one, and to fall back to
+		// the character's authored save position otherwise. In a world with meshes
+		// nothing changes.
+		if (m_movementWorld.Snapshot(sessionId, snapshot) && snapshot.hasMesh)
+		{
+			return snapshot.position;
+		}
+
+		// No actor yet - a character that has spawned but never been attached, or a
+		// test runtime with no map source at all. The character's own stored position
+		// is still a real position, and using the world origin instead would put
+		// every meshless character at (0,0,0) and make them all attackable from
+		// anywhere near the origin.
+		if (character != nullptr)
+		{
+			return Vector3{ character->savePosition.x, character->savePosition.y,
+			                character->savePosition.z };
+		}
+
+		return fallback;
+	}
+
+	bool FieldRoleRuntime::HandleAttack(PeerPtr peer, ServerBatchEncoder& batcher,
+	                                    const Message& message)
+	{
+		const std::vector<WireU8> frame = Network::Attack::AttackCodec::ReconstructFrame(message);
+
+		Network::Attack::AttackRequest request;
+		if (const Status status = Network::Attack::AttackCodec::DecodeAttackRequest(frame, request);
+		    status.IsError())
+		{
+			// A 3036 of the wrong length is a protocol fault and the connection is
+			// dropped, exactly as a malformed 3032 or 3034 is. This is the ONE case
+			// where an attack costs the client its connection.
+			m_refusal.store(FieldRefusal::BadMessageSize, std::memory_order_release);
+			m_refusalDetail = "3036 malformed (dwSize " + std::to_string(frame.size()) +
+			                  ", expected " + std::to_string(Network::Attack::kRequestSize) + ")";
+			return false;
+		}
+
+		const bool spawned = peer->spawned.load(std::memory_order_acquire);
+
+		AttackRequest ruleRequest;
+		ruleRequest.targetCrow = request.targetCrow;
+		ruleRequest.targetId   = request.targetId;
+		ruleRequest.aniSel     = request.aniSel;
+		ruleRequest.flags      = request.flags;
+
+		// The attacker's OWN position, from the movement runtime. There is no
+		// client-supplied position on a 3036, so the range check has nothing to trust
+		// and needs no anti-teleport companion the way 3034's 60-unit rule does.
+		const Vector3 attackerPosition =
+		    AuthoritativePosition(peer->session.SessionId(), peer->session.Character(),
+		                          Vector3{});
+
+		// Resolve the target through the authoritative peer registry.
+		TargetView target;
+		if (const PeerPtr targetPeer = FindTargetPeer(request.targetId);
+		    targetPeer != nullptr)
+		{
+			target.exists = true;
+			target.position =
+			    AuthoritativePosition(targetPeer->session.SessionId(),
+			                          targetPeer->session.Character(), Vector3{});
+		}
+
+		const AttackResult result =
+		    m_attackService.Evaluate(peer->session.GaeaId(), spawned, attackerPosition,
+		                             ruleRequest, target);
+
+		if (!result.accepted)
+		{
+			// SILENT unless the refusal was the announced one. Legacy sends
+			// 3041/3042 on the out-of-range branch (GLCharMsg.cpp:352-363) and
+			// NOTHING for an unknown target, an unspawned attacker or a mob
+			// (GLCharMsg.cpp:340's E_FAIL). That asymmetry is legacy's; inventing a
+			// rejection packet for the silent cases would be a new network message.
+			m_attackRefused.fetch_add(1, std::memory_order_relaxed);
+
+			if (!result.announced)
+			{
+				// Silent. The counter and this log line are the whole of it, which is
+				// exactly what legacy leaves an operator for these branches.
+				Emit(FieldEvent::AttackRejected, result.detail, result.attackerGaeaId);
+				return true;
+			}
+
+			Network::Attack::AttackAvoid avoid;
+			avoid.targetCrow = result.targetCrow;
+			avoid.targetId   = result.targetId;
+
+			std::vector<WireU8> packet;
+			if (const Status status = Network::Attack::AttackCodec::AppendAttackAvoid(packet, avoid);
+			    status.IsError())
+			{
+				m_refusal.store(FieldRefusal::SendFailed, std::memory_order_release);
+				m_refusalDetail = "could not encode 3041";
+				return false;
+			}
+
+			// The attacker's own copy, synchronously, on the connection it asked
+			// from - the same shape HandleGoto uses for 3035.
+			if (const Status sent = SendEnveloped(batcher, peer, packet); sent.IsError())
+			{
+				m_refusal.store(FieldRefusal::SendFailed, std::memory_order_release);
+				m_refusalDetail = "send failed: ";
+				m_refusalDetail += sent.GetMessage();
+				return false;
+			}
+
+			// And everyone else who is authorized learns it too, matching legacy's
+			// SendMsgViewAround on the same branch.
+			Network::Attack::AttackAvoidBroadcast avoidBroadcast;
+			avoidBroadcast.gaeaId     = result.attackerGaeaId;
+			avoidBroadcast.targetCrow = result.targetCrow;
+			avoidBroadcast.targetId   = result.targetId;
+			BroadcastAttackAvoid(peer, avoidBroadcast);
+
+			m_attackAvoidSent.fetch_add(1, std::memory_order_relaxed);
+			Emit(FieldEvent::AttackAvoidSent, result.detail, result.attackerGaeaId);
+			return true;
+		}
+
+		// Accepted. NO DAMAGE: 3037 is an animation and a target, not a hit.
+		//
+		// `dwGaeaID` is the ATTACKER's own id, never the target's - the same
+		// convention 3033 and 3035 follow, and the only value on the wire that
+		// identifies who swung.
+		Network::Attack::AttackBroadcast broadcast;
+		broadcast.gaeaId     = result.attackerGaeaId;
+		broadcast.targetCrow = result.targetCrow;
+		broadcast.targetId   = result.targetId;
+		broadcast.aniSel     = result.aniSel;
+
+		std::vector<WireU8> packet;
+		if (const Status status = Network::Attack::AttackCodec::AppendAttackBroadcast(packet, broadcast);
+		    status.IsError())
+		{
+			m_refusal.store(FieldRefusal::SendFailed, std::memory_order_release);
+			m_refusalDetail = "could not encode 3037";
+			return false;
+		}
+
+		// The attacker does NOT get its own copy here.
+		//
+		// This differs from 3035 and 3033 on purpose. Legacy sends the accepted-attack
+		// broadcast with SendMsgViewAround, which excludes the sender - the swinging
+		// character animates locally and needs no packet - whereas GotoService's
+		// 3035 is explicitly the mover's own authoritative answer. Guessing that the
+		// two routes share a delivery rule would be inventing one.
+		BroadcastAttack(peer, broadcast);
+
+		m_attackAccepted.fetch_add(1, std::memory_order_relaxed);
+		Emit(FieldEvent::AttackAccepted, result.detail, broadcast.gaeaId);
+		return true;
+	}
+
+	void FieldRoleRuntime::BroadcastAttack(const PeerPtr& exclude,
+	                                       const Network::Attack::AttackBroadcast& broadcast)
+	{
+		std::vector<WireU8> packet;
+		if (const Status status = Network::Attack::AttackCodec::AppendAttackBroadcast(packet, broadcast);
+		    status.IsError())
+		{
+			// Already validated a moment ago by the caller, so this cannot fail;
+			// refused rather than ignored so a future break is visible.
+			return;
+		}
+
+		std::vector<PeerPtr> targets;
+		{
+			const std::lock_guard<std::mutex> lock(m_peersMutex);
+			targets = m_peers;
+		}
+
+		for (const PeerPtr& peer : targets)
+		{
+			if (peer == exclude)
+			{
+				continue;
+			}
+
+			if (!peer->spawned.load(std::memory_order_acquire))
+			{
+				continue;
+			}
+
+			ServerBatchEncoder batcher(peer->codec);
+			(void)SendEnveloped(batcher, peer, packet);
+		}
+	}
+
+	void FieldRoleRuntime::BroadcastAttackAvoid(const PeerPtr& exclude,
+	                                             const Network::Attack::AttackAvoidBroadcast& broadcast)
+	{
+		std::vector<WireU8> packet;
+		if (const Status status =
+		        Network::Attack::AttackCodec::AppendAttackAvoidBroadcast(packet, broadcast);
+		    status.IsError())
+		{
+			return;
+		}
+
+		std::vector<PeerPtr> targets;
+		{
+			const std::lock_guard<std::mutex> lock(m_peersMutex);
+			targets = m_peers;
+		}
+
+		for (const PeerPtr& peer : targets)
+		{
+			if (peer == exclude)
+			{
+				continue;
+			}
+
+			if (!peer->spawned.load(std::memory_order_acquire))
+			{
+				continue;
+			}
+
+			ServerBatchEncoder batcher(peer->codec);
+			(void)SendEnveloped(batcher, peer, packet);
+		}
+	}
 
 	Status FieldRoleRuntime::StartMovementTicker()
 	{

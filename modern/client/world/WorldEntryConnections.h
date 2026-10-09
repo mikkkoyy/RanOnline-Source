@@ -205,6 +205,51 @@ namespace Modern::Client
 		const WorldGotoState& Goto() const noexcept { return m_protocol.Goto(); }
 		std::size_t GotoCount() const noexcept { return m_protocol.GotoCount(); }
 
+		// WORLD-ENTRY-002i: sends a 3036 asking the server to attack `targetId`.
+		//
+		// Raw, like every other client->server message here: the client states a
+		// REQUEST and the server decides whether it happens. `aniSel` is an animation
+		// selector legacy copies verbatim (GLCharMsg.cpp:333) and never uses for the
+		// decision, so it is passed through untouched. `flags` is unexamined by this
+		// milestone and defaults to 0, which is also legacy's constructor default.
+		Status SendAttack(WireU32 targetCrow, WireU32 targetId, WireU32 aniSel = 0,
+		                  WireU32 flags = 0);
+
+		// WORLD-ENTRY-002i: the most recent 3037/3041/3042 and their counts.
+		const WorldAttackBrdState& Attack() const noexcept { return m_protocol.Attack(); }
+		std::size_t AttackCount() const noexcept { return m_protocol.AttackCount(); }
+		const WorldAttackAvoidState& AttackAvoid() const noexcept
+		{
+			return m_protocol.AttackAvoid();
+		}
+		std::size_t AttackAvoidCount() const noexcept { return m_protocol.AttackAvoidCount(); }
+		const WorldAttackAvoidBrdState& AttackAvoidBrd() const noexcept
+		{
+			return m_protocol.AttackAvoidBrd();
+		}
+		std::size_t AttackAvoidBrdCount() const noexcept
+		{
+			return m_protocol.AttackAvoidBrdCount();
+		}
+
+		// WORLD-ENTRY-002i: reads until `wantedCount` 3037s have arrived.
+		//
+		// A COUNT for the same reason PumpUntilGotoCount takes one: the ACCEPTED
+		// attack broadcast goes to every OTHER peer and never to the attacker, so
+		// an attacker can never wait for its own without blocking forever.
+		Status PumpUntilAttackCount(std::size_t wantedCount, int timeoutMilliseconds,
+		                            std::size_t maxChunkBytes = 0);
+
+		// WORLD-ENTRY-002i: reads until `wantedCount` 3041s have arrived - this
+		// client's OWN refused attacks. Same COUNT rationale.
+		Status PumpUntilAttackAvoidCount(std::size_t wantedCount, int timeoutMilliseconds,
+		                                 std::size_t maxChunkBytes = 0);
+
+		// WORLD-ENTRY-002i: reads until `wantedCount` 3042s have arrived. Same
+		// COUNT rationale.
+		Status PumpUntilAttackAvoidBrdCount(std::size_t wantedCount, int timeoutMilliseconds,
+		                                    std::size_t maxChunkBytes = 0);
+
 		// WORLD-ENTRY-002h: the most recent 3046/3053 and their counts.
 		const WorldUpdateStateState& UpdateState() const noexcept { return m_protocol.UpdateState(); }
 		std::size_t                UpdateStateCount() const noexcept { return m_protocol.UpdateStateCount(); }

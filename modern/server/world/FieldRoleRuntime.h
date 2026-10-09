@@ -70,6 +70,7 @@
 #include "MovementStateProtocol.h"
 #include "NetworkConnection.h"
 #include "NetworkTypes.h"
+#include "AttackService.h"
 #include "ResourceSyncService.h"
 #include "ServerBatchEncoder.h"
 #include "TcpListener.h"
@@ -130,6 +131,25 @@ enum class FieldEvent : std::uint8_t
 	// WORLD-ENTRY-002h: a 3053 was broadcast to other clients.
 	ResourceBroadcastSent,
 
+	// WORLD-ENTRY-002i: a 3036 was accepted and 3037 went out. Carries the ATTACKER's
+	// gaeaId - the id on the wire is always the attacker's, never the target's.
+	//
+	// "Accepted" means the attack was VALID and in range. It does NOT mean anything
+	// was hit: this milestone applies no damage, and 3037 carries an animation and a
+	// target, not a result.
+	AttackAccepted,
+
+	// WORLD-ENTRY-002i: a 3036 was refused as out of range, so 3041 went to the
+	// attacker and 3042 to everyone else - the ONE refusal legacy announces
+	// (GLCharMsg.cpp:352-363). Every other attack refusal is silent on the wire.
+	AttackAvoidSent,
+
+	// WORLD-ENTRY-002i: a 3036 was refused SILENTLY - unknown target, a mob, no id, or
+	// an unspawned attacker. Nothing went on the wire, exactly as legacy's E_FAIL
+	// branches do. Mirrors GotoRejected: the log line is the only difference from
+	// silence, and it is the difference an operator has.
+	AttackRejected,
+
 	ClientRejected,
 	ClientDisconnected,
 };
@@ -173,6 +193,11 @@ enum class FieldEvent : std::uint8_t
 		// MOVEMENT count, and an operator chasing "why will nobody move" should not
 		// have to read two refusal kinds to find it.
 		GotoBeforeSpawn,
+
+		// WORLD-ENTRY-002i: a 3036 arrived before the connection was spawned. Its own
+		// value for the same reason as GotoBeforeSpawn - the count it feeds is an
+		// ATTACK count, and an operator should not have to read two refusal kinds.
+		AttackBeforeSpawn,
 	};
 
 	const char* ToString(FieldRefusal refusal) noexcept;
@@ -264,6 +289,25 @@ public:
 	// 3035s sent and 3034s refused. Monotonic; read after Stop().
 	std::size_t GotoSentCount() const noexcept { return m_gotoSent.load(); }
 	std::size_t GotoRefusedCount() const noexcept { return m_gotoRefused.load(); }
+
+	// WORLD-ENTRY-002i: 3036s accepted (a 3037 went out) and 3036s refused.
+	// Monotonic; read after Stop().
+	std::size_t AttackAcceptedCount() const noexcept { return m_attackAccepted.load(); }
+	std::size_t AttackRefusedCount() const noexcept { return m_attackRefused.load(); }
+
+	// WORLD-ENTRY-002i: how many 3041s were sent - that is, how many refusals were
+	// of the ANNOUNCED kind. Every other refusal increments AttackRefusedCount()
+	// alone, so this is the count of refusals a client could actually observe.
+	std::size_t AttackAvoidSentCount() const noexcept { return m_attackAvoidSent.load(); }
+
+	// The rule itself, exposed so a test can exercise validation without a socket.
+	// Read-only: the Field role owns the only instance.
+	// Named AttackRules, NOT Attack: a member called `Attack` would hide the
+	// Attack NAMESPACE inside this class, so every `Attack::AttackCodec` and
+	// `AttackService` reference below and in the .cpp would resolve to the member
+	// function instead. That is a compile error at best and a silent mis-resolution
+	// at worst, and it is not worth a name collision to save four characters.
+	const AttackService& AttackRules() const noexcept { return m_attackService; }
 
 	// WORLD-ENTRY-002h: the authoritative resource synchronisation service.
 	// Exposed for tests to inject time and observe frames.
@@ -375,6 +419,53 @@ private:
 		void BroadcastGoto(const PeerPtr& exclude,
 		                   const Network::Goto::GotoBroadcast& broadcast);
 
+		// WORLD-ENTRY-002i: the 3036 path. Returns whether the connection may
+		// continue.
+		//
+		// A malformed 3036 drops the connection exactly as a malformed 3032 or 3034
+		// does; a well-formed one never does, whatever the rule decides. Legacy's
+		// out-of-range branch returns E_FAIL after sending 3041/3042, but E_FAIL
+		// there means "this attack did not happen", not "this client is
+		// misbehaving" - and dropping a well-formed connection over a failed range
+		// check would be a behaviour change, not a reproduction.
+		bool HandleAttack(PeerPtr peer, Network::ServerBatchEncoder& batcher,
+		                  const Network::Message& message);
+
+		// Resolves `gaeaId` to a live spawned peer, or nullptr.
+		//
+		// The authoritative spawned-character lookup. A peer is a target only once it
+		// has earned a spawn AND carries a gaeaId - the same condition 3033, 3035 and
+		// 3053 already use to decide who may receive a broadcast. Returns a
+		// shared_ptr copied out from under the lock, so the caller never holds a
+		// reference into the registry and cannot race an Unregister.
+		PeerPtr FindTargetPeer(Network::WireU32 gaeaId);
+
+		// than being treated as sitting at the world origin.
+		// The server's authoritative position for sessionId.
+		//
+		// The movement runtime's actor position is used ONLY when that actor has a
+		// navigation mesh behind it. A meshless role still attaches a character, so a
+		// Snapshot succeeds, but the actor was never created and its position is a
+		// placeholder - so every meshless character would report the SAME position,
+		// which silently disables any distance rule built on it. That is not
+		// hypothetical: it made the attack range check inert until a test caught it.
+		// In that case the character's authored savePosition is used instead;
+		// with no character either, allback.
+		//
+		// In a world where every map resolves, nothing about this changes.
+		Vector3 AuthoritativePosition(Network::WireU64 sessionId,
+		                               const WorldCharacter* character,
+		                               const Vector3& fallback) const;
+
+		// Sends 3037 to every authorized peer EXCEPT `exclude`. Mirrors BroadcastGoto.
+		void BroadcastAttack(const PeerPtr& exclude,
+		                     const Network::Attack::AttackBroadcast& broadcast);
+
+		// WORLD-ENTRY-002i: sends 3042 to every authorized peer EXCEPT `exclude`.
+		// Mirrors BroadcastGoto.
+		void BroadcastAttackAvoid(const PeerPtr& exclude,
+		                          const Network::Attack::AttackAvoidBroadcast& broadcast);
+
 		// WORLD-ENTRY-002h: broadcasts a 3053 (StateBroadcast) to all authorized
 		// peers except `exclude`. Mirrors BroadcastMoveState exactly.
 		void BroadcastResourceState(const PeerPtr& exclude,
@@ -414,6 +505,11 @@ const MovementStateService& m_movement;
 		// borrow of the service cannot outlive it.
 		GotoService m_gotoService;
 
+	// WORLD-ENTRY-002i: the ATTACK validation rule. Owned by the role for the same
+	// reason as m_gotoService - the role is what knows who is connected - and it is
+	// stateless, so this is for reachability rather than for state.
+	AttackService m_attackService;
+
 		FieldLogSink           m_log;
 		Network::TcpListener   m_listener;
 
@@ -446,7 +542,12 @@ const MovementStateService& m_movement;
 		std::atomic<std::size_t> m_refused{0};
 		std::atomic<std::size_t> m_moveSent{0};
 		std::atomic<std::size_t> m_moveUnchanged{0};
-std::atomic<std::size_t> m_gotoSent{0};
+	std::atomic<std::size_t> m_gotoSent{0};
+
+	// WORLD-ENTRY-002i: 3036 outcomes. Monotonic; written by worker threads.
+std::atomic<std::size_t> m_attackAccepted{0};
+std::atomic<std::size_t> m_attackRefused{0};
+std::atomic<std::size_t> m_attackAvoidSent{0};
 		std::atomic<std::size_t> m_gotoRefused{0};
 		std::atomic<Network::WireU32> m_lastGaeaId{0};
 		std::atomic<std::size_t> m_lastCharacterId{0};

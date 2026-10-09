@@ -61,6 +61,8 @@ add_executable(ModernNetworkTests
     # the arrival threshold are not here: they are decided AFTER a 3034 is
     # decoded, so they belong to the movement and GOTO rule tests.
     GotoProtocolTests.cpp
+    # WORLD-ENTRY-002i: the ATTACK request family codec - 3036/3037/3041/3042.
+    AttackProtocolTests.cpp
     # WORLD-ENTRY-002h: the UPDATE_STATE (3046) and UPDATE_STATE_BRD (3053)
     # codec pair.
     UpdateStateProtocolTests.cpp

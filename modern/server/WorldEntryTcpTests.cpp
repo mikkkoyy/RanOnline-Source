@@ -47,6 +47,7 @@
 #include "CharacterListProtocol.h"
 #include "CompressionCodec.h"
 #include "NetworkCodec.h"
+#include "AttackProtocol.h"
 #include "TcpListener.h"
 #include "TcpTransport.h"
 #include "WorldEntryProtocol.h"
@@ -2342,6 +2343,161 @@ MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
 		}
 	}
 
+	// =========================================================================
+	// WORLD-ENTRY-002i: the ATTACK request (3036)
+	//
+	// Two cases, and no more. One proves an accepted attack travels the real
+	// transport to the OTHER client; one proves an out-of-range attack produces
+	// legacy's 3041 to the attacker and 3042 to everyone else. Everything else -
+	// the sizes, the offsets, the refusal order, the range boundary - is decided
+	// before a byte is framed and is covered by AttackProtocolTests and
+	// AttackServiceTests without a socket.
+	// =========================================================================
+
+	MODERN_TEST(Attack_AnInRangeAttackBroadcastsToTheOtherClientAndNotTheAttacker)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		// Two characters from the repository's shared fixture, so both spawn at the
+		// same save position and are therefore comfortably INSIDE the prototype
+		// range (distance 0 against a limit of 27). That is what makes this an
+		// acceptance case rather than a refusal one.
+		SpawnedClient attacker;
+		REQUIRE(attacker.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+		SpawnedClient watcher;
+		REQUIRE(watcher.Spawn(server, kUserB, kPassB, kCharB1.value, kDeadline).IsOk());
+
+		// The client receiving 2333 and the SERVER marking that peer spawned are
+		// two different events. Attacking in the window between them races the
+		// target's resolvability, and a target that is not yet resolvable is
+		// refused SILENTLY - legacy's `GetTarget(...)` returning NULL - so no 3041
+		// would go out at all. Waiting on the server's own count is the observable
+		// condition, and it is bounded like every other wait in this file.
+		REQUIRE(WaitFor(kDeadline, [&] {
+			return server.Runtime().Field().AuthorizedSessionCount() == 2;
+		}));
+		const WireU32 attackerGaeaId = attacker.spawn.gaeaId;
+		const WireU32 targetGaeaId   = watcher.spawn.gaeaId;
+		REQUIRE(attackerGaeaId != 0);
+		REQUIRE(targetGaeaId != 0);
+		REQUIRE(attackerGaeaId != targetGaeaId);
+
+		REQUIRE(attacker.connection.SendAttack(Network::Attack::kCrowPc, targetGaeaId)
+		            .IsOk());
+
+		// The OTHER client is told. 3037 names the ATTACKER, never the target.
+		REQUIRE(watcher.connection.PumpUntilAttackCount(1, kDeadline).IsOk());
+		CHECK(watcher.connection.Attack().received);
+		CHECK_EQ(watcher.connection.Attack().gaeaId, attackerGaeaId);
+		CHECK_EQ(watcher.connection.Attack().targetId, targetGaeaId);
+		CHECK_EQ(watcher.connection.Attack().targetCrow, Network::Attack::kCrowPc);
+		CHECK_EQ(watcher.connection.Attack().frame.size(),
+		         Network::Attack::kBroadcastSize);
+
+		// The attacker does NOT get its own copy.
+		//
+		// This is deliberately different from 3035, which IS the mover's own
+		// authoritative answer. Legacy sends the accepted attack with
+		// SendMsgViewAround, which excludes the sender: the swinging character
+		// animates locally. Asserting the absence is what proves the exclusion
+		// rather than merely the delivery.
+		CHECK_EQ(attacker.connection.AttackCount(), static_cast<std::size_t>(0));
+
+		// No refusal anywhere.
+		CHECK_EQ(attacker.connection.AttackAvoidCount(), static_cast<std::size_t>(0));
+		CHECK_EQ(watcher.connection.AttackAvoidCount(), static_cast<std::size_t>(0));
+		CHECK_EQ(watcher.connection.AttackAvoidBrdCount(), static_cast<std::size_t>(0));
+
+		server.Stop();
+
+		CHECK_EQ(server.Runtime().Field().AttackAcceptedCount(),
+		         static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().AttackRefusedCount(),
+		         static_cast<std::size_t>(0));
+		CHECK_EQ(server.Runtime().Field().AttackAvoidSentCount(),
+		         static_cast<std::size_t>(0));
+	}
+
+	MODERN_TEST(Attack_AnOutOfRangeAttackRefusesTheAttackerAndTellsTheOtherClient)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		// A second account-B character, placed far from the fixture's spawn point.
+		//
+		// Every character in PopulateRepository shares one save position, so two
+		// spawned clients are always at distance 0 and an out-of-range case could
+		// not be built from the shared fixture at all. Adding a character whose
+		// position is 1000 units away is the smallest way to get the separation the
+		// rule needs WITHOUT moving the prototype range to suit the test - tuning
+		// the constant so a test could reach it would be backwards.
+		constexpr WorldCharacterId kCharFar{ 6002 };
+		WorldCharacter             far = MakeCharacter(kCharFar, kAccountB, "Distant", kUserB, 5);
+		far.savePosition.x = 100.5f + 1000.0f;
+		REQUIRE(server.Repository().Add(far).IsOk());
+
+		SpawnedClient attacker;
+		REQUIRE(attacker.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+		SpawnedClient watcher;
+		REQUIRE(watcher.Spawn(server, kUserB, kPassB, kCharFar.value, kDeadline).IsOk());
+
+		// The client receiving 2333 and the SERVER marking that peer spawned are
+		// two different events. Attacking in the window between them races the
+		// target's resolvability, and a target that is not yet resolvable is
+		// refused SILENTLY - legacy's `GetTarget(...)` returning NULL - so no 3041
+		// would go out at all. Waiting on the server's own count is the observable
+		// condition, and it is bounded like every other wait in this file.
+		REQUIRE(WaitFor(kDeadline, [&] {
+			return server.Runtime().Field().AuthorizedSessionCount() == 2;
+		}));
+		const WireU32 attackerGaeaId = attacker.spawn.gaeaId;
+		const WireU32 targetGaeaId   = watcher.spawn.gaeaId;
+		REQUIRE(attackerGaeaId != targetGaeaId);
+
+		REQUIRE(attacker.connection.SendAttack(Network::Attack::kCrowPc, targetGaeaId)
+		            .IsOk());
+
+		// The ATTACKER gets 3041 - the one attack refusal legacy announces
+		// (GLCharMsg.cpp:352-355).
+		REQUIRE(attacker.connection.PumpUntilAttackAvoidCount(1, kDeadline).IsOk());
+		CHECK(attacker.connection.AttackAvoid().received);
+		CHECK_EQ(attacker.connection.AttackAvoid().targetId, targetGaeaId);
+		CHECK_EQ(attacker.connection.AttackAvoid().frame.size(),
+		         Network::Attack::kAvoidSize);
+
+		// Everyone ELSE gets 3042, naming the attacker who failed.
+		REQUIRE(watcher.connection.PumpUntilAttackAvoidBrdCount(1, kDeadline).IsOk());
+		CHECK(watcher.connection.AttackAvoidBrd().received);
+		CHECK_EQ(watcher.connection.AttackAvoidBrd().gaeaId, attackerGaeaId);
+		CHECK_EQ(watcher.connection.AttackAvoidBrd().targetId, targetGaeaId);
+		CHECK_EQ(watcher.connection.AttackAvoidBrd().frame.size(),
+		         Network::Attack::kAvoidBroadcastSize);
+
+		// The connection SURVIVES. A refused attack is not a misbehaving client,
+		// and dropping it would be a behaviour change rather than a reproduction.
+		CHECK(attacker.connection.IsConnected());
+
+		// Nothing was broadcast as an accepted attack.
+		CHECK_EQ(attacker.connection.AttackCount(), static_cast<std::size_t>(0));
+		CHECK_EQ(watcher.connection.AttackCount(), static_cast<std::size_t>(0));
+
+		// And the watcher does NOT also get a 3041: that message is the attacker's
+		// own, and the two must stay distinct.
+		CHECK_EQ(watcher.connection.AttackAvoidCount(), static_cast<std::size_t>(0));
+		CHECK_EQ(attacker.connection.AttackAvoidBrdCount(), static_cast<std::size_t>(0));
+
+		server.Stop();
+
+		CHECK_EQ(server.Runtime().Field().AttackRefusedCount(),
+		         static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().AttackAvoidSentCount(),
+		         static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().AttackAcceptedCount(),
+		         static_cast<std::size_t>(0));
+	}
 } // namespace ModernTests
 
 int main()

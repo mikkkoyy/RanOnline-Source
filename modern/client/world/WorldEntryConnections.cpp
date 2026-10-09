@@ -1,5 +1,6 @@
 #include "world/WorldEntryConnections.h"
 
+#include "AttackProtocol.h"
 #include "NetworkCodec.h"
 
 namespace Modern::Client
@@ -302,6 +303,30 @@ Status FieldConnection::SendGoto(WireU32 requestedActState, Vector3 claimedCurre
 		return m_transport.Send(request.data(), request.size());
 	}
 
+	Status FieldConnection::SendAttack(WireU32 targetCrow, WireU32 targetId, WireU32 aniSel,
+	                                   WireU32 flags)
+	{
+		if (!m_transport.IsConnected())
+		{
+			return Status(ErrorCode::InvalidState);
+		}
+
+		Network::Attack::AttackRequest request;
+		request.targetCrow = targetCrow;
+		request.targetId   = targetId;
+		request.aniSel     = aniSel;
+		request.flags      = flags;
+
+		std::vector<WireU8> frame;
+		if (const Status status = Network::Attack::AttackCodec::AppendAttackRequest(frame, request);
+		    status.IsError())
+		{
+			return status;
+		}
+
+		return m_transport.Send(frame.data(), frame.size());
+	}
+
 	Status FieldConnection::PumpUntilGotoCount(std::size_t wantedCount, int timeoutMilliseconds,
 	                                          std::size_t maxChunkBytes)
 	{
@@ -382,6 +407,211 @@ Status FieldConnection::SendGoto(WireU32 requestedActState, Vector3 claimedCurre
 
 	// WORLD-ENTRY-002h: reads until `wantedCount` 3046s have arrived.
 	// Mirrors PumpUntilGotoCount exactly.
+	// WORLD-ENTRY-002i: reads until `wantedCount` 3037s have arrived. Duplicated from PumpUntilGotoCount on purpose: a shared helper cannot reach the private m_transport/m_protocol, and passing both plus a callable through it costs more on the send path than the duplication saves.
+	Status FieldConnection::PumpUntilAttackCount(std::size_t wantedCount, int timeoutMilliseconds,
+	                              std::size_t maxChunkBytes)
+	{
+		if (!m_transport.IsConnected())
+		{
+			return Status(ErrorCode::InvalidState);
+		}
+
+		if (m_protocol.AttackCount() >= wantedCount)
+		{
+			return Ok();
+		}
+
+		const std::size_t chunk =
+		    (maxChunkBytes == 0 || maxChunkBytes > kReadBufferSize) ? kReadBufferSize
+		                                                             : maxChunkBytes;
+
+		const auto deadline = std::chrono::steady_clock::now() +
+		                     std::chrono::milliseconds(timeoutMilliseconds > 0
+		                                                  ? timeoutMilliseconds
+		                                                  : 1);
+
+		for (;;)
+		{
+			if (m_protocol.AttackCount() >= wantedCount)
+			{
+				return Ok();
+			}
+
+			const auto now = std::chrono::steady_clock::now();
+			if (now >= deadline)
+			{
+				return Status(ErrorCode::NotFound);
+			}
+
+			const auto left =
+			    std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+			if (left <= 0)
+			{
+				return Status(ErrorCode::NotFound);
+			}
+
+			const int slice = left < 250 ? static_cast<int>(left) : 250;
+
+			std::vector<Network::WireU8> buffer(chunk);
+			std::size_t                  received = 0;
+
+			const Status status =
+			    m_transport.Receive(buffer.data(), buffer.size(), received, slice);
+			if (status.IsError())
+			{
+				return status;
+			}
+
+			if (received == 0)
+			{
+				continue;
+			}
+
+			std::size_t handled = 0;
+			if (const Status fed = m_protocol.FeedField(buffer.data(), received, handled);
+			    fed.IsError())
+			{
+				return fed;
+			}
+		}
+	}
+	// WORLD-ENTRY-002i: reads until `wantedCount` 3041s have arrived - this client's OWN refused attacks.
+	Status FieldConnection::PumpUntilAttackAvoidCount(std::size_t wantedCount, int timeoutMilliseconds,
+	                              std::size_t maxChunkBytes)
+	{
+		if (!m_transport.IsConnected())
+		{
+			return Status(ErrorCode::InvalidState);
+		}
+
+		if (m_protocol.AttackAvoidCount() >= wantedCount)
+		{
+			return Ok();
+		}
+
+		const std::size_t chunk =
+		    (maxChunkBytes == 0 || maxChunkBytes > kReadBufferSize) ? kReadBufferSize
+		                                                             : maxChunkBytes;
+
+		const auto deadline = std::chrono::steady_clock::now() +
+		                     std::chrono::milliseconds(timeoutMilliseconds > 0
+		                                                  ? timeoutMilliseconds
+		                                                  : 1);
+
+		for (;;)
+		{
+			if (m_protocol.AttackAvoidCount() >= wantedCount)
+			{
+				return Ok();
+			}
+
+			const auto now = std::chrono::steady_clock::now();
+			if (now >= deadline)
+			{
+				return Status(ErrorCode::NotFound);
+			}
+
+			const auto left =
+			    std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+			if (left <= 0)
+			{
+				return Status(ErrorCode::NotFound);
+			}
+
+			const int slice = left < 250 ? static_cast<int>(left) : 250;
+
+			std::vector<Network::WireU8> buffer(chunk);
+			std::size_t                  received = 0;
+
+			const Status status =
+			    m_transport.Receive(buffer.data(), buffer.size(), received, slice);
+			if (status.IsError())
+			{
+				return status;
+			}
+
+			if (received == 0)
+			{
+				continue;
+			}
+
+			std::size_t handled = 0;
+			if (const Status fed = m_protocol.FeedField(buffer.data(), received, handled);
+			    fed.IsError())
+			{
+				return fed;
+			}
+		}
+	}
+	// WORLD-ENTRY-002i: reads until `wantedCount` 3042s have arrived - someone ELSE's refused attack.
+	Status FieldConnection::PumpUntilAttackAvoidBrdCount(std::size_t wantedCount, int timeoutMilliseconds,
+	                              std::size_t maxChunkBytes)
+	{
+		if (!m_transport.IsConnected())
+		{
+			return Status(ErrorCode::InvalidState);
+		}
+
+		if (m_protocol.AttackAvoidBrdCount() >= wantedCount)
+		{
+			return Ok();
+		}
+
+		const std::size_t chunk =
+		    (maxChunkBytes == 0 || maxChunkBytes > kReadBufferSize) ? kReadBufferSize
+		                                                             : maxChunkBytes;
+
+		const auto deadline = std::chrono::steady_clock::now() +
+		                     std::chrono::milliseconds(timeoutMilliseconds > 0
+		                                                  ? timeoutMilliseconds
+		                                                  : 1);
+
+		for (;;)
+		{
+			if (m_protocol.AttackAvoidBrdCount() >= wantedCount)
+			{
+				return Ok();
+			}
+
+			const auto now = std::chrono::steady_clock::now();
+			if (now >= deadline)
+			{
+				return Status(ErrorCode::NotFound);
+			}
+
+			const auto left =
+			    std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+			if (left <= 0)
+			{
+				return Status(ErrorCode::NotFound);
+			}
+
+			const int slice = left < 250 ? static_cast<int>(left) : 250;
+
+			std::vector<Network::WireU8> buffer(chunk);
+			std::size_t                  received = 0;
+
+			const Status status =
+			    m_transport.Receive(buffer.data(), buffer.size(), received, slice);
+			if (status.IsError())
+			{
+				return status;
+			}
+
+			if (received == 0)
+			{
+				continue;
+			}
+
+			std::size_t handled = 0;
+			if (const Status fed = m_protocol.FeedField(buffer.data(), received, handled);
+			    fed.IsError())
+			{
+				return fed;
+			}
+		}
+	}
+
 	Status FieldConnection::PumpUntilUpdateStateCount(std::size_t wantedCount,
 	                                                  int timeoutMilliseconds,
 	                                                  std::size_t maxChunkBytes)

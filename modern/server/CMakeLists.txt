@@ -45,6 +45,8 @@ set(MODERN_SERVER_SOURCES
     # authorization would be an Agent that could forge its own proof of entry.
     world/CharacterClassMovementSpeed.cpp
     world/GotoService.cpp
+    # WORLD-ENTRY-002i: the ATTACK validation rule (3036). Pure; no damage.
+    world/AttackService.cpp
     world/WorldCharacter.cpp
     world/WorldMovementRuntime.cpp
     world/WorldCharacter.h
@@ -125,6 +127,8 @@ add_executable(ModernServerTests
     # WORLD-ENTRY-002f: the GOTO rule - the 60-unit desync check, the legacy
     # validation ORDER, the silence of a refusal, and the class speed seam.
     GotoServiceTests.cpp
+    # WORLD-ENTRY-002i: the ATTACK validation rule - deterministic, no sockets.
+    AttackServiceTests.cpp
     # WORLD-ENTRY-002f: the Field role's movement runtime - the actor registry,
     # injected-time Tick progression, snapshots and multi-actor isolation.
     WorldMovementRuntimeTests.cpp

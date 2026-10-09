@@ -1,5 +1,6 @@
 #include "world/WorldEntryClient.h"
 
+#include "AttackProtocol.h"
 #include "LoginProtocol.h"
 #include "LoginResponseProtocol.h"
 #include "NetworkCodec.h"
@@ -178,6 +179,16 @@ namespace Modern::Client
 		// question about two different sessions.
 		m_goto      = WorldGotoState{};
 		m_gotoCount = 0;
+
+		// WORLD-ENTRY-002i: the attack counters reset with the 3035 stream, for the
+		// same reason - they belong to the Field connection they arrived on, and
+		// that stream's life IS this connection's life.
+		m_attack              = WorldAttackBrdState{};
+		m_attackCount         = 0;
+		m_attackAvoid         = WorldAttackAvoidState{};
+		m_attackAvoidCount    = 0;
+		m_attackAvoidBrd      = WorldAttackAvoidBrdState{};
+		m_attackAvoidBrdCount = 0;
 		m_agentFailed  = false;
 		m_fieldFailed  = false;
 	}
@@ -402,6 +413,96 @@ namespace Modern::Client
 
 			m_moveState = received;
 			++m_moveStateCount;
+			continue;
+		}
+
+		// ---- 3037: an ATTACK another character made ------------------------
+		//
+		// WORLD-ENTRY-002i. Checked BEFORE the spawn test for the same reason the
+		// 3033 and 3035 are: all of them arrive on ONE long-lived Field connection,
+		// interleaved with the spawn and with each other, and treating an attack as
+		// "not a spawn" would drop it on the floor.
+		//
+		// Note what is NOT here: 3038/3039 (attack cancel) and 3043/3044 (damage).
+		// They belong to the resolution half, which this milestone excludes.
+		if (Attack::AttackCodec::IsAttackBroadcast(message.header.type))
+		{
+			Attack::AttackBroadcast broadcast;
+			if (const Status status =
+			        Attack::AttackCodec::DecodeAttackBroadcast(frame, broadcast);
+			    status.IsError())
+			{
+				m_fieldFailed = true;
+				return status;
+			}
+
+			// Copied field by field rather than aliased, so what a test asserts on
+			// is plainly what arrived.
+			WorldAttackBrdState received;
+			received.received    = true;
+			received.gaeaId      = broadcast.gaeaId;
+			received.targetCrow  = broadcast.targetCrow;
+			received.targetId    = broadcast.targetId;
+			received.aniSel      = broadcast.aniSel;
+			received.frame       = frame;
+
+			m_attack = received;
+			++m_attackCount;
+			continue;
+		}
+
+		// ---- 3041: THIS client's attack was refused -------------------------
+		//
+		// WORLD-ENTRY-002i. The one attack refusal that reaches the wire. A decode
+		// failure is terminal for the same reason the 3035's is: the id is one this
+		// client recognises, so a malformed one means the stream cannot be trusted
+		// to be in the right place afterwards.
+		if (Attack::AttackCodec::IsAttackAvoid(message.header.type))
+		{
+			Attack::AttackAvoid avoid;
+			if (const Status status = Attack::AttackCodec::DecodeAttackAvoid(frame, avoid);
+			    status.IsError())
+			{
+				m_fieldFailed = true;
+				return status;
+			}
+
+			WorldAttackAvoidState received;
+			received.received   = true;
+			received.targetCrow = avoid.targetCrow;
+			received.targetId   = avoid.targetId;
+			received.frame      = frame;
+
+			m_attackAvoid = received;
+			++m_attackAvoidCount;
+			continue;
+		}
+
+		// ---- 3042: someone ELSE's attack was refused -----------------------
+		//
+		// WORLD-ENTRY-002i. Never arrives on the attacker's own connection - that
+		// client gets 3041 - so seeing one proves the broadcast excluded its
+		// sender, which is exactly what legacy's SendMsgViewAround does.
+		if (Attack::AttackCodec::IsAttackAvoidBroadcast(message.header.type))
+		{
+			Attack::AttackAvoidBroadcast broadcast;
+			if (const Status status =
+			        Attack::AttackCodec::DecodeAttackAvoidBroadcast(frame, broadcast);
+			    status.IsError())
+			{
+				m_fieldFailed = true;
+				return status;
+			}
+
+			WorldAttackAvoidBrdState received;
+			received.received   = true;
+			received.gaeaId     = broadcast.gaeaId;
+			received.targetCrow = broadcast.targetCrow;
+			received.targetId   = broadcast.targetId;
+			received.frame      = frame;
+
+			m_attackAvoidBrd = received;
+			++m_attackAvoidBrdCount;
 			continue;
 		}
 

@@ -84,6 +84,10 @@ set(MODERN_NETWORK_SOURCES
     # WORLD-ENTRY-002f: the GOTO protocol - 3034 and 3035.
     GotoProtocol.h
     GotoProtocol.cpp
+    # WORLD-ENTRY-002i: the ATTACK request family - 3036/3037/3041/3042. Validation
+    # and broadcast only; no damage lives in this layer.
+    AttackProtocol.h
+    AttackProtocol.cpp
     # NETWORK-001: the real Winsock TCP layer. This is the only part of the modern
     # tree that includes <winsock2.h>, and it is why ws2_32 is linked below.
     #
