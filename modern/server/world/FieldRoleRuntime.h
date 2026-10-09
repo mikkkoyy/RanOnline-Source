@@ -70,7 +70,9 @@
 #include "MovementStateProtocol.h"
 #include "NetworkConnection.h"
 #include "NetworkTypes.h"
+#include "AttackDamageProtocol.h"
 #include "AttackService.h"
+#include "DamageResolution.h"
 #include "ResourceSyncService.h"
 #include "ServerBatchEncoder.h"
 #include "TcpListener.h"
@@ -91,6 +93,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <functional>
 #include <thread>
 #include <vector>
 
@@ -143,6 +146,11 @@ enum class FieldEvent : std::uint8_t
 	// attacker and 3042 to everyone else - the ONE refusal legacy announces
 	// (GLCharMsg.cpp:352-363). Every other attack refusal is silent on the wire.
 	AttackAvoidSent,
+
+	// WORLD-ENTRY-002k: a 3036 landed and a 3043 went out, carrying the damage the
+	// resource layer ACTUALLY applied. Carries the TARGET's gaeaId, because a
+	// damage event is about who lost HP.
+	AttackDamageSent,
 
 	// WORLD-ENTRY-002i: a 3036 was refused SILENTLY - unknown target, a mob, no id, or
 	// an unspawned attacker. Nothing went on the wire, exactly as legacy's E_FAIL
@@ -299,6 +307,29 @@ public:
 	// of the ANNOUNCED kind. Every other refusal increments AttackRefusedCount()
 	// alone, so this is the count of refusals a client could actually observe.
 	std::size_t AttackAvoidSentCount() const noexcept { return m_attackAvoidSent.load(); }
+
+	// WORLD-ENTRY-002k: 3043s sent (damage applied), and resolutions that produced
+	// no damage packet at all - a dead target, or a refused roll.
+	std::size_t AttackDamageSentCount() const noexcept
+	{
+		return m_attackDamageSent.load();
+	}
+	std::size_t AttackDamageRefusedCount() const noexcept
+	{
+		return m_attackDamageRefused.load();
+	}
+
+	// WORLD-ENTRY-002k: the damage roll source, injectable.
+	//
+	// A SEAM, not a generator. Legacy rolls `rand()/RAND_MAX` per strike
+	// (GLDefine.h:11); nothing in the modern server generates randomness yet, and
+	// an unseeded one would make every attack test a coin flip. The default
+	// returns a fixed always-hit roll so the boundary is exercised end to end; a
+	// test or a later milestone supplies its own.
+	void SetDamageRollSource(std::function<float()> source) noexcept
+	{
+		m_rollSource = std::move(source);
+	}
 
 	// The rule itself, exposed so a test can exercise validation without a socket.
 	// Read-only: the Field role owns the only instance.
@@ -457,6 +488,31 @@ private:
 		                               const WorldCharacter* character,
 		                               const Vector3& fallback) const;
 
+		// WORLD-ENTRY-002k: the ANNOUNCED refusal - 3041 to the attacker and 3042 to
+		// everyone else.
+		//
+		// One helper for two callers, because legacy sends the identical pair from
+		// the out-of-range branch (GLCharMsg.cpp:352-363) and from the MISS branch
+		// (GLChar::AvoidProc, GLChar.cpp:2468-2476). A miss is not a different
+		// event on the wire; it is the same one for a different reason.
+		bool SendAttackAvoid(PeerPtr peer, Network::ServerBatchEncoder& batcher,
+		                     const AttackResult& result);
+
+		// WORLD-ENTRY-002k: resolves one accepted attack, applies it, and reports.
+		//
+		// `targetPeer` is excluded from the 3044 broadcast: the victim learns of its
+		// own HP change through the 3046 that ApplyDamage already emitted, and two
+		// differently-shaped statements of one event would be a protocol invention.
+		void ApplyAttackDamage(PeerPtr peer, Network::ServerBatchEncoder& batcher,
+		                       const AttackResult& accepted);
+
+		// Sends 3044 to every authorized peer EXCEPT `exclude`. Mirrors BroadcastGoto.
+		void BroadcastAttackDamage(const PeerPtr& exclude,
+		                           const Network::Attack::AttackDamageBroadcast& broadcast);
+
+		// WORLD-ENTRY-002k: one roll in [0,1] from the configured source.
+		float NextRoll() const noexcept;
+
 		// Sends 3037 to every authorized peer EXCEPT `exclude`. Mirrors BroadcastGoto.
 		void BroadcastAttack(const PeerPtr& exclude,
 		                     const Network::Attack::AttackBroadcast& broadcast);
@@ -547,7 +603,15 @@ const MovementStateService& m_movement;
 	// WORLD-ENTRY-002i: 3036 outcomes. Monotonic; written by worker threads.
 std::atomic<std::size_t> m_attackAccepted{0};
 std::atomic<std::size_t> m_attackRefused{0};
-std::atomic<std::size_t> m_attackAvoidSent{0};
+	std::atomic<std::size_t> m_attackAvoidSent{0};
+
+	// WORLD-ENTRY-002k: damage outcomes. Monotonic; written by worker threads.
+std::atomic<std::size_t> m_attackDamageSent{0};
+std::atomic<std::size_t> m_attackDamageRefused{0};
+
+	// WORLD-ENTRY-002k: the roll seam. Empty means "use the fixed always-hit
+	// default"; see NextRoll.
+std::function<float()> m_rollSource;
 		std::atomic<std::size_t> m_gotoRefused{0};
 		std::atomic<Network::WireU32> m_lastGaeaId{0};
 		std::atomic<std::size_t> m_lastCharacterId{0};

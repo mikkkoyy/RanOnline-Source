@@ -2498,6 +2498,148 @@ MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
 		CHECK_EQ(server.Runtime().Field().AttackAcceptedCount(),
 		         static_cast<std::size_t>(0));
 	}
+	// =========================================================================
+	// WORLD-ENTRY-002k: authoritative damage application
+	//
+	// Two cases. The first proves that an attack which lands REDUCES the target's
+	// HP, tells the attacker with a 3043 and the onlookers with a 3044, and
+	// reports the damage the resource layer ACTUALLY applied.
+	//
+	// The second proves that a dead target produces NO damage packet at all -
+	// `ApplyDamage` returns 0 for a target whose HP is already zero, and legacy
+	// has no message for "you hit a corpse".
+	//
+	// The roll seam is left at its default, which always HITS: see
+	// FieldRoleRuntime::NextRoll. That keeps these two deterministic, because a
+	// random roll would make them coin flips.
+	// =========================================================================
+
+	MODERN_TEST(AttackDamage_AHitReducesTheTargetHpAndReportsWhatWasApplied)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		SpawnedClient attacker;
+		REQUIRE(attacker.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+		SpawnedClient watcher;
+		REQUIRE(watcher.Spawn(server, kUserB, kPassB, kCharB1.value, kDeadline).IsOk());
+
+		const WireU32 attackerGaeaId = attacker.spawn.gaeaId;
+		const WireU32 targetGaeaId   = watcher.spawn.gaeaId;
+
+		// The target's HP BEFORE the hit, read from the authoritative service
+		// rather than assumed, so the delta is a measurement and not a guess.
+		const auto before = server.Runtime().Field().ResourceSync().Find(targetGaeaId);
+		REQUIRE(before.has_value());
+		const WireU32 hpBefore = before->GetCurrent(Resources::ResourceKind::Hp);
+		REQUIRE(hpBefore > 0u);
+
+		REQUIRE(attacker.connection.SendAttack(Network::Attack::kCrowPc, targetGaeaId)
+		            .IsOk());
+
+		// The ATTACKER gets 3043, synchronously, with the APPLIED figure.
+		REQUIRE(attacker.connection.PumpUntilAttackDamageCount(1, kDeadline).IsOk());
+		const WireI32 reported = attacker.connection.AttackDamage().damage;
+		CHECK(attacker.connection.AttackDamage().received);
+		CHECK_EQ(attacker.connection.AttackDamage().targetId, targetGaeaId);
+		CHECK_EQ(attacker.connection.AttackDamage().frame.size(),
+		         Network::Attack::kDamageSize);
+		CHECK(reported > 0);
+
+		// EVERYONE ELSE gets 3044, naming the ATTACKER, never the target.
+		REQUIRE(watcher.connection.PumpUntilAttackDamageBrdCount(1, kDeadline).IsOk());
+		CHECK_EQ(watcher.connection.AttackDamageBrd().gaeaId, attackerGaeaId);
+		CHECK_EQ(watcher.connection.AttackDamageBrd().targetId, targetGaeaId);
+		CHECK_EQ(watcher.connection.AttackDamageBrd().damage, reported);
+		CHECK_EQ(watcher.connection.AttackDamageBrd().frame.size(),
+		         Network::Attack::kDamageBroadcastSize);
+
+		// The victim does NOT get a 3044: it learns of its own HP change through
+		// 3046 instead, and a second differently-shaped statement of the same event
+		// would be an invention rather than a reproduction.
+		CHECK_EQ(watcher.connection.AttackDamageCount(), static_cast<std::size_t>(0));
+
+		// And the ATTACKER does not get a 3044 either: the broadcast excludes it,
+		// for the same reason 3037 excludes the attacker.
+		CHECK_EQ(attacker.connection.AttackDamageBrdCount(), static_cast<std::size_t>(0));
+
+		// The APPLIED figure agrees with what the authoritative service actually
+		// removed. Overkill is where the two numbers legitimately differ, so this is
+		// the case that proves the packet carries the resource layer's answer rather
+		// than the resolution's request.
+		const auto after = server.Runtime().Field().ResourceSync().Find(targetGaeaId);
+		CHECK(after.has_value());
+		const WireU32 hpAfter = after->GetCurrent(Resources::ResourceKind::Hp);
+		CHECK(hpAfter < hpBefore);
+		CHECK_EQ(static_cast<WireU32>(reported), hpBefore - hpAfter);
+
+		// The existing 3046/3053 behaviour is untouched: the victim is still told
+		// its own new HP.
+		CHECK(watcher.protocol.UpdateState().received);
+
+		server.Stop();
+
+		CHECK_EQ(server.Runtime().Field().AttackDamageSentCount(),
+		         static_cast<std::size_t>(1));
+	}
+
+	MODERN_TEST(AttackDamage_ADeadTargetProducesNoDamageResult)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		SpawnedClient attacker;
+		REQUIRE(attacker.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+		SpawnedClient watcher;
+		REQUIRE(watcher.Spawn(server, kUserB, kPassB, kCharB1.value, kDeadline).IsOk());
+
+		const WireU32 targetGaeaId = watcher.spawn.gaeaId;
+
+		// Take the target to exactly zero HP through the authoritative service, the
+		// same seam Spend uses. A target whose HP is already zero is refused by
+		// ApplyDamage (ResourceSyncService.cpp:373) and legacy has no message for
+		// hitting a corpse.
+		//
+		// The amount is READ from the service rather than assumed, so the test does
+		// not depend on a fixture constant.
+		const auto before = server.Runtime().Field().ResourceSync().Find(targetGaeaId);
+		REQUIRE(before.has_value());
+		const WireU32 maxHp = before->GetMaximum(Resources::ResourceKind::Hp);
+		REQUIRE(maxHp > 0u);
+
+		WireU32 spent = 0;
+		REQUIRE(server.Runtime().Field().ResourceSync()
+		            .Spend(targetGaeaId, Resources::ResourceKind::Hp, maxHp, spent)
+		            .IsOk());
+		CHECK(spent > 0u);
+
+		const auto dead = server.Runtime().Field().ResourceSync().Find(targetGaeaId);
+		REQUIRE(dead.has_value());
+		CHECK_EQ(dead->GetCurrent(Resources::ResourceKind::Hp), 0u);
+
+		REQUIRE(attacker.connection.SendAttack(Network::Attack::kCrowPc, targetGaeaId)
+		            .IsOk());
+
+		// The attacker gets NO 3043, and the onlookers get NO 3044.
+		CHECK(attacker.connection.PumpUntilAttackDamageCount(1, 1500).IsError());
+		CHECK_EQ(attacker.connection.AttackDamageCount(), static_cast<std::size_t>(0));
+		CHECK_EQ(watcher.connection.AttackDamageBrdCount(), static_cast<std::size_t>(0));
+
+		// And the target's HP is still zero: the refusal changed nothing.
+		const auto after = server.Runtime().Field().ResourceSync().Find(targetGaeaId);
+		CHECK(after.has_value());
+		CHECK_EQ(after->GetCurrent(Resources::ResourceKind::Hp), 0u);
+
+		server.Stop();
+
+		// Counted as a damage refusal, not as damage dealt.
+		CHECK_EQ(server.Runtime().Field().AttackDamageSentCount(),
+		         static_cast<std::size_t>(0));
+		CHECK_EQ(server.Runtime().Field().AttackDamageRefusedCount(),
+		         static_cast<std::size_t>(1));
+	}
 } // namespace ModernTests
 
 int main()

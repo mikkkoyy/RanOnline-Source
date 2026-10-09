@@ -88,6 +88,9 @@ set(MODERN_NETWORK_SOURCES
     # and broadcast only; no damage lives in this layer.
     AttackProtocol.h
     AttackProtocol.cpp
+    # WORLD-ENTRY-002k: the ATTACK_DAMAGE result - 3043 to the attacker, 3044 to the view.
+    AttackDamageProtocol.h
+    AttackDamageProtocol.cpp
     # NETWORK-001: the real Winsock TCP layer. This is the only part of the modern
     # tree that includes <winsock2.h>, and it is why ws2_32 is linked below.
     #

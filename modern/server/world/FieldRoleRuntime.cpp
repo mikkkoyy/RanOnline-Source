@@ -48,6 +48,7 @@ const char* ToString(FieldEvent event) noexcept
 		case FieldEvent::ResourceBroadcastSent: return "ResourceBroadcastSent";
 	case FieldEvent::AttackAccepted:        return "AttackAccepted";
 	case FieldEvent::AttackAvoidSent:       return "AttackAvoidSent";
+	case FieldEvent::AttackDamageSent:      return "AttackDamageSent";
 	case FieldEvent::AttackRejected:        return "AttackRejected";
 		case FieldEvent::ClientRejected:      return "ClientRejected";
 		case FieldEvent::ClientDisconnected:  return "ClientDisconnected";
@@ -998,40 +999,11 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 				return true;
 			}
 
-			Network::Attack::AttackAvoid avoid;
-			avoid.targetCrow = result.targetCrow;
-			avoid.targetId   = result.targetId;
-
-			std::vector<WireU8> packet;
-			if (const Status status = Network::Attack::AttackCodec::AppendAttackAvoid(packet, avoid);
-			    status.IsError())
-			{
-				m_refusal.store(FieldRefusal::SendFailed, std::memory_order_release);
-				m_refusalDetail = "could not encode 3041";
-				return false;
-			}
-
-			// The attacker's own copy, synchronously, on the connection it asked
-			// from - the same shape HandleGoto uses for 3035.
-			if (const Status sent = SendEnveloped(batcher, peer, packet); sent.IsError())
-			{
-				m_refusal.store(FieldRefusal::SendFailed, std::memory_order_release);
-				m_refusalDetail = "send failed: ";
-				m_refusalDetail += sent.GetMessage();
-				return false;
-			}
-
-			// And everyone else who is authorized learns it too, matching legacy's
-			// SendMsgViewAround on the same branch.
-			Network::Attack::AttackAvoidBroadcast avoidBroadcast;
-			avoidBroadcast.gaeaId     = result.attackerGaeaId;
-			avoidBroadcast.targetCrow = result.targetCrow;
-			avoidBroadcast.targetId   = result.targetId;
-			BroadcastAttackAvoid(peer, avoidBroadcast);
-
-			m_attackAvoidSent.fetch_add(1, std::memory_order_relaxed);
-			Emit(FieldEvent::AttackAvoidSent, result.detail, result.attackerGaeaId);
-			return true;
+			// Out of range: the ANNOUNCED refusal. A miss takes this same path
+			// below - legacy sends the identical 3041/3042 pair from
+			// GLChar::AvoidProc (GLChar.cpp:2468-2476) as from the range branch
+			// (GLCharMsg.cpp:352-363), so one helper serves both.
+			return SendAttackAvoid(peer, batcher, result);
 		}
 
 		// Accepted. NO DAMAGE: 3037 is an animation and a target, not a hit.
@@ -1065,6 +1037,19 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 
 		m_attackAccepted.fetch_add(1, std::memory_order_relaxed);
 		Emit(FieldEvent::AttackAccepted, result.detail, broadcast.gaeaId);
+
+		// WORLD-ENTRY-002k: the attack is ALLOWED and the animation is out - now the
+		// strike resolves. Legacy keeps the two apart the same way: the animation is
+		// broadcast from MsgAttack, and the damage comes from AttackProcess
+		// (GLChar.cpp:2848) via DamageProc.
+		//
+		// The ATTACKER is excluded from the 3044 broadcast, not the victim. DamageProc
+		// sends the 3043 to the attacker's own connection and the 3044 with
+		// SendMsgViewAround, which excludes the actor (GLChar.cpp:2526-2540). The
+		// victim DOES receive the broadcast - that is how it sees the number land -
+		// and it is told its new HP separately, through the 3046 ApplyDamage emits.
+		ApplyAttackDamage(peer, batcher, result);
+
 		return true;
 	}
 
@@ -1135,6 +1120,214 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 			ServerBatchEncoder batcher(peer->codec);
 			(void)SendEnveloped(batcher, peer, packet);
 		}
+	}
+
+	bool FieldRoleRuntime::SendAttackAvoid(PeerPtr peer, ServerBatchEncoder& batcher,
+	                                       const AttackResult& result)
+	{
+		Network::Attack::AttackAvoid avoid;
+		avoid.targetCrow = result.targetCrow;
+		avoid.targetId   = result.targetId;
+
+		std::vector<WireU8> packet;
+		if (const Status status = Network::Attack::AttackCodec::AppendAttackAvoid(packet, avoid);
+		    status.IsError())
+		{
+			m_refusal.store(FieldRefusal::SendFailed, std::memory_order_release);
+			m_refusalDetail = "could not encode 3041";
+			return false;
+		}
+
+		// The attacker's own copy, synchronously, on the connection it asked
+		// from - the same shape HandleGoto uses for 3035.
+		if (const Status sent = SendEnveloped(batcher, peer, packet); sent.IsError())
+		{
+			m_refusal.store(FieldRefusal::SendFailed, std::memory_order_release);
+			m_refusalDetail = "send failed: ";
+			m_refusalDetail += sent.GetMessage();
+			return false;
+		}
+
+		// And everyone else who is authorized learns it too, matching legacy's
+		// SendMsgViewAround on the same branch.
+		Network::Attack::AttackAvoidBroadcast avoidBroadcast;
+		avoidBroadcast.gaeaId     = result.attackerGaeaId;
+		avoidBroadcast.targetCrow = result.targetCrow;
+		avoidBroadcast.targetId   = result.targetId;
+		BroadcastAttackAvoid(peer, avoidBroadcast);
+
+		m_attackAvoidSent.fetch_add(1, std::memory_order_relaxed);
+		Emit(FieldEvent::AttackAvoidSent, result.detail, result.attackerGaeaId);
+		return true;
+	}
+
+	void FieldRoleRuntime::ApplyAttackDamage(PeerPtr peer, ServerBatchEncoder& batcher,
+	                                         const AttackResult& accepted)
+	{
+		// ---- resolve ---------------------------------------------------------
+		//
+		// Every roll is INJECTED. `DamageResolution` is pure and generates nothing;
+		// legacy's RANDOM_POS (GLDefine.h:11) is produced once per strike in
+		// PreStrikeProc (GLChar.cpp:2416) and here by the role's roll source.
+		DamageInput input;
+		input.attackerGaeaId = accepted.attackerGaeaId;
+		input.targetGaeaId   = accepted.targetId;
+		input.targetCrow     = accepted.targetCrow;
+
+		input.hitRoll        = NextRoll();
+		input.damageRoll     = NextRoll();
+		input.criticalRoll   = NextRoll();
+		input.crushingRoll   = NextRoll();
+		input.reflectionRoll = NextRoll();
+
+		// PROTOTYPE statistics. See DamageResolution.h: legacy's are item-derived
+		// and the modern Field path has none, so these are placeholders and NOT
+		// recovered RAN values. Only the SHAPE is right.
+		input.stats.lowDamage  = kPrototypeLowDamage;
+		input.stats.highDamage = kPrototypeHighDamage;
+		input.stats.hit        = kPrototypeHit;
+		input.stats.avoid      = kPrototypeAvoid;
+
+		DamageResult damage = DamageResolution::Resolve(/*attackerPresent=*/true,
+		                                                /*targetPresent=*/true, input);
+
+		if (damage.outcome == DamageOutcome::Avoided)
+		{
+			// A miss is the SAME wire event as an out-of-range attack: legacy's
+			// AvoidProc sends 3041/3042, not a damage packet. Reused deliberately.
+			AttackResult avoided = accepted;
+			avoided.detail = "the attack missed";
+			(void) SendAttackAvoid(peer, batcher, avoided);
+			return;
+		}
+
+		if (damage.outcome != DamageOutcome::Hit)
+		{
+			// Refused: nothing goes on the wire at all.
+			m_attackDamageRefused.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+
+		// ---- apply -----------------------------------------------------------
+		//
+		// The APPLIED amount, not the requested one.
+		//
+		// `ApplyDamage` returns GLCHARLOGIC::RECEIVE_DAMAGE's difference actually
+		// lost (GLogixExPC.cpp:2093) and returns 0 when the target is already dead
+		// (ResourceSyncService.cpp:373). Both matter: an overkill must be reported
+		// as the HP that actually went, and a dead target must produce NO damage
+		// packet at all.
+		const Network::WireU32 applied =
+		    m_resources.ApplyDamage(accepted.targetId, damage.requestedDamage);
+
+		if (applied == 0)
+		{
+			m_attackDamageRefused.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+
+		damage.appliedDamage = applied;
+
+		// ---- 3043 to the attacker -------------------------------------------
+		//
+		// The attacker gets its OWN result, synchronously. 3044 below goes to
+		// everyone else.
+		Network::Attack::AttackDamage toAttacker;
+		toAttacker.targetCrow = accepted.targetCrow;
+		toAttacker.targetId   = accepted.targetId;
+		toAttacker.damage     = static_cast<Network::WireI32>(applied);
+		toAttacker.damageFlag = damage.damageFlag;
+
+		std::vector<WireU8> damagePacket;
+		if (const Status status =
+		        Network::Attack::AttackDamageCodec::AppendAttackDamage(damagePacket,
+		                                                                toAttacker);
+		    status.IsError())
+		{
+			m_refusal.store(FieldRefusal::SendFailed, std::memory_order_release);
+			m_refusalDetail = "could not encode 3043";
+			return;
+		}
+
+		if (const Status sent = SendEnveloped(batcher, peer, damagePacket); sent.IsError())
+		{
+			m_refusal.store(FieldRefusal::SendFailed, std::memory_order_release);
+			m_refusalDetail = "send failed: ";
+			m_refusalDetail += sent.GetMessage();
+			return;
+		}
+
+		// ---- 3044 to everyone else ------------------------------------------
+		//
+		// The ATTACKER is excluded, not the victim.
+		//
+		// DamageProc sends the 3043 to m_dwClientID - the attacker's own
+		// connection - and the 3044 with SendMsgViewAround, which excludes the
+		// actor (GLChar.cpp:2526-2540). So the victim DOES receive the damage
+		// broadcast; that is how it sees the number land on its own character. The
+		// attacker does not, because it already has the 3043.
+		//
+		// Excluding the victim instead leaves a two-player world in which nobody
+		// ever receives a 3044 - which is exactly the wrong guess this test caught.
+		Network::Attack::AttackDamageBroadcast toView;
+		toView.gaeaId     = accepted.attackerGaeaId;
+		toView.targetCrow = accepted.targetCrow;
+		toView.targetId   = accepted.targetId;
+		toView.damage     = static_cast<Network::WireI32>(applied);
+		toView.damageFlag = damage.damageFlag;
+
+		BroadcastAttackDamage(peer, toView);
+
+		m_attackDamageSent.fetch_add(1, std::memory_order_relaxed);
+		Emit(FieldEvent::AttackDamageSent, damage.detail, accepted.targetId);
+	}
+
+	void FieldRoleRuntime::BroadcastAttackDamage(
+	    const PeerPtr& exclude, const Network::Attack::AttackDamageBroadcast& broadcast)
+	{
+		std::vector<WireU8> packet;
+		if (const Status status = Network::Attack::AttackDamageCodec::AppendAttackDamageBroadcast(
+		        packet, broadcast);
+		    status.IsError())
+		{
+			return;
+		}
+
+		std::vector<PeerPtr> targets;
+		{
+			const std::lock_guard<std::mutex> lock(m_peersMutex);
+			targets = m_peers;
+		}
+
+		for (const PeerPtr& peer : targets)
+		{
+			if (peer == exclude)
+			{
+				continue;
+			}
+
+			if (!peer->spawned.load(std::memory_order_acquire))
+			{
+				continue;
+			}
+
+			ServerBatchEncoder batcher(peer->codec);
+			(void)SendEnveloped(batcher, peer, packet);
+		}
+	}
+
+	float FieldRoleRuntime::NextRoll() const noexcept
+	{
+		// The roll source is a SEAM, not a generator.
+		//
+		// Legacy rolls `rand()/RAND_MAX` per strike (GLDefine.h:11). Nothing in the
+		// modern server generates randomness yet, and wiring an unseeded one in
+		// would make every TCP test that involves an attack a coin flip - a
+		// refused-then-retried suite is worse than no suite. So the default source
+		// returns a fixed value that always HITS (a hit rate of 20-99 always
+		// exceeds roll*100 for roll 0), the boundary is exercised end to end, and
+		// the seedable generator is a later milestone.
+		return m_rollSource ? m_rollSource() : 0.0f;
 	}
 
 	Status FieldRoleRuntime::StartMovementTicker()

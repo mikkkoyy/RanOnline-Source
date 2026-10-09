@@ -1,5 +1,6 @@
 #include "world/WorldEntryClient.h"
 
+#include "AttackDamageProtocol.h"
 #include "AttackProtocol.h"
 #include "LoginProtocol.h"
 #include "LoginResponseProtocol.h"
@@ -184,6 +185,10 @@ namespace Modern::Client
 		// same reason - they belong to the Field connection they arrived on, and
 		// that stream's life IS this connection's life.
 		m_attack              = WorldAttackBrdState{};
+		m_attackDamage        = WorldAttackDamageState{};
+		m_attackDamageCount   = 0;
+		m_attackDamageBrd     = WorldAttackDamageBrdState{};
+		m_attackDamageBrdCount = 0;
 		m_attackCount         = 0;
 		m_attackAvoid         = WorldAttackAvoidState{};
 		m_attackAvoidCount    = 0;
@@ -503,6 +508,68 @@ namespace Modern::Client
 
 			m_attackAvoidBrd = received;
 			++m_attackAvoidBrdCount;
+			continue;
+		}
+
+		// ---- 3043: damage MY OWN attack dealt ------------------------------
+		//
+		// WORLD-ENTRY-002k. Checked BEFORE the spawn test, alongside 3037/3041/3042
+		// and for the same reason: every one of them arrives on ONE long-lived Field
+		// connection, interleaved with the spawn and with each other.
+		//
+		// Presentation of a damage number is a client-rendering concern and is NOT
+		// implemented here. This is the protocol receive/dispatch boundary only -
+		// what a test asserts on is the frame and the decoded fields.
+		if (Attack::AttackDamageCodec::IsAttackDamage(message.header.type))
+		{
+			Attack::AttackDamage damage;
+			if (const Status status =
+			        Attack::AttackDamageCodec::DecodeAttackDamage(frame, damage);
+			    status.IsError())
+			{
+				m_fieldFailed = true;
+				return status;
+			}
+
+			WorldAttackDamageState received;
+			received.received   = true;
+			received.targetCrow = damage.targetCrow;
+			received.targetId   = damage.targetId;
+			received.damage     = damage.damage;
+			received.damageFlag = damage.damageFlag;
+			received.frame      = frame;
+
+			m_attackDamage = received;
+			++m_attackDamageCount;
+			continue;
+		}
+
+		// ---- 3044: damage SOMEONE ELSE'S attack dealt ----------------------
+		//
+		// WORLD-ENTRY-002k. Never arrives on the victim's own connection - that
+		// client learns of its HP change from the 3046 instead.
+		if (Attack::AttackDamageCodec::IsAttackDamageBroadcast(message.header.type))
+		{
+			Attack::AttackDamageBroadcast broadcast;
+			if (const Status status = Attack::AttackDamageCodec::DecodeAttackDamageBroadcast(
+			        frame, broadcast);
+			    status.IsError())
+			{
+				m_fieldFailed = true;
+				return status;
+			}
+
+			WorldAttackDamageBrdState received;
+			received.received   = true;
+			received.gaeaId     = broadcast.gaeaId;
+			received.targetCrow = broadcast.targetCrow;
+			received.targetId   = broadcast.targetId;
+			received.damage     = broadcast.damage;
+			received.damageFlag = broadcast.damageFlag;
+			received.frame      = frame;
+
+			m_attackDamageBrd = received;
+			++m_attackDamageBrdCount;
 			continue;
 		}
 

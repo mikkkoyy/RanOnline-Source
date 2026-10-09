@@ -259,6 +259,40 @@ using Network::WireI32;
 		std::vector<WireU8> frame;
 	};
 
+	// WORLD-ENTRY-002k: damage MY OWN attack dealt (3043).
+	//
+	// `damage` is what the server's resource layer APPLIED, not what the attack
+	// asked for, so an overkill reports the HP that actually went. That is legacy's
+	// difference-lost contract (GLCHARLOGIC::RECEIVE_DAMAGE,
+	// GLogixExPC.cpp:2093) and it is why the two are different numbers.
+	struct WorldAttackDamageState
+	{
+		bool received = false;
+
+		WireU32 targetCrow = 0;
+		WireU32 targetId   = 0;
+		WireI32 damage     = 0;
+		WireU32 damageFlag = 0;
+
+		std::vector<WireU8> frame;
+	};
+
+	// WORLD-ENTRY-002k: damage SOMEONE ELSE'S attack dealt (3044).
+	//
+	// `gaeaId` is the ATTACKER's id, never the target's.
+	struct WorldAttackDamageBrdState
+	{
+		bool received = false;
+
+		WireU32 gaeaId     = 0;
+		WireU32 targetCrow = 0;
+		WireU32 targetId   = 0;
+		WireI32 damage     = 0;
+		WireU32 damageFlag = 0;
+
+		std::vector<WireU8> frame;
+	};
+
 	// WORLD-ENTRY-002h: the authoritative resource state (3046).
 	//
 	// Carries ALL pools (HP/MP/SP/CP) with both current and maximum, plus
@@ -432,6 +466,15 @@ using Network::WireI32;
 		}
 		std::size_t AttackAvoidBrdCount() const noexcept { return m_attackAvoidBrdCount; }
 
+		// WORLD-ENTRY-002k: the most recent 3043/3044 and their counts.
+		const WorldAttackDamageState& AttackDamage() const noexcept { return m_attackDamage; }
+		std::size_t AttackDamageCount() const noexcept { return m_attackDamageCount; }
+		const WorldAttackDamageBrdState& AttackDamageBrd() const noexcept
+		{
+			return m_attackDamageBrd;
+		}
+		std::size_t AttackDamageBrdCount() const noexcept { return m_attackDamageBrdCount; }
+
 		const WorldUpdateStateState& UpdateState() const noexcept { return m_updateState; }
 		std::size_t                 UpdateStateCount() const noexcept { return m_updateStateCount; }
 
@@ -498,7 +541,13 @@ using Network::WireI32;
 		WorldAttackAvoidBrdState m_attackAvoidBrd;
 		std::size_t             m_attackAvoidBrdCount = 0;
 
-		WorldUpdateStateState m_updateState;
+		// WORLD-ENTRY-002k: 3043/3044 state and counts.
+		WorldAttackDamageState     m_attackDamage;
+		std::size_t                m_attackDamageCount = 0;
+		WorldAttackDamageBrdState  m_attackDamageBrd;
+		std::size_t                m_attackDamageBrdCount = 0;
+
+		WorldUpdateStateState     m_updateState{};
 		std::size_t               m_updateStateCount = 0;
 		WorldUpdateStateBrdState  m_updateStateBrd{};
 		std::size_t               m_updateStateBrdCount = 0;

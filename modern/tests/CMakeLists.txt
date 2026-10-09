@@ -63,6 +63,8 @@ add_executable(ModernNetworkTests
     GotoProtocolTests.cpp
     # WORLD-ENTRY-002i: the ATTACK request family codec - 3036/3037/3041/3042.
     AttackProtocolTests.cpp
+    # WORLD-ENTRY-002k: the ATTACK_DAMAGE result codec - 3043/3044.
+    AttackDamageProtocolTests.cpp
     # WORLD-ENTRY-002h: the UPDATE_STATE (3046) and UPDATE_STATE_BRD (3053)
     # codec pair.
     UpdateStateProtocolTests.cpp

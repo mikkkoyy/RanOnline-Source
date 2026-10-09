@@ -47,6 +47,8 @@ set(MODERN_SERVER_SOURCES
     world/GotoService.cpp
     # WORLD-ENTRY-002i: the ATTACK validation rule (3036). Pure; no damage.
     world/AttackService.cpp
+    # WORLD-ENTRY-002k: the damage resolution boundary. Pure; no I/O, no clock.
+    world/DamageResolution.cpp
     world/WorldCharacter.cpp
     world/WorldMovementRuntime.cpp
     world/WorldCharacter.h
@@ -129,6 +131,8 @@ add_executable(ModernServerTests
     GotoServiceTests.cpp
     # WORLD-ENTRY-002i: the ATTACK validation rule - deterministic, no sockets.
     AttackServiceTests.cpp
+    # WORLD-ENTRY-002k: the damage resolution boundary - deterministic, no sockets.
+    DamageResolutionTests.cpp
     # WORLD-ENTRY-002f: the Field role's movement runtime - the actor registry,
     # injected-time Tick progression, snapshots and multi-actor isolation.
     WorldMovementRuntimeTests.cpp

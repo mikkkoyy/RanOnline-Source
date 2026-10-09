@@ -250,6 +250,38 @@ namespace Modern::Client
 		Status PumpUntilAttackAvoidBrdCount(std::size_t wantedCount, int timeoutMilliseconds,
 		                                    std::size_t maxChunkBytes = 0);
 
+		// WORLD-ENTRY-002k: the most recent 3043/3044 and their counts.
+		const WorldAttackDamageState& AttackDamage() const noexcept
+		{
+			return m_protocol.AttackDamage();
+		}
+		std::size_t AttackDamageCount() const noexcept
+		{
+			return m_protocol.AttackDamageCount();
+		}
+		const WorldAttackDamageBrdState& AttackDamageBrd() const noexcept
+		{
+			return m_protocol.AttackDamageBrd();
+		}
+		std::size_t AttackDamageBrdCount() const noexcept
+		{
+			return m_protocol.AttackDamageBrdCount();
+		}
+
+		// WORLD-ENTRY-002k: reads until `wantedCount` 3043s have arrived - damage
+		// MY OWN attacks dealt.
+		//
+		// A COUNT for the same reason every other pump here takes one: a refused or
+		// avoided attack produces 3041 instead, so waiting for "the next one" would
+		// block forever.
+		Status PumpUntilAttackDamageCount(std::size_t wantedCount, int timeoutMilliseconds,
+		                                  std::size_t maxChunkBytes = 0);
+
+		// WORLD-ENTRY-002k: reads until `wantedCount` 3044s have arrived - damage
+		// someone ELSE'S attacks dealt. Same COUNT rationale.
+		Status PumpUntilAttackDamageBrdCount(std::size_t wantedCount, int timeoutMilliseconds,
+		                                     std::size_t maxChunkBytes = 0);
+
 		// WORLD-ENTRY-002h: the most recent 3046/3053 and their counts.
 		const WorldUpdateStateState& UpdateState() const noexcept { return m_protocol.UpdateState(); }
 		std::size_t                UpdateStateCount() const noexcept { return m_protocol.UpdateStateCount(); }

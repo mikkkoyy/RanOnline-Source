@@ -612,6 +612,148 @@ Status FieldConnection::SendGoto(WireU32 requestedActState, Vector3 claimedCurre
 		}
 	}
 
+	Status FieldConnection::PumpUntilAttackDamageCount(std::size_t wantedCount, int timeoutMilliseconds,
+	                              std::size_t maxChunkBytes)
+	{
+		// Duplicated from PumpUntilGotoCount for the same reason every other pump
+		// here is: a shared helper cannot reach the private m_transport/m_protocol,
+		// and threading both plus a callable through one costs more on the receive
+		// path than the duplication saves.
+		if (!m_transport.IsConnected())
+		{
+			return Status(ErrorCode::InvalidState);
+		}
+
+		if (m_protocol.AttackDamageCount() >= wantedCount)
+		{
+			return Ok();
+		}
+
+		const std::size_t chunk =
+		    (maxChunkBytes == 0 || maxChunkBytes > kReadBufferSize) ? kReadBufferSize
+		                                                             : maxChunkBytes;
+
+		const auto deadline = std::chrono::steady_clock::now() +
+		                     std::chrono::milliseconds(timeoutMilliseconds > 0
+		                                                  ? timeoutMilliseconds
+		                                                  : 1);
+
+		for (;;)
+		{
+			if (m_protocol.AttackDamageCount() >= wantedCount)
+			{
+				return Ok();
+			}
+
+			const auto now = std::chrono::steady_clock::now();
+			if (now >= deadline)
+			{
+				return Status(ErrorCode::NotFound);
+			}
+
+			const auto left =
+			    std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+			if (left <= 0)
+			{
+				return Status(ErrorCode::NotFound);
+			}
+
+			const int slice = left < 250 ? static_cast<int>(left) : 250;
+
+			std::vector<Network::WireU8> buffer(chunk);
+			std::size_t                  received = 0;
+
+			if (const Status status =
+			        m_transport.Receive(buffer.data(), buffer.size(), received, slice);
+			    status.IsError())
+			{
+				return status;
+			}
+
+			if (received == 0)
+			{
+				continue;
+			}
+
+			std::size_t handled = 0;
+			if (const Status fed = m_protocol.FeedField(buffer.data(), received, handled);
+			    fed.IsError())
+			{
+				return fed;
+			}
+		}
+	}
+	Status FieldConnection::PumpUntilAttackDamageBrdCount(std::size_t wantedCount, int timeoutMilliseconds,
+	                              std::size_t maxChunkBytes)
+	{
+		// Duplicated from PumpUntilGotoCount for the same reason every other pump
+		// here is: a shared helper cannot reach the private m_transport/m_protocol,
+		// and threading both plus a callable through one costs more on the receive
+		// path than the duplication saves.
+		if (!m_transport.IsConnected())
+		{
+			return Status(ErrorCode::InvalidState);
+		}
+
+		if (m_protocol.AttackDamageBrdCount() >= wantedCount)
+		{
+			return Ok();
+		}
+
+		const std::size_t chunk =
+		    (maxChunkBytes == 0 || maxChunkBytes > kReadBufferSize) ? kReadBufferSize
+		                                                             : maxChunkBytes;
+
+		const auto deadline = std::chrono::steady_clock::now() +
+		                     std::chrono::milliseconds(timeoutMilliseconds > 0
+		                                                  ? timeoutMilliseconds
+		                                                  : 1);
+
+		for (;;)
+		{
+			if (m_protocol.AttackDamageBrdCount() >= wantedCount)
+			{
+				return Ok();
+			}
+
+			const auto now = std::chrono::steady_clock::now();
+			if (now >= deadline)
+			{
+				return Status(ErrorCode::NotFound);
+			}
+
+			const auto left =
+			    std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+			if (left <= 0)
+			{
+				return Status(ErrorCode::NotFound);
+			}
+
+			const int slice = left < 250 ? static_cast<int>(left) : 250;
+
+			std::vector<Network::WireU8> buffer(chunk);
+			std::size_t                  received = 0;
+
+			if (const Status status =
+			        m_transport.Receive(buffer.data(), buffer.size(), received, slice);
+			    status.IsError())
+			{
+				return status;
+			}
+
+			if (received == 0)
+			{
+				continue;
+			}
+
+			std::size_t handled = 0;
+			if (const Status fed = m_protocol.FeedField(buffer.data(), received, handled);
+			    fed.IsError())
+			{
+				return fed;
+			}
+		}
+	}
 	Status FieldConnection::PumpUntilUpdateStateCount(std::size_t wantedCount,
 	                                                  int timeoutMilliseconds,
 	                                                  std::size_t maxChunkBytes)
