@@ -546,8 +546,11 @@ namespace Modern::Client
 
 		// ---- 3044: damage SOMEONE ELSE'S attack dealt ----------------------
 		//
-		// WORLD-ENTRY-002k. Never arrives on the victim's own connection - that
-		// client learns of its HP change from the 3046 instead.
+		// WORLD-ENTRY-002k. Sent by SendMsgViewAround, which excludes only the
+		// actor - so the ATTACKER never receives its own 3044, and the VICTIM
+		// does: that is how it sees the number land on its own character. Any
+		// other client that could see the fight receives one too. Its own new HP
+		// arrives separately, through the 3046 the resource layer emits.
 		if (Attack::AttackDamageCodec::IsAttackDamageBroadcast(message.header.type))
 		{
 			Attack::AttackDamageBroadcast broadcast;

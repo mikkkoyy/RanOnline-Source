@@ -500,9 +500,13 @@ private:
 
 		// WORLD-ENTRY-002k: resolves one accepted attack, applies it, and reports.
 		//
-		// `targetPeer` is excluded from the 3044 broadcast: the victim learns of its
-		// own HP change through the 3046 that ApplyDamage already emitted, and two
-		// differently-shaped statements of one event would be a protocol invention.
+		// The ATTACKER'S peer is excluded from the 3044 broadcast, NOT the victim's.
+		// DamageProc sends the 3043 to m_dwClientID and the 3044 with
+		// SendMsgViewAround, which excludes only the actor (GLChar.cpp:2526-2541);
+		// UpdateViewAround keeps the actor out of its own view list
+		// (GLCharEx.cpp:1513), so the attacker never receives its own 3044 and the
+		// victim does. Excluding the victim instead would leave a two-player world
+		// in which nobody ever received one. See the .cpp for the full note.
 		void ApplyAttackDamage(PeerPtr peer, Network::ServerBatchEncoder& batcher,
 		                       const AttackResult& accepted);
 

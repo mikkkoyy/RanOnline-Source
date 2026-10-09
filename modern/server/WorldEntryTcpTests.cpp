@@ -2555,9 +2555,11 @@ MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
 		CHECK_EQ(watcher.connection.AttackDamageBrd().frame.size(),
 		         Network::Attack::kDamageBroadcastSize);
 
-		// The victim does NOT get a 3044: it learns of its own HP change through
-		// 3046 instead, and a second differently-shaped statement of the same event
-		// would be an invention rather than a reproduction.
+		// The victim gets NO 3043: that message is the attacker's own, and the
+		// watcher never attacked. Its view of the event is the 3044 above - it IS
+		// in the view-around set, because legacy's SendMsgViewAround excludes only
+		// the actor. The victim's new HP arrives separately, through the 3046
+		// asserted below.
 		CHECK_EQ(watcher.connection.AttackDamageCount(), static_cast<std::size_t>(0));
 
 		// And the ATTACKER does not get a 3044 either: the broadcast excludes it,
