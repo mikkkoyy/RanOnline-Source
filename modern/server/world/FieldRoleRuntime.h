@@ -81,6 +81,7 @@
 #include "WorldEntryProtocol.h"
 #include "types/Result.h"
 #include "world/CharacterRepository.h"
+#include "world/CombatStatsProvider.h"
 #include "world/FieldSession.h"
 #include "world/MovementStateService.h"
 #include "world/WorldEntryService.h"
@@ -331,6 +332,40 @@ public:
 		m_rollSource = std::move(source);
 	}
 
+	// WORLD-ENTRY-002L-A: the combat-stat source, injectable.
+	//
+	// A SEAM, not a database. Null by default, and a null or refusing provider
+	// leaves the explicitly named prototype constants in DamageResolution.h
+	// exactly where they were - so installing this cannot change a damage
+	// number on its own, which is what keeps the existing tests honest.
+	//
+	// The runtime does NOT own it: the pointer must outlive the role, for the
+	// same reason `SetNavigationMapSource` borrows its source. A provider whose
+	// class rows are all Unavailable (the state of
+	// Stats::ClassConstantTable today) refuses every character, so the
+	// prototype path is what runs either way until `.classconst` data is
+	// recovered.
+	void SetCombatStatsProvider(const ICombatStatsProvider* provider) noexcept
+	{
+		m_combatStats = provider;
+	}
+
+	// How many 3036s were resolved with verified derived stats, and how many
+	// fell back to the prototype constants because no provider resolved them.
+	// Monotonic; written by worker threads, read after Stop().
+	//
+	// The pair is reported because "no damage changed" and "damage used
+	// recovered stats" are different operator questions, and a single counter
+	// cannot answer both.
+	std::size_t CombatStatsResolvedCount() const noexcept
+	{
+		return m_combatStatsResolved.load();
+	}
+	std::size_t CombatStatsFallbackCount() const noexcept
+	{
+		return m_combatStatsFallback.load();
+	}
+
 	// The rule itself, exposed so a test can exercise validation without a socket.
 	// Read-only: the Field role owns the only instance.
 	// Named AttackRules, NOT Attack: a member called `Attack` would hide the
@@ -510,6 +545,18 @@ private:
 		void ApplyAttackDamage(PeerPtr peer, Network::ServerBatchEncoder& batcher,
 		                       const AttackResult& accepted);
 
+		// WORLD-ENTRY-002L-A: fills `input`'s combat statistics from verified
+		// derived stats, leaving every field it cannot fill at the prototype
+		// value the caller already set.
+		//
+		// Never fabricates. No provider, no character record, or a provider that
+		// refuses (an unresolved class/gender pair, or a class row whose
+		// coefficients are not recovered) leaves the prototype constants in place
+		// and is counted, so "no damage number changed" is observable.
+		void ApplyVerifiedCombatStats(const PeerPtr& attackerPeer,
+		                              const AttackResult& accepted,
+		                              DamageInput& input);
+
 		// Sends 3044 to every authorized peer EXCEPT `exclude`. Mirrors BroadcastGoto.
 		void BroadcastAttackDamage(const PeerPtr& exclude,
 		                           const Network::Attack::AttackDamageBroadcast& broadcast);
@@ -615,7 +662,16 @@ std::atomic<std::size_t> m_attackDamageRefused{0};
 
 	// WORLD-ENTRY-002k: the roll seam. Empty means "use the fixed always-hit
 	// default"; see NextRoll.
-std::function<float()> m_rollSource;
+	std::function<float()> m_rollSource;
+
+	// WORLD-ENTRY-002L-A: the combat-stat seam. Null means "no provider", and
+	// ApplyAttackDamage keeps its prototype constants; see SetCombatStatsProvider.
+	const ICombatStatsProvider* m_combatStats{nullptr};
+
+	// WORLD-ENTRY-002L-A: 3036s resolved with verified derived stats, and 3036s
+	// that kept the prototype constants. Monotonic; written by worker threads.
+	std::atomic<std::size_t> m_combatStatsResolved{0};
+	std::atomic<std::size_t> m_combatStatsFallback{0};
 		std::atomic<std::size_t> m_gotoRefused{0};
 		std::atomic<Network::WireU32> m_lastGaeaId{0};
 		std::atomic<std::size_t> m_lastCharacterId{0};

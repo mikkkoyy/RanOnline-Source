@@ -22,7 +22,11 @@ add_executable(ModernCoreTests
     # speed formula, and the headless Actor's probes, arrival threshold, injected
     # elapsed-time stepping and blocked motion.
     MovementTests.cpp
-SkillFactTests.cpp
+    SkillFactTests.cpp
+    # WORLD-ENTRY-002L-A: the recovered class-constant table - index coverage,
+    # per-coefficient provenance, finiteness, duplicate rejection, and
+    # Stats::Calculate against hand-computed legacy arithmetic at two levels.
+    ClassConstantTableTests.cpp
 )
 
 target_link_libraries(ModernCoreTests PRIVATE Modern)

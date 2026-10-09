@@ -49,6 +49,9 @@ set(MODERN_SERVER_SOURCES
     world/AttackService.cpp
     # WORLD-ENTRY-002k: the damage resolution boundary. Pure; no I/O, no clock.
     world/DamageResolution.cpp
+    # WORLD-ENTRY-002L-A: the combat-stat provider seam. Borrows the recovered
+    # class-constant table; owns no state.
+    world/CombatStatsProvider.cpp
     world/WorldCharacter.cpp
     world/WorldMovementRuntime.cpp
     world/WorldCharacter.h
@@ -133,6 +136,10 @@ add_executable(ModernServerTests
     AttackServiceTests.cpp
     # WORLD-ENTRY-002k: the damage resolution boundary - deterministic, no sockets.
     DamageResolutionTests.cpp
+    # WORLD-ENTRY-002L-A: the combat-stat provider - index resolution, refusal
+    # when a class row has no recovered coefficients, and the per-field
+    # DamageInput fill. Deterministic, no sockets.
+    CombatStatsProviderTests.cpp
     # WORLD-ENTRY-002f: the Field role's movement runtime - the actor registry,
     # injected-time Tick progression, snapshots and multi-actor isolation.
     WorldMovementRuntimeTests.cpp

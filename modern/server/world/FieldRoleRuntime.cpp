@@ -1161,6 +1161,70 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 		return true;
 	}
 
+	void FieldRoleRuntime::ApplyVerifiedCombatStats(const PeerPtr& attackerPeer,
+	                                                const AttackResult& accepted,
+	                                                DamageInput& input)
+	{
+		// No provider installed: the prototype constants stand, and that is a
+		// counted outcome rather than a silent one.
+		if (m_combatStats == nullptr)
+		{
+			m_combatStatsFallback.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+
+		// The attacker's own record, read through the session it spawned with.
+		// A missing record means the peer resolved but its character did not,
+		// which is a state the spawn path should have made impossible - so the
+		// answer is a refusal, not a guess.
+		const WorldCharacter* attacker = attackerPeer ? attackerPeer->session.Character() : nullptr;
+		if (attacker == nullptr)
+		{
+			m_combatStatsFallback.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+
+		CombatStats attackerStats;
+		if (!m_combatStats->TryResolve(*attacker, attackerStats))
+		{
+			m_combatStatsFallback.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+
+		// ---- the ATTACKER's side of DamageInput ------------------------------
+		//
+		// These are the fields legacy reads off the attacker: m_gdDAMAGE_PHYSIC
+		// (the damage range, GLogixExPC.cpp:2997-3008) and m_nSUM_HIT
+		// (GLogixExPC.cpp:365). `Stats::Calculate` already reproduces both, and
+		// its output types are the legacy destination types, so no conversion
+		// changes a value.
+		input.stats.lowDamage  = attackerStats.derived.physicalDamage.low;
+		input.stats.highDamage = attackerStats.derived.physicalDamage.high;
+		input.stats.hit        = attackerStats.derived.hit;
+		input.stats.avoid      = attackerStats.derived.avoid;
+		input.stats.meleePower = attackerStats.derived.meleePower;
+
+		// ---- the TARGET's side ----------------------------------------------
+		//
+		// nDEFENSE and nDEFENSE_BODY come off the target (GLogixExPC.cpp:1383-1385).
+		// Filled when the target resolves, left at the prototype value when it
+		// does not - the same per-field discipline as above, because a missing
+		// target row must not zero a defence that the prototype stated.
+		const PeerPtr targetPeer = FindTargetPeer(accepted.targetId);
+		const WorldCharacter* target = targetPeer ? targetPeer->session.Character() : nullptr;
+		if (target != nullptr)
+		{
+			CombatStats targetStats;
+			if (m_combatStats->TryResolve(*target, targetStats))
+			{
+				input.stats.defense     = targetStats.derived.defense;
+				input.stats.defenseBody = targetStats.derived.defenseBody;
+			}
+		}
+
+		m_combatStatsResolved.fetch_add(1, std::memory_order_relaxed);
+	}
+
 	void FieldRoleRuntime::ApplyAttackDamage(PeerPtr peer, ServerBatchEncoder& batcher,
 	                                         const AttackResult& accepted)
 	{
@@ -1180,13 +1244,27 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 		input.crushingRoll   = NextRoll();
 		input.reflectionRoll = NextRoll();
 
-		// PROTOTYPE statistics. See DamageResolution.h: legacy's are item-derived
-		// and the modern Field path has none, so these are placeholders and NOT
-		// recovered RAN values. Only the SHAPE is right.
+		// ---- the combat statistics ------------------------------------------
+		//
+		// START from the prototype constants and REPLACE individual fields only
+		// when a provider resolves them. The replacement is per field rather
+		// than a whole-struct swap, because the prototype block mixes the two
+		// parties - legacy's CALCDAMAGE_20060328 (GLogixExPC.cpp:1363) reads the
+		// attacker's gdDamage and the target's nDEFENSE in one function too, so
+		// `DamageInput::PrototypeStats` mirrors that shape. Keeping the
+		// prototype as the starting point means a provider that answers only
+		// half the question leaves the other half explicitly labelled.
+		//
+		// WORLD-ENTRY-002L-A: `Stats::ClassConstantTable` has no recovered rows
+		// (the `.classconst` data is not in this repository), so today this
+		// always takes the fallback branch and the numbers are unchanged. The
+		// seam and its tests are the deliverable; the data is the follow-up.
 		input.stats.lowDamage  = kPrototypeLowDamage;
 		input.stats.highDamage = kPrototypeHighDamage;
 		input.stats.hit        = kPrototypeHit;
 		input.stats.avoid      = kPrototypeAvoid;
+
+		ApplyVerifiedCombatStats(peer, accepted, input);
 
 		DamageResult damage = DamageResolution::Resolve(/*attackerPresent=*/true,
 		                                                /*targetPresent=*/true, input);

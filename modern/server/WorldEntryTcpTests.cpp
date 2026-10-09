@@ -2642,6 +2642,112 @@ MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
 		CHECK_EQ(server.Runtime().Field().AttackDamageRefusedCount(),
 		         static_cast<std::size_t>(1));
 	}
+
+	// =========================================================================
+	// WORLD-ENTRY-002L-A: a forced MISS, over a real socket.
+	//
+	// The 002K suite proves the hit path and the dead-target refusal. What is
+	// missing is the avoidance branch, which has to route 3041/3042 rather than
+	// a damage packet - and which the new combat-stat provider must not disturb,
+	// because a provider that answered with zeros would still produce a "hit"
+	// with zero damage and send a packet where legacy sends an avoid.
+	//
+	// The miss is forced through the EXISTING roll seam, not through a new one:
+	// `FieldRoleRuntime::SetDamageRollSource` returns a fixed 1.0f, which
+	// HitCalculator truncates to an integer 100. The prototype hit rate is
+	// 100 + 30 - 30 clamped to 99, and 99 >= 100 is false, so the roll cannot
+	// succeed. No statistic is moved to make the miss happen - the same
+	// constants that make the hit test deterministic make this miss certain.
+	// =========================================================================
+
+	MODERN_TEST(AttackDamage_AForcedMissRoutesAnAvoidAndNoDamagePacket)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		// A fixed roll of 1.0 with the prototype hit/avoid pair is a guaranteed
+		// miss. Installed before either client spawns so no attack can be
+		// resolved with the default always-hit roll.
+		server.Runtime().Field().SetDamageRollSource([] { return 1.0f; });
+
+		SpawnedClient attacker;
+		REQUIRE(attacker.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+		SpawnedClient watcher;
+		REQUIRE(watcher.Spawn(server, kUserB, kPassB, kCharB1.value, kDeadline).IsOk());
+
+		const WireU32 attackerGaeaId = attacker.spawn.gaeaId;
+		const WireU32 targetGaeaId   = watcher.spawn.gaeaId;
+		REQUIRE(attackerGaeaId != targetGaeaId);
+
+		// The client receiving 2333 and the SERVER marking that peer spawned are
+		// two different events; the same wait every other two-client case here
+		// uses, for the same reason.
+		REQUIRE(WaitFor(kDeadline, [&] {
+			return server.Runtime().AuthorizedFieldSessionCount() == 2;
+		}));
+
+		// The target's HP before, read from the authoritative service, so the
+		// "unchanged" assertion is a measurement.
+		const auto before = server.Runtime().Field().ResourceSync().Find(targetGaeaId);
+		REQUIRE(before.has_value());
+		const WireU32 hpBefore = before->GetCurrent(Resources::ResourceKind::Hp);
+		REQUIRE(hpBefore > 0u);
+
+		REQUIRE(attacker.connection.SendAttack(Network::Attack::kCrowPc, targetGaeaId)
+		            .IsOk());
+
+		// A MISS is the same wire event as an out-of-range attack: 3041 to the
+		// attacker, 3042 to everyone else (GLChar::AvoidProc, GLChar.cpp:2468-2476).
+		REQUIRE(attacker.connection.PumpUntilAttackAvoidCount(1, kDeadline).IsOk());
+		CHECK(attacker.connection.AttackAvoid().received);
+		CHECK_EQ(attacker.connection.AttackAvoid().targetId, targetGaeaId);
+
+		REQUIRE(watcher.connection.PumpUntilAttackAvoidBrdCount(1, kDeadline).IsOk());
+		CHECK(watcher.connection.AttackAvoidBrd().received);
+		CHECK_EQ(watcher.connection.AttackAvoidBrd().gaeaId, attackerGaeaId);
+		CHECK_EQ(watcher.connection.AttackAvoidBrd().targetId, targetGaeaId);
+
+		// NO damage result in either direction. Asking for a 3043 must time out:
+		// a miss that produced one would mean HP was spent.
+		CHECK(attacker.connection.PumpUntilAttackDamageCount(1, 1500).IsError());
+		CHECK_EQ(attacker.connection.AttackDamageCount(), static_cast<std::size_t>(0));
+		CHECK_EQ(watcher.connection.AttackDamageBrdCount(), static_cast<std::size_t>(0));
+		CHECK_EQ(watcher.connection.AttackDamageCount(), static_cast<std::size_t>(0));
+		CHECK_EQ(attacker.connection.AttackDamageBrdCount(), static_cast<std::size_t>(0));
+
+		// The 3037 animation still went out - a miss is an attack that landed
+		// in range and did no damage, so the swing is broadcast as usual.
+		REQUIRE(watcher.connection.PumpUntilAttackCount(1, kDeadline).IsOk());
+		CHECK_EQ(watcher.connection.Attack().gaeaId, attackerGaeaId);
+
+		// And HP is untouched, verified against the authoritative service.
+		const auto after = server.Runtime().Field().ResourceSync().Find(targetGaeaId);
+		CHECK(after.has_value());
+		CHECK_EQ(after->GetCurrent(Resources::ResourceKind::Hp), hpBefore);
+
+		// The victim is still told its own (unchanged) resource state through
+		// the ordinary 3046 path - the avoidance emits nothing of its own.
+		server.Stop();
+
+		CHECK_EQ(server.Runtime().Field().AttackAcceptedCount(),
+		         static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().AttackAvoidSentCount(),
+		         static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().AttackDamageSentCount(),
+		         static_cast<std::size_t>(0));
+		CHECK_EQ(server.Runtime().Field().AttackDamageRefusedCount(),
+		         static_cast<std::size_t>(0));
+
+		// WORLD-ENTRY-002L-A: no combat-stat provider is installed in this
+		// suite, so every accepted attack keeps the prototype constants and is
+		// counted as a fallback. That counter is what makes "the provider seam
+		// changed nothing" observable rather than assumed.
+		CHECK_EQ(server.Runtime().Field().CombatStatsFallbackCount(),
+		         static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().CombatStatsResolvedCount(),
+		         static_cast<std::size_t>(0));
+	}
 } // namespace ModernTests
 
 int main()

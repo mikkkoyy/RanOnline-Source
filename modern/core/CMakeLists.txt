@@ -50,6 +50,8 @@ set(MODERN_SOURCES
     skills/SkillFactContainer.h
     skills/SkillFactAggregator.h
     stats/StatCalculator.cpp
+    # WORLD-ENTRY-002L-A: the recovered class-constant table, with provenance.
+    stats/ClassConstantTable.cpp
     types/Result.cpp
     resources/ResourceState.cpp
     combat/CombatCalculator.h
