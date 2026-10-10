@@ -469,6 +469,123 @@ namespace ModernTests
 	// EQUIPMENT RULES
 	// ===========================================================================
 
+	MODERN_TEST(ItemTable_TheFiveResistancesLoadFromTheirOwnColumns)
+	{
+		// WORLD-ENTRY-002N. `sResist` was the last SSUIT block the loader skipped,
+		// so every item reported zero resistance no matter what the export said.
+		// 3,030 of the 18,447 rows carry at least one non-zero element.
+		//
+		// The values below are read from the export, so a re-export with
+		// different numbers fails here rather than at a copied literal.
+		std::string path;
+		if (!RequireItemCsv("the resistances load", path))
+		{
+			return;
+		}
+
+		InMemoryItemDefinitions definitions;
+		REQUIRE(Item::LoadItemCsv(path, definitions).IsOk());
+
+		// (1,17) IN_001_017 is a SUIT_HANDHELD piece at 10 in ALL five elements -
+		// the case that fails if the columns are read as a block rather than by
+		// name, or if one of them is off by one against its neighbour.
+		const ItemDefinition* all = definitions.Find(PackItemId(1, 17));
+		REQUIRE(all != nullptr);
+		CHECK(all->name == "IN_001_017");
+		CHECK_EQ(all->stats.resistFire, static_cast<std::int32_t>(10));
+		CHECK_EQ(all->stats.resistIce, static_cast<std::int32_t>(10));
+		CHECK_EQ(all->stats.resistElectric, static_cast<std::int32_t>(10));
+		CHECK_EQ(all->stats.resistPoison, static_cast<std::int32_t>(10));
+		CHECK_EQ(all->stats.resistSpirit, static_cast<std::int32_t>(10));
+
+		// (1,127) IN_001_127 resists SPIRIT ONLY, at 10. This is the discriminating
+		// case: every other element is 0, so a loader that copied one column into
+		// all five, or that shifted by one, cannot produce it.
+		const ItemDefinition* spiritOnly = definitions.Find(PackItemId(1, 127));
+		REQUIRE(spiritOnly != nullptr);
+		CHECK_EQ(spiritOnly->stats.resistFire, static_cast<std::int32_t>(0));
+		CHECK_EQ(spiritOnly->stats.resistIce, static_cast<std::int32_t>(0));
+		CHECK_EQ(spiritOnly->stats.resistElectric, static_cast<std::int32_t>(0));
+		CHECK_EQ(spiritOnly->stats.resistPoison, static_cast<std::int32_t>(0));
+		CHECK_EQ(spiritOnly->stats.resistSpirit, static_cast<std::int32_t>(10));
+
+		// A weapon with no resistance at all stays at zero - the resistance
+		// columns must not have displaced any other field.
+		const ItemDefinition* plain = definitions.Find(PackItemId(0, 0));
+		REQUIRE(plain != nullptr);
+		CHECK_EQ(plain->stats.resistFire, static_cast<std::int32_t>(0));
+		CHECK_EQ(plain->stats.resistSpirit, static_cast<std::int32_t>(0));
+		// Its other, already-covered fields are unchanged by this change.
+		CHECK_EQ(plain->stats.damageLow, static_cast<std::int32_t>(21));
+		CHECK_EQ(plain->stats.damageHigh, static_cast<std::int32_t>(28));
+		CHECK_EQ(plain->stats.defense, static_cast<std::int32_t>(1));
+	}
+
+	MODERN_TEST(ItemResist_AnEquippedItemContributesItsResistanceExactlyOnce)
+	{
+		// The loader now populates `ItemStatBlock::resist*`, which
+		// `ItemContributionAggregator` has been summing into
+		// `ItemContribution::resistances` since it was written. This closes the
+		// loop the two halves of 002M/002N left open.
+		//
+		// Legacy sums per-item resistance into the character total in
+		// `SUM_ITEM` (GLogixExPC.cpp:665-669) exactly as it sums damage.
+		InMemoryItemDefinitions definitions;
+
+		ItemDefinition resist = MakeSword();
+		resist.id       = PackItemId(1, 127);
+		resist.stats.resistFire     = 10;
+		resist.stats.resistIce      = 20;
+		resist.stats.resistElectric = 30;
+		resist.stats.resistPoison   = 40;
+		resist.stats.resistSpirit   = 50;
+		REQUIRE(definitions.Add(resist).IsOk());
+
+		EquipmentState equipment;
+		REQUIRE(equipment.Equip(EquipmentSlot::RightHand,
+		                        MakeInstance(PackItemId(1, 127)))
+		            .IsOk());
+
+		const auto aggregated =
+		    ItemContributionAggregator::Aggregate(equipment, definitions);
+		REQUIRE(aggregated.IsOk());
+
+		const ItemContributionResult& result = aggregated.GetValue();
+		CHECK_EQ(result.contributingSlots, static_cast<std::size_t>(1));
+		CHECK_EQ(result.contribution.resistances.fire, static_cast<std::int32_t>(10));
+		CHECK_EQ(result.contribution.resistances.ice, static_cast<std::int32_t>(20));
+		CHECK_EQ(result.contribution.resistances.electric, static_cast<std::int32_t>(30));
+		CHECK_EQ(result.contribution.resistances.poison, static_cast<std::int32_t>(40));
+		CHECK_EQ(result.contribution.resistances.spirit, static_cast<std::int32_t>(50));
+	}
+
+	MODERN_TEST(ItemResist_EmptyEquipmentContributesNoResistanceAtAll)
+	{
+		// The regression that matters for the live path: an unarmoured
+		// character's resistance is zero in every element, so the elemental
+		// reduction stays out of the damage calculation instead of applying a
+		// fabricated reduction.
+		InMemoryItemDefinitions definitions;
+		definitions.Add(MakeSword());
+
+		const EquipmentState equipment;
+		const auto aggregated = ItemContributionAggregator::Aggregate(equipment, definitions);
+		REQUIRE(aggregated.IsOk());
+
+		const Stats::Resistances& resistances = aggregated.GetValue().contribution.resistances;
+		CHECK_EQ(resistances.fire, static_cast<std::int32_t>(0));
+		CHECK_EQ(resistances.ice, static_cast<std::int32_t>(0));
+		CHECK_EQ(resistances.electric, static_cast<std::int32_t>(0));
+		CHECK_EQ(resistances.poison, static_cast<std::int32_t>(0));
+		CHECK_EQ(resistances.spirit, static_cast<std::int32_t>(0));
+
+		// And RAN clamps the summed total at zero (`SRESIST::LIMIT`), which is
+		// what `ClampNonNegative` reproduces.
+		Stats::Resistances clamped;
+		clamped.fire = -5;
+		clamped.ClampNonNegative();
+		CHECK_EQ(clamped.fire, static_cast<std::int32_t>(0));
+	}
 	MODERN_TEST(EquipmentRules_EveryWearableSlotHasOneSuit)
 	{
 		// `SLOT_2_SUIT` decides rule 3, so a slot with no suit is a slot nothing

@@ -19,7 +19,7 @@
 //     93  emHand            94  emAttack          95  wAttRange
 //     96  wReqSP            97  nHitRate          98  nAvoidRate
 //     99  gdDamage wLow    100  gdDamage wHigh   101  nDefense
-//    102..106  sResist (5)
+//    102..106  sResist nFire/nIce/nElectric/nPoison/nSpirit
 //
 // Every one of those positions is read from the HEADER at load time rather
 // than hard-coded, so a re-export that reorders the columns is refused rather

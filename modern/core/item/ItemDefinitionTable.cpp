@@ -35,6 +35,15 @@ namespace Modern::Item
 			std::size_t damageLow  = 99;
 			std::size_t damageHigh = 100;
 			std::size_t nDefense   = 101;
+
+			// `sResist`, the five elemental resistances, at 102..106. They
+			// round out the SSUIT block and are read on the same terms as the
+			// rest - resolved from the header, never from a fixed index.
+			std::size_t resistFire     = 102;
+			std::size_t resistIce      = 103;
+			std::size_t resistElectric = 104;
+			std::size_t resistPoison   = 105;
+			std::size_t resistSpirit   = 106;
 		};
 
 		std::size_t LastColumns = 0;
@@ -136,12 +145,16 @@ namespace Modern::Item
 				"emSuit", "dwHAND", "emHand", "emAttack", "wAttRange", "wReqSP",
 				"nHitRate", "nAvoidRate", "gdDamage wLow", "gdDamage wHigh",
 				"nDefense",
+				"sResist nFire", "sResist nIce", "sResist nElectric",
+				"sResist nPoison", "sResist nSpirit",
 			};
 			std::size_t* slots[] = {
 				&out.emItemType,
 				&out.emSuit, &out.dwHand, &out.emHand, &out.emAttack,
 				&out.wAttRange, &out.wReqSp, &out.nHitRate, &out.nAvoid,
 				&out.damageLow, &out.damageHigh, &out.nDefense,
+				&out.resistFire, &out.resistIce, &out.resistElectric,
+				&out.resistPoison, &out.resistSpirit,
 			};
 
 			for (std::size_t i = 0; i < sizeof(kNames) / sizeof(kNames[0]); ++i)
@@ -178,6 +191,17 @@ namespace Modern::Item
 		// is not loosened: optional sign, then one or more digits, then
 		// nothing. Trailing junk and embedded junk are both refused, which is
 		// what kept a corrupt cell from being read as zero.
+		// Whether a sResist value fits legacy's SRESIST members, which are
+		// short (GLCharDefine.h:676-677). The deployed export spans 0..999, so this
+		// is a guard against a corrupt cell rather than a filter that drops
+		// anything real. Resistance is NOT clamped to zero here: RAN clamps the
+		// SUMMED total in SRESIST::LIMIT, which is Stats::Resistances::
+		// ClampNonNegative and happens downstream, not per item.
+		bool InShortRange(long value) noexcept
+		{
+			return value >= -32768L && value <= 32767L;
+		}
+
 		bool ParseLong(std::string_view text, long& out) noexcept
 		{
 			if (text.empty())
@@ -421,6 +445,11 @@ namespace Modern::Item
 			long damageLow     = 0;
 			long damageHigh    = 0;
 			long defense       = 0;
+			long resistFire     = 0;
+			long resistIce      = 0;
+			long resistElectric = 0;
+			long resistPoison   = 0;
+			long resistSpirit   = 0;
 
 			const bool parsed =
 			    ParseLong(FieldAt(line, starts, columns.emSuit), suitValue) &&
@@ -433,8 +462,13 @@ namespace Modern::Item
 			    ParseLong(FieldAt(line, starts, columns.nAvoid), avoidRate) &&
 			    ParseLong(FieldAt(line, starts, columns.damageLow), damageLow) &&
 			    ParseLong(FieldAt(line, starts, columns.damageHigh), damageHigh) &&
+			    ParseLong(FieldAt(line, starts, columns.emItemType), itemTypeValue) &&
 			    ParseLong(FieldAt(line, starts, columns.nDefense), defense) &&
-			    ParseLong(FieldAt(line, starts, columns.emItemType), itemTypeValue);
+			    ParseLong(FieldAt(line, starts, columns.resistFire), resistFire) &&
+			    ParseLong(FieldAt(line, starts, columns.resistIce), resistIce) &&
+			    ParseLong(FieldAt(line, starts, columns.resistElectric), resistElectric) &&
+			    ParseLong(FieldAt(line, starts, columns.resistPoison), resistPoison) &&
+			    ParseLong(FieldAt(line, starts, columns.resistSpirit), resistSpirit);
 
 			// A non-numeric cell in a column this loader reads is a corrupt
 			// export. The row is refused rather than read as zero, because a
@@ -453,7 +487,10 @@ namespace Modern::Item
 			// clamped.
 			if (attackRange < 0 || attackRange > 65535 ||
 			    damageLow < 0 || damageHigh > 2147483647L || defense < -2147483647L - 1 ||
-			    requiredSp < 0 || requiredSp > 65535 || hitRate < -2147483647L - 1)
+			    requiredSp < 0 || requiredSp > 65535 || hitRate < -2147483647L - 1 ||
+			    !InShortRange(resistFire) || !InShortRange(resistIce) ||
+			    !InShortRange(resistElectric) || !InShortRange(resistPoison) ||
+			    !InShortRange(resistSpirit))
 			{
 				++result.rejectedRange;
 				continue;
@@ -477,6 +514,18 @@ namespace Modern::Item
 			definition.stats.hit        = static_cast<int32_t>(hitRate);
 			definition.stats.avoid      = static_cast<int32_t>(avoidRate);
 			definition.stats.requiredSP = static_cast<uint16_t>(requiredSp);
+
+			// sResist: the five elemental resistances, the base term of the
+			// per-item resistance. Legacy's SITEMCUSTOM::GETRESIST_FIRE
+			// (GLItem.cpp:3176) builds each element as the item's sSUIT.sResist
+			// plus a random-option value plus a grind grade; the latter two have no
+			// data in this repository, so only the definition-base term is read
+			// here - which is exactly the contract the aggregator has always had.
+			definition.stats.resistFire     = static_cast<int32_t>(resistFire);
+			definition.stats.resistIce      = static_cast<int32_t>(resistIce);
+			definition.stats.resistElectric = static_cast<int32_t>(resistElectric);
+			definition.stats.resistPoison   = static_cast<int32_t>(resistPoison);
+			definition.stats.resistSpirit   = static_cast<int32_t>(resistSpirit);
 
 			// A definition the provider would refuse is not loaded at all - a
 			// partial definition silently refusing later is worse than a counted
