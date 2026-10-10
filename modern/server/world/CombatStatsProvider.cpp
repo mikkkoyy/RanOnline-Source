@@ -1,6 +1,10 @@
 #include "world/CombatStatsProvider.h"
 
 #include "character/CharacterClassTable.h"
+#include "equipment/ItemContributionAggregator.h"
+
+#include <cstddef>
+#include <cstdint>
 
 namespace Modern::Server::World
 {
@@ -30,6 +34,73 @@ namespace Modern::Server::World
 		    static_cast<CharacterGender>(static_cast<uint8_t>(character.characterGender)),
 		    out);
 	}
+
+	namespace
+	{
+		// Aggregates what the character is wearing.
+		//
+		// `ItemContributionAggregator` already exists and already carries the
+		// legacy numeric semantics (the six stat bonuses are 16-bit and wrap, the
+		// damage range is two independent integers), so this is the aggregation
+		// `SUM_ITEM` (GLogixExPC.cpp:441-669) does and NOT a second copy of it.
+		//
+		// A null item provider is "no items are known", which is the deployment
+		// without item data. Every equipped slot then names an item nothing
+		// defines, which the aggregator reports as `MissingDefinition` - counted,
+		// and not contributing anything. That is the honest reading: a character
+		// wearing things in a server that has no item table genuinely has no
+		// item-derived statistics.
+		void AggregateEquipment(const WorldCharacter& character,
+		                        const ItemDefinitionProvider* itemDefinitions,
+		                        CombatStats& out)
+		{
+			out.occupiedSlots = 0;
+			for (std::size_t slot = 0; slot < Modern::kEquipmentSlotCount; ++slot)
+			{
+				if (character.equipment.HasEquipped(
+				        static_cast<Modern::EquipmentSlot>(
+				            static_cast<uint8_t>(slot))))
+				{
+					++out.occupiedSlots;
+				}
+			}
+
+			if (itemDefinitions == nullptr)
+			{
+				// Nothing can be resolved, so nothing contributes. The occupied
+				// count above already says so.
+				out.unresolvedItems = out.occupiedSlots;
+				return;
+			}
+
+			const auto aggregated = ItemContributionAggregator::Aggregate(
+			    character.equipment, *itemDefinitions);
+
+		if (!aggregated.IsOk())
+		{
+			// A Status-level refusal is a caller fault (an invalid slot, say) and
+			// is reported as one. It does not become a zero contribution by a
+			// different route.
+			out.unresolvedItems = out.occupiedSlots;
+			return;
+		}
+
+		const ItemContributionResult& result = aggregated.GetValue();
+
+		// A definition that could not be resolved is reported by the aggregator as
+		// `MissingDefinition` rather than as a zero block, because equipment that
+		// contributes nothing because nothing knows what it is would hide a data
+		// problem behind a plausible number.
+		if (result.error != ContributionError::None)
+		{
+			out.unresolvedItems = out.occupiedSlots;
+			return;
+		}
+
+		out.equipment         = result.contribution;
+		out.contributingSlots = result.contributingSlots;
+	}
+	} // anonymous namespace
 
 	bool ClassConstantCombatStats::TryResolve(const WorldCharacter& character,
 	                                          CombatStats& out) const
@@ -66,17 +137,23 @@ namespace Modern::Server::World
 			return false;
 		}
 
+		// ---- the equipment this character is wearing ----------------------------
+		//
+		// Aggregated before the class figures, because a worn item's damage is
+		// added to the base range by `Stats::Calculate` and its hit and avoid are
+		// added to the derived hit and avoid - both exactly once, in the
+		// calculator, not here.
+		AggregateEquipment(character, m_itemDefinitions, out);
+
 		Stats::StatCalculationInput input;
 		input.characterClass = index;
 		input.level          = character.level;
 		input.classConstants = row->constants;
 
-		// Zero equipment, passives, codex and timed facts. Each is a statement
-		// about this runtime: none of those subsystems exists in the live world
-		// server yet, and RAN's contribution for "nothing equipped" is zero.
-		// When equipment lands it arrives as an ItemContribution here, and the
-		// formula does not change.
-		input.items   = Stats::ItemContribution{};
+		// Equipment comes from the aggregation above. Passives, codex and timed
+		// facts remain zero, statelessly so: none of those subsystems exists in
+		// the live world server, and RAN's term for "none of those" is zero.
+		input.items   = out.equipment;
 		input.passives = Stats::PassiveContribution{};
 		input.codex   = Stats::CodexContribution{};
 		input.facts   = Stats::FactContribution{};

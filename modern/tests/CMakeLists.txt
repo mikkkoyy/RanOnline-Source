@@ -27,6 +27,9 @@ add_executable(ModernCoreTests
     # per-coefficient provenance, finiteness, duplicate rejection, and
     # Stats::Calculate against hand-computed legacy arithmetic at two levels.
     ClassConstantTableTests.cpp
+    # WORLD-ENTRY-002M: the legacy item-definition loader over the tracked CSV,
+    # the CHECKSLOT_ITEM slot rules, and what equipped items do to derived stats.
+    ItemDefinitionTableTests.cpp
 )
 
 target_link_libraries(ModernCoreTests PRIVATE Modern)

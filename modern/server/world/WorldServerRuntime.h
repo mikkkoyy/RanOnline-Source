@@ -50,6 +50,8 @@
 // protocol, and adding one would be inventing a network hop the client never sees.
 
 #include "login/LoginReceiver.h"
+#include "equipment/ItemDefinitionProvider.h"
+#include "item/ItemDefinitionTable.h"
 #include "types/Result.h"
 #include "world/AgentRoleRuntime.h"
 #include "world/CharacterClassMovementSpeed.h"
@@ -60,6 +62,7 @@
 #include "world/WorldEntryService.h"
 #include "world/WorldServerConfig.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -237,6 +240,27 @@ MovementStateService& Movement() noexcept { return m_movement; }
 		// member rather than a temporary so its lifetime is the runtime's, which is
 		// the only lifetime that outlives the worker threads that call it.
 		ClassConstantCombatStats m_combatStats;
+
+		// WORLD-ENTRY-002M: the item-definition provider the combat path reads,
+		// and the definitions it holds when item data was configured.
+		//
+		// Owned here rather than borrowed because it is OTHERWISE nobody's: the
+		// runtime is the only thing with a lifetime that outlives the worker
+		// threads, so it is where a process-wide table of item definitions
+		// belongs. `m_itemTable` is the in-memory implementation filled from the
+		// CSV; `m_itemDefinitions` points at it and is what the field role and the
+		// combat provider actually borrow.
+		//
+		// An empty `itemDataPath` leaves the table empty and the pointer still
+		// bound, which is the documented "no items are known" state.
+		InMemoryItemDefinitions m_itemTable;
+
+		// WORLD-ENTRY-002M: how many item definitions the configured CSV
+		// produced. 0 for "no item data configured" and for "the path was
+		// unreadable", which are the same observable state and deliberately so -
+		// `m_itemTable.GetCount()` is the same number and this one exists so a
+		// caller does not have to reach into the provider to read it.
+		std::atomic<std::size_t> m_itemRowsLoaded{0};
 
 		Network::Endpoint m_fieldEndpoint;
 

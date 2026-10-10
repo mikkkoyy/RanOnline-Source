@@ -52,6 +52,10 @@ set(MODERN_SOURCES
     stats/StatCalculator.cpp
     # WORLD-ENTRY-002L-A: the recovered class-constant table, with provenance.
     stats/ClassConstantTable.cpp
+    # WORLD-ENTRY-002M: legacy item identity, the CSV item-definition loader, and
+    # the slot-compatibility rules CHECKSLOT_ITEM carries.
+    item/ItemDefinitionTable.cpp
+    item/EquipmentRules.cpp
     types/Result.cpp
     resources/ResourceState.cpp
     combat/CombatCalculator.h

@@ -61,26 +61,46 @@
 #include <cstdint>
 #include <string>
 
-namespace Modern::Server::World{
+	namespace Modern::Server::World{
 		using Network::WireU32;
 
 		// The VERIFIED legacy slack: `wAttackAbleDis = wAttackRange + 7`
 		// (GLCharMsg.cpp:347).
 		//
-		// Added on top of kPrototypeAttackableDistanceUnits so the shape of the
-		// legacy formula survives even while its item-derived terms do not.
+		// Added to every range this rule computes, whether the range came from a
+		// resolved weapon or from the prototype constant, because the slack is
+		// legacy's and it is not conditional on anything.
 		inline constexpr float kLegacyRangeSlackUnits = 7.0f;
 
-		// PROTOTYPE. Stands in for
-		//     targetBodyRadius + GETBODYRADIUS() + GETATTACKRANGE() + 2
-		// and, for a long-range-armed character, `+ GETSUM_TARRANGE()`.
+		// The attacker's and a PC target's body radius:
+		// `GLCONST_CHAR::wBODYRADIUS` = 4 (GLogicData.cpp:245).
+		inline constexpr float kPcBodyRadiusUnits = 4.0f;
+
+		// The fixed legacy term in the range rule: `... + GETATTACKRANGE() + 2`
+		// (GLCharMsg.cpp:345).
+		inline constexpr float kLegacyRangeFixedTerm = 2.0f;
+
+		// `GETATTACKRANGE()` when the right hand is empty:
+		// `GLCONST_CHAR::wMAXATRANGE_SHORT` = 2 (GLogicData.cpp:237), applied by
+		// GLogixExPC.cpp:416-417.
 		//
-		// NOT legacy-verified and NOT derived from item data. No RAN item,
-		// equipment or crowd value has been decoded, so the honest options were
-		// "no range check at all" or "one clearly-labelled placeholder" - and a
-		// missing check would let a client attack from anywhere, which is a worse
-		// defect than a placeholder constant. The exact value is arbitrary within
-		// reason and is expected to change.
+		// Recovered for an unarmed attacker, which makes the unarmed case exact
+		// too: 4 + 4 + 2 + 2 + 7 = 19 units. It is still a FALLBACK in the sense
+		// that the server cannot tell an unarmed character from one whose weapon
+		// has not been resolved - see `WeaponRangeView::hasWeapon`.
+		inline constexpr float kUnarmedAttackRangeUnits = 2.0f;
+
+		// PROTOTYPE. Stands in for the whole item-derived sum when no weapon has
+		// been resolved, i.e. when there is no item data to read a range from.
+		//
+		// NOT legacy-verified and NOT derived from item data. It is kept only
+		// because a server with no item table cannot compute the legacy sum, and
+		// the options are "no range check at all" or "one clearly-labelled
+		// placeholder" - and a missing check would let a client attack from
+		// anywhere, which is a worse defect than a placeholder constant.
+		//
+		// A resolved weapon does NOT use this: that is the whole of 002M's change
+		// to this rule. See `AttackService::AllowedDistanceFor`.
 		inline constexpr float kPrototypeAttackableDistanceUnits = 20.0f;
 
 		// What one 3036 did.
@@ -145,6 +165,44 @@ namespace Modern::Server::World{
 		{
 			bool     exists = false;
 			Vector3  position{};
+
+			// The target's body radius, legacy `pTARGET->GetBodyRadius()`.
+			//
+			// For a PC this is `GLCONST_CHAR::wBODYRADIUS` = 4 (GLogicData.cpp:245),
+			// which is the default. It is a parameter rather than a constant
+			// because the value is the TARGET's, and a crow target's comes from its
+			// crow data (`m_sAction.m_wBodyRadius`) rather than from the character
+			// table. PC-vs-PC is therefore 4 + 4, which is the case this server
+			// fights today.
+			float bodyRadius = 4.0f;
+		};
+
+		// What the attacker is holding, for the range rule.
+		//
+		// Legacy's rule is (GLCharMsg.cpp:343-347):
+		//
+		//     wAttackRange   = pTARGET->GetBodyRadius() + GETBODYRADIUS()
+		//                      + GETATTACKRANGE() + 2
+		//     if ( ISLONGRANGE_ARMS() )  wAttackRange += GETSUM_TARRANGE()
+		//     wAttackAbleDis = wAttackRange + 7
+		//
+		// `GETATTACKRANGE()` is `m_wATTRANGE`, which is the equipped weapon's
+		// `wAttRange` - or `GLCONST_CHAR::wMAXATRANGE_SHORT` (= 2) when the right
+		// hand is empty (GLogixExPC.cpp:411-418).
+		struct WeaponRangeView
+		{
+			// Whether a weapon was resolved and its range read. False leaves the
+			// prototype constant in charge, which is the documented fallback for
+			// "no item data, or no weapon in hand".
+			bool  hasWeapon = false;
+
+			// The weapon's `wAttRange`, in world units. Meaningful only when
+			// `hasWeapon` is true; 0 is a declared zero and is kept, because a
+			// weapon really can declare a zero reach.
+			float attackRange = 0.0f;
+
+			// The attacker's own body radius, `GETBODYRADIUS()` = 4 for a PC.
+			float attackerBodyRadius = 4.0f;
 		};
 
 		struct AttackResult
@@ -182,6 +240,11 @@ namespace Modern::Server::World{
 			// boundary rather than on a private constant.
 			float allowedDistance = 0.0f;
 
+			// Which limit the comparison used, and why. A test that asks "did the
+			// rule use the weapon's range or the prototype" can answer it without
+			// re-deriving the number.
+			bool usedWeaponRange = false;
+
 			// Why a request was refused, in one line. Empty on success.
 			std::string detail;
 		};
@@ -191,15 +254,34 @@ namespace Modern::Server::World{
 		{
 		public:
 			// The prototype range limit: the placeholder plus the verified slack.
+			//
+			// This is what is used when no weapon is resolved. It is kept because
+			// existing tests and the existing test seams use it, and because a
+			// server without item data has nothing better.
 			static float AllowedDistance() noexcept;
+
+			// The legacy rule, computed from what the caller resolved.
+			//
+			//     targetBodyRadius + attackerBodyRadius + weaponRange + 2 + 7
+			//
+			// `GetSUM_TARRANGE()` is deliberately NOT added: it is the long-range
+			// target-range bonus from passives and skills, and this server has
+			// neither, so adding a recovered zero would be the same as omitting it -
+			// and the day one arrives it has to come from its own source rather
+			// than from a default here.
+			static float AllowedDistanceFor(const TargetView& target,
+			                                const WeaponRangeView& weapon) noexcept;
 
 			// Evaluates `request` for an attacker at `attackerPosition`.
 			//
 			// `attackerGaeaId` is the attacker's own authorized id. `target` is what
-			// the caller resolved; this rule does not look anything up.
+			// the caller resolved; this rule does not look anything up. `weapon` is
+			// the caller's resolved weapon range, or the default for "none
+			// resolved", which keeps the prototype constant in charge.
 			AttackResult Evaluate(WireU32 attackerGaeaId, bool attackerSpawned,
 			                      const Vector3& attackerPosition,
 			                      const AttackRequest& request,
-			                      const TargetView& target) const;
+			                      const TargetView& target,
+			                      const WeaponRangeView& weapon = {}) const;
 		};
 } // namespace Modern::Server::World

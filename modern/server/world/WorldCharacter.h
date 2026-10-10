@@ -71,6 +71,8 @@
 #include "NetworkTypes.h"
 #include "RanWirePrimitives.h"
 #include "WorldEntryProtocol.h"
+#include "equipment/EquipmentState.h"
+#include "item/ItemIdentity.h"
 #include "types/Result.h"
 
 #include <cmath>
@@ -162,6 +164,28 @@ namespace Modern::Server::World
 		// see MovementStateProtocol.h for why, and for which four bits a client may
 		// influence. No coordinate is affected by any of this.
 		Network::WireU32 actState = 0;
+
+		// WORLD-ENTRY-002M: what this character has equipped.
+		//
+		// SERVER-OWNED, and deliberately so. Nothing on the wire carries an item
+		// id - the 3036 that asks to attack carries a target, not a weapon, and
+		// the 2359 that joins carries an identity - so a client cannot nominate
+		// equipment. The record is populated by whoever builds the character: the
+		// character repository today (from stored character data), and a database
+		// layer later. `FieldRoleRuntime` only READS it, through the same
+		// aggregation `ServerCharacter` uses, so there is one answer to "what does
+		// this character's equipment contribute".
+		//
+		// Empty means "wearing nothing", which is the correct contribution and the
+		// one every existing test carries. The `emSuit`/`emAttack`/`wAttRange`
+		// fields that decide where an item may go and how it attacks are resolved
+		// through the item-definition provider, never stored here - a definition is
+		// shared by every copy of an item and must not be copied into a character.
+		//
+		// What is NOT here, each on purpose: no inventory (no positions, no
+		// counts), no persistence (this is runtime state), and no stat cache (the
+		// aggregation runs on demand so it can never go stale).
+		Modern::EquipmentState equipment;
 
 		// m_dwUserLvl: the ACCOUNT privilege level, carried by the Agent->Field join
 		// (NET_GAME_JOIN_FIELDSVR::dwUserLvl, s_NetGlobal.h:4174) and by the client's

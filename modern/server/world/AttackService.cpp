@@ -32,13 +32,63 @@ namespace Modern::Server::World{
 		// explicitly as kLegacyRangeSlackUnits; the four item-derived terms are the
 		// prototype placeholder. See the header for why that substitution is
 		// recorded rather than silently made.
+		//
+		// 002M: a resolved weapon does NOT arrive here. It goes through
+		// `AllowedDistanceFor`, which computes the legacy sum from the weapon's
+		// actual `wAttRange`. This entry point remains for the no-item-data case.
 		return kPrototypeAttackableDistanceUnits + kLegacyRangeSlackUnits;
+	}
+
+	float AttackService::AllowedDistanceFor(const TargetView& target,
+	                                        const WeaponRangeView& weapon) noexcept
+	{
+		// GLCharMsg.cpp:343-347, term by term:
+		//
+		//   wAttackRange   = pTARGET->GetBodyRadius()
+		//                  + GETBODYRADIUS()
+		//                  + GETATTACKRANGE()
+		//                  + 2
+		//   wAttackAbleDis = wAttackRange + 7
+		//
+		// `ISLONGRANGE_ARMS()` adds `GETSUM_TARRANGE()`, which is the passive and
+		// skill target-range bonus. This server has neither, so it is omitted
+		// rather than added as a recovered zero - the day one exists it has to
+		// come from its own source.
+		if (!weapon.hasWeapon)
+		{
+			// No weapon resolved. Two cases, deliberately distinguished:
+			//
+			//   * no item data at all, so no weapon can be resolved. The
+			//     prototype stands in for the whole sum.
+			//   * a weapon IS resolved and simply declares a reach, which may be
+			//     0. That is a real value and is computed, not replaced.
+			//
+			// They are told apart by `hasWeapon`, which only the caller can set,
+			// because only the caller knows whether an item table was consulted.
+			return AllowedDistance();
+		}
+
+		float range = target.bodyRadius;
+		range += weapon.attackerBodyRadius;
+		range += weapon.attackRange;
+		range += kLegacyRangeFixedTerm;
+		range += kLegacyRangeSlackUnits;
+
+		// A NaN or negative reach cannot come from a real item (the loader refuses
+		// it), but the comparison is written so a NaN falls on the SAFE side: a
+		// non-finite limit refuses every attack rather than accepting them all.
+		if (!(range > 0.0f))
+		{
+			return 0.0f;
+		}
+		return range;
 	}
 
 	AttackResult AttackService::Evaluate(WireU32 attackerGaeaId, bool attackerSpawned,
 	                                     const Vector3& attackerPosition,
 	                                     const AttackRequest& request,
-	                                     const TargetView& target) const
+	                                     const TargetView& target,
+	                                     const WeaponRangeView& weapon) const
 	{
 		AttackResult result;
 		result.attackerGaeaId = attackerGaeaId;
@@ -108,7 +158,8 @@ namespace Modern::Server::World{
 		                                 delta.z * delta.z);
 
 		result.distance        = distance;
-		result.allowedDistance = AllowedDistance();
+		result.allowedDistance = AllowedDistanceFor(target, weapon);
+		result.usedWeaponRange = weapon.hasWeapon;
 
 		// The one refusal legacy ANNOUNCES (GLCharMsg.cpp:349-366).
 		//

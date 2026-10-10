@@ -45,7 +45,26 @@ namespace Modern
 		//
 		// Adding is not reserved: the container grows, so a caller cannot
 		// invalidate an existing definition by adding another.
+		//
+		// SINGLE items only. Loading a table through this is quadratic - the
+		// container is kept sorted, so each insertion shifts the tail - and a
+		// 18k-row item export exhausts a test's per-case time budget long
+		// before it finishes. `AddAll` is the entry point for a table.
 		Status Add(const ItemDefinition& definition);
+
+		// Adds many definitions, sorting ONCE.
+		//
+		// Returns how many were refused, for the reasons `Add` refuses them, so
+		// a caller can report what it dropped instead of discovering it by
+		// counting afterwards. Duplicate ids resolve the same way `Add` does -
+		// the LAST one wins - and are counted rather than silently replacing.
+		struct BulkResult
+		{
+			std::size_t added   = 0;
+			std::size_t refused = 0;
+			std::size_t replaced = 0;
+		};
+		BulkResult AddAll(const std::vector<ItemDefinition>& definitions);
 
 		// Removes a definition, which is how a test empties a provider without
 		// rebuilding it. Returns NotFound when the id was not registered.

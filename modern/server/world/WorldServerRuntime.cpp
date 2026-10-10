@@ -1,5 +1,7 @@
 		#include "world/WorldServerRuntime.h"
 
+#include "item/ItemDefinitionTable.h"
+
 #include <utility>
 
 namespace Modern::Server::World
@@ -25,6 +27,26 @@ namespace Modern::Server::World
 		// `Stats::ClassConstantTable::Verified()`, so there is no second model of
 		// anything here.
 		m_field.SetCombatStatsProvider(&m_combatStats);
+
+		// WORLD-ENTRY-002M: the item table, loaded from the configured path.
+		//
+		// A path that is set but unreadable leaves the table empty and is reported
+		// through the counter, so a deployment with a stale path sees "no
+		// equipment effects" rather than a silently half-loaded table. Nothing is
+		// fatal here: an empty table is a VALID configuration, and every existing
+		// test runs with one.
+		if (!m_config.itemDataPath.empty())
+		{
+			const auto loaded = Item::LoadItemCsv(m_config.itemDataPath, m_itemTable);
+			m_itemRowsLoaded =
+			    loaded.IsOk() ? static_cast<std::size_t>(loaded.GetValue().loaded) : 0;
+		}
+
+		// Bound whether or not anything loaded: an empty provider is a state the
+		// runtime can be in, and handing out a pointer to it is how the field role
+		// and the combat provider learn that.
+		m_combatStats.SetItemDefinitions(&m_itemTable);
+		m_field.SetItemDefinitions(&m_itemTable);
 	}
 
 	WorldServerRuntime::~WorldServerRuntime()

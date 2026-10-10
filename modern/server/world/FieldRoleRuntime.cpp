@@ -976,11 +976,27 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 			target.position =
 			    AuthoritativePosition(targetPeer->session.SessionId(),
 			                          targetPeer->session.Character(), Vector3{});
+			// A PC target's body radius is the character table's constant. A CROW
+			// target would read `m_sAction.m_wBodyRadius` from its crow data, and
+			// this server has no crow entities at all - 002i refuses them.
+			target.bodyRadius = kPcBodyRadiusUnits;
+		}
+
+		// The attacker's equipped weapon, for the range rule.
+		//
+		// Resolved through the item-definition provider the role borrows. A
+		// missing provider, a missing definition, or an empty right hand leaves
+		// `hasWeapon` false, which keeps the prototype constant in charge - the
+		// documented fallback for "no item data".
+		WeaponRangeView weapon;
+		if (const WorldCharacter* attackerCharacter = peer->session.Character())
+		{
+			weapon = ResolveWeaponRange(*attackerCharacter);
 		}
 
 		const AttackResult result =
 		    m_attackService.Evaluate(peer->session.GaeaId(), spawned, attackerPosition,
-		                             ruleRequest, target);
+		                             ruleRequest, target, weapon);
 
 		if (!result.accepted)
 		{
@@ -1159,6 +1175,67 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 		m_attackAvoidSent.fetch_add(1, std::memory_order_relaxed);
 		Emit(FieldEvent::AttackAvoidSent, result.detail, result.attackerGaeaId);
 		return true;
+	}
+
+	namespace
+	{
+		// The legacy rule for which hand is the attacking one.
+		//
+		// `m_wATTRANGE` and `m_emITEM_ATT` are read from
+		// `m_pITEMS[GetCurRHand()]` (GLogixExPC.cpp:409-418), and `GetCurRHand()`
+		// is SLOT_RHAND or SLOT_RHAND_S depending on `IsUseArmSub()` (:4740-4744).
+		// `IsUseArmSub()` is the extreme-class arm-substitute flag, which selects
+		// the `_S` pair of hand slots.
+		//
+		// The modern runtime has no per-character arm-substitute flag, so the
+		// non-substitute pair is used. That is correct for every non-extreme class
+		// and is a NAMED deferral for the extreme pair rather than a silent choice:
+		// an extreme character's weapon would have to be equipped in the `_S`
+		// slots to be seen here.
+		Modern::EquipmentSlot AttackingHandSlot(const WorldCharacter& character) noexcept
+		{
+			(void)character;
+			return Modern::EquipmentSlot::RightHand;
+		}
+	}
+
+	WeaponRangeView FieldRoleRuntime::ResolveWeaponRange(
+	    const WorldCharacter& character) const
+	{
+		WeaponRangeView weapon;
+
+		const Modern::EquipmentSlot slot = AttackingHandSlot(character);
+		if (!character.equipment.HasEquipped(slot))
+		{
+			// An empty right hand is legacy's unarmed case:
+			// `GETATTACKRANGE()` returns wMAXATRANGE_SHORT = 2
+			// (GLogicData.cpp:237, GLogixExPC.cpp:416-417).
+			weapon.hasWeapon          = true;
+			weapon.attackRange        = kUnarmedAttackRangeUnits;
+			weapon.attackerBodyRadius = kPcBodyRadiusUnits;
+			return weapon;
+		}
+
+		// A worn item whose definition cannot be resolved has no range to
+		// contribute. That is a data problem and it is reported as the prototype
+		// fallback rather than a zero: a zero would refuse every attack the
+		// character makes.
+		if (m_itemDefinitions == nullptr)
+		{
+			return weapon;
+		}
+
+		const Modern::ItemDefinition* definition =
+		    m_itemDefinitions->Find(character.equipment.GetEquipped(slot).definition);
+		if (definition == nullptr || !definition->IsValid())
+		{
+			return weapon;
+		}
+
+		weapon.hasWeapon          = true;
+		weapon.attackRange        = static_cast<float>(definition->attackRange);
+		weapon.attackerBodyRadius = kPcBodyRadiusUnits;
+		return weapon;
 	}
 
 	void FieldRoleRuntime::FillCombatContext(const PeerPtr& attackerPeer,

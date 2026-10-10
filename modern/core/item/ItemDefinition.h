@@ -27,6 +27,109 @@ namespace Modern
 
 	const char* ToString(ItemKind kind) noexcept;
 
+	// ---------------------------------------------------------------------------
+	// THE LEGACY TYPE ENUMS, CARRIED AS THEY ARE
+	// ---------------------------------------------------------------------------
+	//
+	// `EMITEM_TYPE` (legacy GLItemDef.h:364) and `EMSUIT` (GLItemDef.h:168) are
+	// the two values `GLCHARLOGIC::CHECKSLOT_ITEM` (GLogixExPC.cpp:3071) tests
+	// before an item may be worn, and `GLITEM_ATT` (GLItemDef.h:130) is what
+	// selects melee from shoot power. They are kept as their own types rather
+	// than folded into `ItemKind`, because RAN's own switch statements are over
+	// these values and re-deriving a modern enum would be a second answer to
+	// "what kind of item is this".
+
+	// `EMITEM_TYPE`, the values CHECKSLOT_ITEM accepts for wearing.
+	//
+	// GLItemDef.h:364-426. The full enum has 60+ members; only the wearable ones
+	// are named, and the rest are `Other` - which is what `CHECKSLOT_ITEM`
+	// treats them as, by refusing anything outside this list.
+	enum class LegacyItemType : uint8_t
+	{
+		Suit          = 0,  // ITEM_SUIT
+		Arrow         = 1,  // ITEM_ARROW
+		Charm         = 7,  // ITEM_CHARM
+		Revive        = 34, // ITEM_REVIVE
+		AntiDisappear = 43, // ITEM_ANTI_DISAPPEAR
+		Vehicle       = 45, // ITEM_VEHICLE
+		Bullet        = 57, // ITEM_BULLET (gun-bullet logic)
+		Other         = 200,
+	};
+
+	// `EMSUIT`, the wear-position category. GLItemDef.h:168-203.
+	//
+	// 25 values; `SUIT_NSIZE` is not one of them and is how the legacy
+	// `SLOT_2_SUIT` default says "this slot has no suit".
+	enum class LegacySuit : uint8_t
+	{
+		Headgear = 0,
+		Upper    = 1,
+		Lower    = 2,
+		Hand     = 3,  // gloves, not weapon
+		Foot     = 4,
+		Handheld = 5,  // anything held in a hand, weapon or otherwise
+		Neck     = 6,
+		Wrist    = 7,
+		Finger   = 8,
+		PetA     = 9,
+		PetB     = 10,
+		Vehicle  = 11,
+		Belt     = 19,
+		Earring  = 20,
+		Accessory= 21,
+		Ornament = 22,
+		Face     = 23,
+		Misc     = 24,
+		None     = 200,
+	};
+
+	// `GLITEM_ATT`. GLItemDef.h:130-161.
+	//
+	// `ITEMATT_NEAR = 6` is the BOUNDARY `ISLONGRANGE_ARMS()` tests
+	// (GLogixExPC.cpp:4768-4772), so its value is part of the semantics and is
+	// asserted, not assumed.
+	enum class LegacyItemAtt : uint8_t
+	{
+		Nothing    = 0,
+		Sword      = 1,
+		Blade      = 2,
+		Dagger     = 3,
+		Spear      = 4,
+		Stick      = 5,
+		Gaunt      = 6,
+		Bow        = 7,
+		Throw      = 8,
+		Gun        = 9,
+		Railgun    = 10,
+		Portalgun  = 11,
+		Scythe     = 12,
+		Dualspear  = 13,
+		Shuriken   = 14,
+		Fist       = 15,
+		Wand       = 16,
+		Cube       = 17,
+		Whip       = 18,
+		Shield     = 19,
+		Hammer     = 20,
+		Umbrella   = 21,
+		Nocare     = 22,
+		Shotgun    = 23,
+		Guns       = 24,
+		Swordsaber = 25,
+
+		// The melee/shoot boundary. `emAttack > NearArms` is long range.
+		NearArms = 6,
+		NSize    = 26,
+	};
+
+	// `EMHAND`, which hand an item is held in. GLItemDef.h:687-691.
+	enum class LegacyHand : uint8_t
+	{
+		Right = 1,
+		Left  = 2,
+		Both  = 3,
+	};
+
 	// The base stat block an item definition carries.
 	//
 	// VERTICAL-002. This is the *definition* half of RAN's item contribution:
@@ -205,9 +308,14 @@ namespace Modern
 	//
 	// CORE-001 kept this to identity. VERTICAL-002 adds the stat block above,
 	// which is the field set the legacy investigation proved feeds
-	// `SSUM_ITEM`. RAN's definition also carries price, durability, attack type,
-	// attack range and upgrade paths; none of those reach the stat pipeline
-	// (see the investigation §9) and none is here.
+	// `SSUM_ITEM`. The older investigation also classified `wAttRange` and
+	// `emAttack` as NOT reaching the stat pipeline, which is true - and that is
+	// why they are not in `ItemStatBlock`. They reach the COMBAT path instead:
+	// `m_wATTRANGE = m_pITEMS[emRHand]->sSuitOp.wAttRange` (GLogixExPC.cpp:412,
+	// :1282) and `m_emITEM_ATT = m_pITEMS[emRHand]->sSuitOp.emAttack` (:411,
+	// :1281) are both read directly off the equipped weapon, and both are
+	// load-bearing - the range rule uses the first and `ISLONGRANGE_ARMS()` uses
+	// the second.
 	struct ItemDefinition
 	{
 		ItemId      id = ItemId::MakeInvalid();
@@ -219,12 +327,56 @@ namespace Modern
 		// equipment, which is the default and therefore the common case.
 		ItemStatBlock stats;
 
+		// ---- equipment and weapon identity, from SSUIT -----------------------
+		//
+		// These three decide WHERE an item can be worn and HOW it attacks. They
+		// are part of the definition because every copy of the item has them.
+		LegacyItemType itemType = LegacyItemType::Other;
+		LegacySuit     suit     = LegacySuit::None;
+		LegacyItemAtt  attack   = LegacyItemAtt::Nothing;
+
+		// `wAttRange`, `WORD` (GLItemSuit.h:475). The attacker's OWN reach in
+		// world units, added into legacy's range rule (GLCharMsg.cpp:345-347):
+		//
+		//     wAttackRange  = pTARGET->GetBodyRadius() + GETBODYRADIUS()
+		//                     + GETATTACKRANGE() + 2
+		//     wAttackAbleDis = wAttackRange + 7
+		//
+		// It is in the same units as the distance it is compared against, so no
+		// conversion applies.
+		//
+		// `0` is NOT "unarmed": `GETATTACKRANGE()` returns
+		// `GLCONST_CHAR::wMAXATRANGE_SHORT` (= 2, GLogicData.cpp:237) when the
+		// right hand holds no item at all (GLogixExPC.cpp:416-417). A wielded
+		// weapon that declares 0 is a declared 0, and it is kept.
+		uint16_t attackRange = 0;
+
+		// Which hand the item is held in: `emHand`, GLItemDef.h:687-691.
+		LegacyHand hand = LegacyHand::Right;
+
+		// `dwHAND`, the EMHAND_* bitmask (GLItemSuit.h:466-472). Only
+		// `EMHAND_BOTHHAND = 0x0001` is read, by `CHECKSLOT_ITEM`'s two-handed
+		// rule (GLogixExPC.cpp:3123) and by `IsBOTHHAND()`.
+		uint16_t handFlags = 0;
+
+		static constexpr uint16_t kHandBothHand = 0x0001;
+
 		bool IsValid() const
 		{
 			return id.IsValid() && kind != ItemKind::None && !name.empty() && maxStack > 0;
 		}
 
 		bool CanStack() const { return maxStack > 1; }
+
+		// Whether this definition occupies a hand, which is the only kind of
+		// equipment that can set the attack range or the attack type.
+		bool IsHandheld() const noexcept { return suit == LegacySuit::Handheld; }
+
+		// Whether the item needs both hands, the legacy `IsBOTHHAND()`.
+		constexpr bool IsBothHanded() const noexcept
+		{
+			return (handFlags & kHandBothHand) != 0;
+		}
 
 		// Whether equipping this definition could change a character's derived
 		// statistics. Lets an aggregator skip consumables and materials

@@ -76,6 +76,19 @@ namespace Modern::Server::World
 		// membership.
 		std::string expectedEncryptKey;
 
+		// WORLD-ENTRY-002M: where the legacy item CSV lives.
+		//
+		// The export at `reference/data-formats/Item.csv` is a tracked file, so a
+		// deployment - and a test - can name it directly. Empty means "no item
+		// data", which is a VALID configuration: equipped items then contribute
+		// nothing, no weapon range can be resolved, and the range rule falls back
+		// to its prototype constant. That is the honest behaviour for a server with
+		// no item table, and it is what every existing test runs.
+		//
+		// A path that is set but unreadable is NOT silently ignored - the runtime
+		// reports it through its own counter rather than starting half-loaded.
+		std::string itemDataPath;
+
 		// Refuses a configuration that cannot serve: an empty host, a duplicate login
 		// name, and two accounts sharing one account id.
 		//

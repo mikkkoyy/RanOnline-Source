@@ -83,6 +83,7 @@
 #include "world/CharacterRepository.h"
 #include "world/CombatStatsProvider.h"
 #include "world/FieldSession.h"
+#include "equipment/ItemDefinitionProvider.h"
 #include "world/MovementStateService.h"
 #include "world/WorldEntryService.h"
 #include "world/WorldServerConfig.h"
@@ -342,12 +343,23 @@ public:
 	// The runtime does NOT own it: the pointer must outlive the role, for the
 	// same reason `SetNavigationMapSource` borrows its source. A provider whose
 	// class rows are all Unavailable (the state of
-	// Stats::ClassConstantTable today) refuses every character, so the
-	// prototype path is what runs either way until `.classconst` data is
+	// `Stats::ClassConstantTable` before 002L-B) refuses every character, so the
+	// 002L-A prototype path is what runs either way until `.classconst` data is
 	// recovered.
 	void SetCombatStatsProvider(const ICombatStatsProvider* provider) noexcept
 	{
 		m_combatStats = provider;
+	}
+
+	// WORLD-ENTRY-002M: borrows the item-definition provider the role uses to
+	// resolve equipment and weapon ranges.
+	//
+	// Same lifetime rule as `SetCombatStatsProvider`: the pointer must outlive
+	// the role. Null is legal and means "no items are known", in which case an
+	// equipped item contributes nothing and no weapon range can be resolved.
+	void SetItemDefinitions(const ItemDefinitionProvider* provider) noexcept
+	{
+		m_itemDefinitions = provider;
 	}
 
 	// How many 3036s were resolved with verified derived stats, and how many
@@ -578,6 +590,16 @@ private:
 		                       const AttackResult& accepted,
 		                       DamageInput& input);
 
+		// WORLD-ENTRY-002M: the attacking weapon's range, read from the equipped
+		// right-hand item through the borrowed item-definition provider.
+		//
+		// `hasWeapon` false is the documented "could not resolve a weapon" case and
+		// keeps the prototype constant in charge. An EMPTY right hand is NOT that
+		// case: it resolves to legacy's unarmed `wMAXATRANGE_SHORT`, so an
+		// unarmed character's range is exact too.
+		WeaponRangeView ResolveWeaponRange(
+		    const WorldCharacter& character) const;
+
 		// Sends 3044 to every authorized peer EXCEPT `exclude`. Mirrors BroadcastGoto.
 		void BroadcastAttackDamage(const PeerPtr& exclude,
 		                           const Network::Attack::AttackDamageBroadcast& broadcast);
@@ -693,6 +715,10 @@ std::atomic<std::size_t> m_attackDamageRefused{0};
 	// that kept the prototype constants. Monotonic; written by worker threads.
 	std::atomic<std::size_t> m_combatStatsResolved{0};
 	std::atomic<std::size_t> m_combatStatsFallback{0};
+
+	// WORLD-ENTRY-002M: the borrowed item-definition provider. Null means "no
+	// items are known"; see `SetItemDefinitions`.
+	const ItemDefinitionProvider* m_itemDefinitions{nullptr};
 
 	// WORLD-ENTRY-002L-C: 3036s refused because the runtime context was
 	// unavailable. Monotonic; written by worker threads.
