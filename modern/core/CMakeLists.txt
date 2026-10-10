@@ -44,6 +44,7 @@ set(MODERN_SOURCES
     skills/SkillDefinition.cpp
     skills/SkillState.cpp
     skills/SkillDefinitionProvider.cpp
+skills/SkillBasicTable.cpp
     skills/PassiveContributionAggregator.cpp
     skills/ActiveSkill.cpp
     skills/SkillFactTypes.h

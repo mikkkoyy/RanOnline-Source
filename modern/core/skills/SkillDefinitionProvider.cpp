@@ -60,6 +60,28 @@ Status InMemorySkillDefinitions::Add(const SkillDefinition& definition)
 	return Ok();
 }
 
+Status InMemorySkillDefinitions::AddRecoveredBasic(const SkillDefinition& definition)
+{
+	// SKILL-001: the narrower rule, and the shared storage. Deliberately the
+	// same sorted insert as `Add` so a recovered definition and a fully
+	// specified one cannot both exist for one id, and so `Find` behaves
+	// identically whichever path registered it.
+	if (!definition.HasRecoveredBasic())
+	{
+		return Status(ErrorCode::InvalidArgument);
+	}
+
+	const auto position = std::lower_bound(m_definitions.begin(), m_definitions.end(),
+	                                        definition, SkillDefComparator{});
+	if (position != m_definitions.end() && position->id == definition.id)
+	{
+		*position = definition;
+		return Ok();
+	}
+	m_definitions.insert(position, definition);
+	return Ok();
+}
+
 Status InMemorySkillDefinitions::Remove(const SkillId& id)
 {
 	const auto position = std::lower_bound(m_definitions.begin(), m_definitions.end(),

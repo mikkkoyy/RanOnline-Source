@@ -16,6 +16,7 @@
 // not part of the verified stat pipeline and are not here.
 
 #include "item/ItemDefinition.h"
+#include "stats/BaseStats.h"
 #include "stats/Contributions.h"
 #include "status/StatusEffectTypes.h"
 #include "types/Ids.h"
@@ -438,6 +439,41 @@ namespace Modern
 		Anybody  = 2,   // SIDE_ANYBODY
 	};
 
+	// SKILL-001: which brightness a skill is usable by. Mirrors EMBRIGHT
+	// (GLCharDefine.h:831-839), which `SLEARN` carries per skill.
+	enum class SkillBrightness : uint8_t
+	{
+		Light = 0,   // BRIGHT_LIGHT
+		Dark  = 1,   // BRIGHT_DARK
+		Both  = 2,   // BRIGHT_BOTH - any character (item-brightness driven)
+	};
+
+	// SKILL-001: what a character must have to take a skill to one level.
+	//
+	// Mirrors SKILL::SLEARN_LVL (GLSkillLearn.h:28-40), which `SLEARN` holds
+	// once per level in `sLVL_STEP[MAX_LEVEL]`. This is the learning
+	// requirement set, NOT the per-level effect data: `SkillLevelData` already
+	// carries the latter from the other half of the file.
+	//
+	// Legacy indexes `sLVL_STEP` by the level being learned, and the entry's
+	// `dwSKILL_LVL` is the level the character ends up at - which is how a
+	// single entry can jump a character several levels at once.
+	struct SkillLearnLevel
+	{
+		uint32_t  skillPointCost = 0;      // dwSKP
+		uint32_t  requiredLevel  = 0;      // dwLEVEL - the character level
+		Stats::BaseStats requiredStats{};   // sSTATS - pow/str/spi/dex/int/sta
+		uint32_t  resultingSkillLevel = 0; // dwSKILL_LVL
+
+		constexpr bool operator==(const SkillLearnLevel& o) const noexcept
+		{
+			return skillPointCost == o.skillPointCost &&
+			       requiredLevel == o.requiredLevel &&
+			       requiredStats == o.requiredStats &&
+			       resultingSkillLevel == o.resultingSkillLevel;
+		}
+	};
+
 	// A passive skill definition: the immutable data that determines what
 	// the skill contributes when learned at a given level.
 	struct SkillDefinition
@@ -502,6 +538,35 @@ namespace Modern
 		// Special specs. Matches SSPECS.
 		std::array<SkillSpec, kMaxSkillSpecs> specs{};
 
+		// ---- SKILL-001: the SSKILLBASIC / SLEARN half ------------------
+		//
+		// Everything above comes from the SAPPLY half of the skill export.
+		// These come from the SSKILLBASIC + SLEARN half, which is a different
+		// set of legacy structs and is recovered separately. They are data
+		// only: nothing in this milestone acts on them.
+
+		// SSKILLBASIC::wTARRANGE. The target range in world units.
+		uint16_t targetRange = 0;
+
+		// The learning requirements, indexed by the level being learned
+		// (1..kMaxSkillLevel). Index 0 is unused and stays zeroed.
+		//
+		// Mirrors SLEARN::sLVL_STEP. Legacy's MAX_LEVEL is 9, which is
+		// `kMaxSkillLevel`, so the array is the same shape and no level is
+		// silently dropped.
+		std::array<SkillLearnLevel, kMaxSkillLevel + 1> learn{};
+
+		// SLEARN::dwCLASS - a bitmask over EMCHARCLASS (GLCharDefine.h:159-178),
+		// not an enum. `GLCC_NONE` is 0, meaning "any class".
+		uint32_t learnClassMask = 0;
+
+		// SLEARN::emBRIGHT.
+		SkillBrightness brightness = SkillBrightness::Both;
+
+		// SLEARN::sSKILL - the skill this entry actually points at, which may
+		// differ from this record's own id.
+		SkillId learnSkill = SkillId::Invalid();
+
 		// Validation: a definition is valid if it has a valid id, non-empty name,
 		// valid maxLevel, and at least one level has non-zero basicVar or impacts/specs.
 		bool IsValid() const noexcept
@@ -532,6 +597,23 @@ namespace Modern
 				}
 			}
 			return false;
+		}
+
+		// SKILL-001: validity of the SSKILLBASIC + SLEARN half on its own.
+		//
+		// This is deliberately NOT \IsValid()\. That method asks whether the
+		// skill contributes something, which is answered by \levelData\ /
+		// \impacts\ / \specs\ - all of which come from the SAPPLY half of the
+		// export. A definition recovered from the SSKILLBASIC half alone cannot
+		// satisfy it, and loosening \IsValid()\ would weaken a check that
+		// execution paths rely on.
+		//
+		// So the recovered half has its own, weaker, separately named rule: a
+		// valid identity, a name, and a level count RAN could actually index.
+		bool HasRecoveredBasic() const noexcept
+		{
+			return id.IsValid() && !name.empty() &&
+			       maxLevel > 0 && maxLevel <= kMaxSkillLevel;
 		}
 
 		// Whether this skill requires a specific weapon in the given slot.
