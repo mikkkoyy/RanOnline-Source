@@ -1167,6 +1167,27 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 	{
 		// No provider installed: the prototype constants stand, and that is a
 		// counted outcome rather than a silent one.
+		//
+		// THAT IS THE STATE TODAY, AND THE MEASURED REASON IT IS. 002L-B recovered
+		// all sixteen class rows, so this seam CAN now answer - and binding it was
+		// deliberately NOT done, because a measured experiment (wired temporarily,
+		// then reverted) showed what it does to the live path:
+		//
+		//   * the derived range for the suite's level-10 ArcherMale attacker is
+		//     (10, 10) against the prototype (10, 20), and the derived defence for
+		//     its level-30 ArcherMale target is 10 against the prototype 0;
+		//   * the resulting hit was a CRITICAL, which recomputes from the pre-
+		//     defence figure (nDAMAGE_OLD * criticalDamage/100,
+		//     PhysicalDamageCalculator.h:287-290) and reported 12 - so the wire
+		//     figure moved, and it moved by a route (a crit, whose roll is 0)
+		//     that no existing assertion pins;
+		//   * `WorldEntryTcpTests`' forced-miss case caught the change immediately
+		//     through `CombatStatsResolvedCount()` going 0 -> 1.
+		//
+		// So binding this is a change to a live, tested damage figure, and it
+		// belongs to a milestone that owns that consequence rather than to a
+		// data-recovery one. The counter pair below is what makes "the prototype
+		// still governs" observable instead of assumed.
 		if (m_combatStats == nullptr)
 		{
 			m_combatStatsFallback.fetch_add(1, std::memory_order_relaxed);
@@ -1193,16 +1214,30 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 
 		// ---- the ATTACKER's side of DamageInput ------------------------------
 		//
-		// These are the fields legacy reads off the attacker: m_gdDAMAGE_PHYSIC
-		// (the damage range, GLogixExPC.cpp:2997-3008) and m_nSUM_HIT
-		// (GLogixExPC.cpp:365). `Stats::Calculate` already reproduces both, and
-		// its output types are the legacy destination types, so no conversion
-		// changes a value.
+		// `m_gdDAMAGE_PHYSIC` (the damage range, GLogixExPC.cpp:2997-3008) and
+		// `m_nSUM_HIT` (GLogixExPC.cpp:365) are the two legacy fields this maps,
+		// and `Stats::Calculate` reproduces both with the legacy destination
+		// types, so no conversion changes a value.
+		//
+		// The range is ALREADY COMPLETE. RAN's CALCDAMAGE_20060328 builds its
+		// own base from `m_gdDAMAGE_SKILL + m_sSUMITEM.gdDamage` and applies
+		// `VAR_PARAM(m_wSUM_PA)` itself (GLogixExPC.cpp:1574-1594) - which is
+		// exactly the range `DerivedStats::physicalDamage` holds, because
+		// StatCalculator.cpp:447-449 performs the same saturating add. So the
+		// range goes in whole, and the calculator's own attack-power step must
+		// become a no-op.
+		//
+		// THAT IS WHY `meleePower` IS ZEROED BELOW. 002L-A's mapping passed
+		// `DerivedStats::meleePower` straight through, which makes
+		// PhysicalDamageCalculator.h:90-91 add the attack power a SECOND time
+		// and inflates every hit. It never fired, because no provider resolved
+		// while the table was all-Unavailable; the data arriving is what turns
+		// it from a latent bug into a live one.
 		input.stats.lowDamage  = attackerStats.derived.physicalDamage.low;
 		input.stats.highDamage = attackerStats.derived.physicalDamage.high;
+		input.stats.meleePower = 0; // already folded into the range - see above
 		input.stats.hit        = attackerStats.derived.hit;
 		input.stats.avoid      = attackerStats.derived.avoid;
-		input.stats.meleePower = attackerStats.derived.meleePower;
 
 		// ---- the TARGET's side ----------------------------------------------
 		//

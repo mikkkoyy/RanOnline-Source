@@ -1,52 +1,72 @@
 #pragma once
 
-// WORLD-ENTRY-002L-A: the recovered class-constant table, with provenance.
+// WORLD-ENTRY-002L-B: the recovered class-constant table, with provenance.
 //
 // ---------------------------------------------------------------------------
-// WHAT THIS TABLE IS, AND WHAT IT IS NOT
+// WHAT THIS TABLE IS
 // ---------------------------------------------------------------------------
 //
 // RAN's per-class combat coefficients live in `GLCONST_CHARCLASS`
 // (legacy/Lib_Client/G-Logic/GLogicData.h:58), and `Stats::ClassConstants`
 // (modern/core/stats/BaseStats.h:137) already models every field the stat
-// pipeline reads. What is missing is the DATA: GLCONST_CHARCLASS's rows are
-// populated at runtime from `default.charclass` -> `class<N>.classconst`
-// (legacy/Lib_Client/G-Logic/GLogicDataLoad.cpp:1131-1214 reads exactly these
-// fields out of that file), and those data files are NOT in this repository.
+// pipeline reads. 002L-A shipped the structure with every row unavailable,
+// because the deployed data was not in the repository.
 //
-// So this table carries structure and provenance, and no values. Every row is
-// `CoefficientSource::Unavailable`, which means: no coefficient for that class
-// has been verified, and the caller must keep its explicitly named prototype
-// fallback. That is the honest state and it is deliberately NOT papered over
-// by the constructor defaults in GLogicData.cpp:609 - see the next section.
+// 002L-B recovered it. The deployed files live at
+// `D:\FILES\project\RanOnline-Build\ASURA CLIENT\data\glogic\`:
+//
+//   default.charclass      names each row's file through a
+//                         `<CLASS>_<GENDER>.SETFILE` key
+//   class0..classF.classconst   one row per EMCHARINDEX
+//
+// The files are Rijndael v8 (the 4-byte version prefix is 8), decryptable with
+// `CRijndael::sm_Version[7]` (Rijndael.cpp:943) and the version>=5 key
+// transform (Rijndael.cpp:979-986) - the same path `CStringFile::Open`
+// (StringFile.cpp:84-99) takes, which is how the plaintext was read and how
+// `GLCONST_CHARCLASS::LOADFILE` (GLogicDataLoad.cpp:1131-1216) parses it.
+//
+// Every row in this table is `CoefficientSource::Recovered`, and every row's
+// `note` names its file, the SETFILE key, the key version, the loader and the
+// getflag keys.
 //
 // ---------------------------------------------------------------------------
-// WHY THE CONSTRUCTOR DEFAULTS MUST NOT BE COPIED IN HERE
+// WHY THE CONSTRUCTOR DEFAULTS ARE NOT IN HERE
 // ---------------------------------------------------------------------------
 //
 // `cCONSTCLASS[GLCI_NUM_8CLASS]` (GLogicData.cpp:609) is a compile-time
-// initialiser, and it looks like a table of values. It is a trap:
+// initialiser, and it looks like a table of values. It is a trap: RAN
+// overwrites those fields at startup from the deployed data, and they never
+// reach a running game.
 //
-//   * `GLCONST_CHARCLASS::LOADFILE` (GLogicDataLoad.cpp:1131) reads
-//     fWALKVELO/fRUNVELO/fHP_STR/fHIT_DEX/fPA_POW/wBEGIN_AP/sBEGIN_STATS/
-//     sLVLUP_STATS and every other field out of the per-class data file, and
-//     `default.charclass` names that file per class (GLogicDataLoad.cpp:557-570).
-//   * RAN therefore overwrites the constructor values at startup, and they
-//     never reach a running game.
-//   * WORLD-ENTRY-002c proved exactly that for the two speed fields: the
-//     constructor values are 12.0/34.0 and the deployed values are
-//     12.0-16.0 / 36.0-44.0 (see modern/core/movement/MovementSpeed.h:8-26,
-//     which keeps the constructor values under the name `kLegacyConstructor*`
-//     precisely so they cannot be mistaken for measured ones).
+// That is not a theory. The deployed values are in this table, and they differ
+// from the constructor in every field - for row 0, fHP_STR is 2.0 against the
+// constructor's 10.0, fDEFENSE_DEX is 0.032 against 0.4, and fHIT_DEX is 0
+// against 0.08. 002c proved the same for the two speed fields, where the
+// constructor says 12.0/34.0 and the deployed table says 12.0-16.0 / 36.0-44.0
+// (see modern/core/movement/MovementSpeed.h:8-26, which keeps the constructor
+// values under the name `kLegacyConstructor*` so nobody mistakes them for
+// measurements).
 //
-// Nothing here suggests the combat coefficients are the exception. A row whose
-// values came from the constructor would therefore be WRONG, and shipping one
-// as "recovered" would be worse than shipping nothing: a later reader would
-// trust it. `ValidateRow` is what makes that impossible to do by accident.
+// `ValidateRow` is what makes it impossible to do by accident: a row that
+// claims to be `Recovered` but has a bad index, a non-finite coefficient, or
+// no stated source is DEMOTED, never repaired.
 //
 // ---------------------------------------------------------------------------
-// THE SHAPE A RECOVERED ROW MUST TAKE
+// TWO THINGS A READER MUST KNOW ABOUT THE VALUES
 // ---------------------------------------------------------------------------
+//
+// 1. `fHIT_DEX` and `fAVOID_DEX` are 0 in EVERY deployed row. That is the
+//    data, not an omission: in this build hit and avoid have no dexterity
+//    term, so they come entirely from equipment and passives. The structural
+//    consequence is real - a character with no equipment has derived hit and
+//    avoid of 0, so the hit rate is `100 + 0 - 0` clamped to 99.
+//
+// 2. `sBEGIN_STATS` and `sLVLUP_STATS` are six-space-separated tokens behind
+//    `[...|...]` bracket groups. The brackets and pipes are EDITOR cosmetics;
+//    `CSEPARATOR::DoSeparate` (StringUtils.cpp:340-373) drops empty tokens and
+//    the loader reads all six FLAT, in pow/str/spi/dex/int/sta order
+//    (GLogicDataLoad.cpp:1204-1209, :1211-1216). The deployed consequence is
+//    that every class carries intel == 0.
 //
 // A row is available only when EVERY coefficient the stat pipeline reads is
 // present and finite. There is deliberately no partial provenance: a row that

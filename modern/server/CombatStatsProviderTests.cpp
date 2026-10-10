@@ -1,13 +1,14 @@
-// WORLD-ENTRY-002L-A: the combat-stat provider.
+// WORLD-ENTRY-002L-B: the combat-stat provider, with recovered data.
 //
-// The provider is the seam between recovered class data and `DamageInput`, and
-// the property that matters most is that it REFUSES rather than answers when it
-// has nothing verified. Every case below is deterministic and needs no socket.
+// The provider is the seam between recovered class data and `DamageInput`. The
+// property that matters most is that it REFUSES rather than answers when it
+// has nothing verified - which is now only the unresolved case, because 002L-B
+// recovered all sixteen deployed rows. Every case below is deterministic and
+// needs no socket.
 //
-// The one case that produces numbers uses a test row built through the same
-// `ValidateRow` the shipped table would be filled through, and says so. It
-// exists to prove the wiring is real - that a recovered row actually reaches
-// `DamageInput` through the provider - not to claim the numbers are RAN's.
+// The cases that produce numbers use the SHIPPED table, so they are the
+// deployed RAN values rather than a fixture, and the arithmetic in their
+// comments is derived on paper from `class<N>.classconst`.
 
 #include "TestHarness.h"
 #include "character/CharacterClassTable.h"
@@ -16,8 +17,6 @@
 
 #include "stats/ClassConstantTable.h"
 #include "stats/StatCalculator.h"
-
-#include <limits>
 
 namespace ModernTests
 {
@@ -40,36 +39,9 @@ namespace ModernTests
 			return character;
 		}
 
-		// The provider under test. It reads the SHIPPED table, so its answers
-		// are the honest ones: today, a refusal for every class.
+		// The provider under test. It reads the SHIPPED table, so its answers are
+		// the deployed ones.
 		ClassConstantCombatStats MakeProvider() { return ClassConstantCombatStats{}; }
-
-		// A test row the way a future `.classconst` recovery would build one:
-		// through ValidateRow, so the same validation applies.
-		ClassConstantRow MakeTestRow(CharClassIndex index)
-		{
-			ClassConstantRow row;
-			row.index  = index;
-			row.source = CoefficientSource::Recovered;
-			row.note   = "test fixture: CombatStatsProviderTests, not RAN data";
-
-			ClassConstants& cc = row.constants;
-			cc.beginStats.pow = 10;  cc.beginStats.str = 20;
-			cc.beginStats.spi = 15;  cc.beginStats.dex = 25;
-			cc.beginStats.intel = 8; cc.beginStats.sta = 12;
-
-			cc.beginAttackPoint = 10;  cc.beginDefensePoint = 5;
-			cc.beginMeleePower = 3;    cc.beginShootPower = 4;
-			cc.attackPointConversion = 1.0f;
-			cc.defensePointConversion = 1.0f;
-			cc.meleePowerConversion = 1.0f;
-			cc.shootPowerConversion = 1.0f;
-			cc.hpPerStr = 5.0f;  cc.mpPerSpi = 4.0f;  cc.spPerSta = 2.0f;
-			cc.hitPerDex = 2.0f; cc.avoidPerDex = 1.0f; cc.defensePerDex = 3.0f;
-			cc.meleePerPow = 1.0f; cc.meleePerDex = 0.5f;
-			cc.shootPerPow = 1.0f; cc.shootPerDex = 0.5f;
-			return row;
-		}
 	}
 
 	// ---- class/gender index resolution -------------------------------------
@@ -107,9 +79,13 @@ namespace ModernTests
 			CHECK(seen[static_cast<std::size_t>(index)] == false);
 			seen[static_cast<std::size_t>(index)] = true;
 
-			// A known class must also have a row in the shipped table - the
-			// provider refuses for MISSING DATA, never for an unknown class.
-			CHECK(ClassConstantTable::Verified().Find(index) != nullptr);
+			// A known class must also have a row in the shipped table - and, now
+			// that the rows are recovered, a usable one. The provider refuses for
+			// an UNKNOWN class, never for missing data on a known one.
+			const ClassConstantRow* row = ClassConstantTable::Verified().Find(index);
+			REQUIRE(row != nullptr);
+			CHECK_EQ(static_cast<int>(row->source),
+			         static_cast<int>(CoefficientSource::Recovered));
 		}
 
 		for (bool wasSeen : seen)
@@ -148,12 +124,11 @@ namespace ModernTests
 
 	// ---- the provider refuses when it has no verified data -----------------
 
-	MODERN_TEST(CombatStats_TheShippedProviderRefusesEveryClassToday)
+	MODERN_TEST(CombatStats_TheShippedProviderResolvesEveryLegacyClass)
 	{
-		// THE honest-state assertion. No `.classconst` row has been recovered
-		// into this repository, so a provider reading the shipped table cannot
-		// produce a number for anybody - and saying so is the deliverable, not a
-		// gap to be papered over with zeros.
+		// 002L-B recovered all sixteen deployed rows, so the provider answers for
+		// every class/gender pair. 002L-A asserted the opposite for every pair;
+		// that assertion is what the recovered data changed.
 		const ClassConstantCombatStats provider = MakeProvider();
 
 		for (uint32_t raw = 1; raw <= 8; ++raw)
@@ -162,40 +137,70 @@ namespace ModernTests
 			{
 				const WorldCharacter character = MakeCharacter(raw, gender, 1);
 				CombatStats out{};
-				CHECK(!provider.TryResolve(character, out));
+				REQUIRE(provider.TryResolve(character, out));
+				CHECK_EQ(static_cast<int>(out.source),
+				         static_cast<int>(CoefficientSource::Recovered));
+				CHECK(Stats::IsValidClass(out.resolvedIndex));
 			}
 		}
+
+		// And every one of them came from a recovered row.
+		CHECK_EQ(Stats::ClassConstantTable::Verified().RecoveredCount(),
+		         Stats::ClassConstantTable::kRowCount);
+	}
+
+	MODERN_TEST(CombatStats_AResolvedCharacterCarriesTheDeployedNumbers)
+	{
+		// Hand arithmetic straight from class8.classconst (ArcherMale) at level 1:
+		//
+		//   m_sSUMSTATS = (5, 34, 18, 12, 0, 7)
+		//   m_wSUM_AP   = (5 + 1.2*0)*0.4  = 2
+		//   m_wSUM_DP   = (6 + 0.427*0)*0.57 = 3
+		//   m_wPA       = (2 + 0.3*0)*0.6  = 1
+		//                 + (int)(5*0.12 + 12*0.08) = 1   -> 2
+		//   m_nHIT/AVOID = int(12*0) = 0                 (fHIT_DEX is 0)
+		//   m_nDEFENSE_BODY = (int)(3 + 12*0.024) = 3
+		//   m_gdDAMAGE_PHYSIC = 2 + VAR_PARAM(2) = (4, 4)
+		const ClassConstantCombatStats provider = MakeProvider();
+		const WorldCharacter character = MakeCharacter(3u, 0u, 1); // Archer, Male
+
+		CombatStats out{};
+		REQUIRE(provider.TryResolve(character, out));
+		CHECK_EQ(static_cast<int>(out.resolvedIndex),
+		         static_cast<int>(CharClassIndex::ArcherMale));
+
+		CHECK_EQ(out.derived.totalStats.pow, static_cast<uint16_t>(5));
+		CHECK_EQ(out.derived.totalStats.str, static_cast<uint16_t>(34));
+		CHECK_EQ(out.derived.totalStats.dex, static_cast<uint16_t>(12));
+		CHECK_EQ(out.derived.attackPoint, static_cast<uint16_t>(2));
+		CHECK_EQ(out.derived.defensePoint, static_cast<uint16_t>(3));
+		CHECK_EQ(out.derived.meleePower, static_cast<uint16_t>(2));
+		CHECK_EQ(out.derived.hit, 0);
+		CHECK_EQ(out.derived.avoid, 0);
+		CHECK_EQ(out.derived.defenseBody, 3);
+		CHECK_EQ(out.derived.physicalDamage.low, static_cast<uint32_t>(4));
+		CHECK_EQ(out.derived.physicalDamage.high, static_cast<uint32_t>(4));
 	}
 
 	MODERN_TEST(CombatStats_ARefusalWritesNoUsableStats)
 	{
-		// A refusal must not leave a usable answer behind. `out` may carry the
-		// reason (source, index) for a log line, but every field a caller would
-		// read as a number must be the struct default.
+		// A refusal for an UNRESOLVABLE class must not leave a usable answer
+		// behind. `out` may carry the reason (source, index) for a log line, but
+		// every field a caller would read as a number must be the struct default.
 		const ClassConstantCombatStats provider = MakeProvider();
-		const WorldCharacter character = MakeCharacter(2u, 0u, 10);
 
-		CombatStats out{};
-		REQUIRE(!provider.TryResolve(character, out));
-
-		CHECK_EQ(static_cast<int>(out.source),
-		         static_cast<int>(CoefficientSource::Unavailable));
-		CHECK_EQ(out.derived.hit, 0);
-		CHECK_EQ(out.derived.avoid, 0);
-		CHECK_EQ(out.derived.defense, 0);
-		CHECK_EQ(out.derived.defenseBody, 0);
-		CHECK_EQ(out.derived.meleePower, static_cast<uint16_t>(0));
-		CHECK_EQ(out.derived.physicalDamage.low, static_cast<uint32_t>(0));
-		CHECK_EQ(out.derived.physicalDamage.high, static_cast<uint32_t>(0));
-	}
-
-	MODERN_TEST(CombatStats_AnUnresolvableClassIsRefusedWithoutTouchingTheTable)
-	{
-		const ClassConstantCombatStats provider = MakeProvider();
-		const WorldCharacter character = MakeCharacter(0u, 0u, 5);
-
-		CombatStats out{};
-		CHECK(!provider.TryResolve(character, out));
+		// Class 0 is Unset and 200 is outside EMCHARCLASS; neither resolves.
+		for (uint32_t raw : { 0u, 200u })
+		{
+			const WorldCharacter character = MakeCharacter(raw, 0u, 1);
+			CombatStats out{};
+			REQUIRE(!provider.TryResolve(character, out));
+			CHECK_EQ(out.derived.hit, 0);
+			CHECK_EQ(out.derived.avoid, 0);
+			CHECK_EQ(out.derived.defense, 0);
+			CHECK_EQ(out.derived.meleePower, static_cast<uint16_t>(0));
+			CHECK_EQ(out.derived.physicalDamage.low, static_cast<uint32_t>(0));
+		}
 	}
 
 	MODERN_TEST(CombatStats_AnInvalidLevelIsRefused)
@@ -203,69 +208,61 @@ namespace ModernTests
 		// Level 0 is below RAN's `kMinLevel` and 300 is above `kMaxLevel`
 		// (255). The calculator refuses both, and the provider passes that on
 		// rather than clamping a level the character record should not carry.
-		ClassConstantRow row = MakeTestRow(CharClassIndex::SwordsmanMale);
-		REQUIRE(ValidateRow(row));
-
-		StatCalculationInput zero = [] {
-			StatCalculationInput in;
-			in.characterClass = CharClassIndex::SwordsmanMale;
-			in.level = 0;
-			return in;
-		}();
-		CHECK(Calculate(zero).IsError());
-
-		// And the provider refuses it too, which is the path that matters.
 		const ClassConstantCombatStats provider = MakeProvider();
-		const WorldCharacter character = MakeCharacter(2u, 0u, 0);
+
+		// A valid class, so the refusal can only be the level's.
+		// Explicit casts: the field is a WireU16 and 300 is fine, but 0 and 300
+		// are narrowed from int literals otherwise.
+		for (uint16_t badLevel : { static_cast<uint16_t>(0), static_cast<uint16_t>(300) })
+		{
+			const WorldCharacter character = MakeCharacter(3u, 0u, badLevel);
+			CombatStats out{};
+			CHECK(!provider.TryResolve(character, out));
+		}
+
+		// And a valid level on the same class still resolves, so the refusals
+		// above are about the level and not about the class.
+		const WorldCharacter good = MakeCharacter(3u, 0u, 10);
 		CombatStats out{};
-		CHECK(!provider.TryResolve(character, out));
+		CHECK(provider.TryResolve(good, out));
 	}
 
-	// ---- the wiring is real when data IS present ---------------------------
+	// ---- the wiring is real ---------------------------------------------------
 
 	MODERN_TEST(CombatStats_ARecoveredRowProducesTheSameNumbersAsTheCalculator)
 	{
-		// Test data, clearly labelled. This is the case that proves a recovered
-		// row reaches the caller through the provider, so the refusals above are
-		// about the DATA and not about a seam that cannot work.
-		//
-		// The provider reads the shipped table, which has no recovered rows, so
-		// the comparison is against `Stats::Calculate` fed the same row - the
-		// exact call the provider makes. If the provider's inputs or mapping
-		// drift, this disagrees.
-		ClassConstantRow row = MakeTestRow(CharClassIndex::SwordsmanMale);
-		REQUIRE(ValidateRow(row));
+		// The provider reads the SHIPPED table, which now has recovered rows, so
+		// it answers directly. The comparison against `Stats::Calculate` fed the
+		// same row proves the provider's inputs and mapping: if either drifted,
+		// the two would disagree.
+		const ClassConstantCombatStats provider = MakeProvider();
+		const WorldCharacter character = MakeCharacter(4u, 0u, 12); // Shaman, Male
 
-		StatCalculationInput input;
-		input.characterClass = CharClassIndex::SwordsmanMale;
-		input.level          = 4;
-		input.classConstants = row.constants;
-		input.items          = ItemContribution{};
-		input.passives       = PassiveContribution{};
-		input.codex          = CodexContribution{};
-		input.facts          = FactContribution{};
+		CombatStats out{};
+		REQUIRE(provider.TryResolve(character, out));
+
+		Stats::CharClassIndex index{};
+		REQUIRE(ClassConstantCombatStats::TryResolveClassIndex(character, index));
+		const Stats::ClassConstantRow* row =
+		    Stats::ClassConstantTable::Verified().Find(index);
+		REQUIRE(row != nullptr);
+
+		Stats::StatCalculationInput input;
+		input.characterClass = index;
+		input.level          = character.level;
+		input.classConstants = row->constants;
+		input.items          = Stats::ItemContribution{};
+		input.passives       = Stats::PassiveContribution{};
+		input.codex          = Stats::CodexContribution{};
+		input.facts          = Stats::FactContribution{};
 		input.confPointRate  = 1.0f;
 
-		const Result<DerivedStats> expected = Calculate(input);
+		const Modern::Result<Stats::DerivedStats> expected = Stats::Calculate(input);
 		REQUIRE(expected.IsOk());
-
-		// Level 4, hand-computed from the fixture: dex = 25 + (int)(0*4) = 25,
-		// PA = 3 + (int)(10 + 25*0.5) = 25, damage = 10 + 25 = 35.
-		CHECK_EQ(expected.GetValue().totalStats.dex, static_cast<uint16_t>(25));
-		CHECK_EQ(expected.GetValue().meleePower, static_cast<uint16_t>(25));
-		CHECK_EQ(expected.GetValue().hit, 50);
-		CHECK_EQ(expected.GetValue().physicalDamage.low, static_cast<uint32_t>(35));
-
-		// A provider over the SHIPPED table still refuses, because that table
-		// has no such row - the producer side is proven by the calculation
-		// above, and the shipped-table side by the refusal cases.
-		const ClassConstantCombatStats provider = MakeProvider();
-		const WorldCharacter character = MakeCharacter(2u, 0u, 4);
-		CombatStats out{};
-		CHECK(!provider.TryResolve(character, out));
+		CHECK(out.derived == expected.GetValue());
 	}
 
-	MODERN_TEST(CombatStats_TheProviderInterfaceIsSatisfiedAndRefusesSafely)
+	MODERN_TEST(CombatStats_TheProviderInterfaceIsSatisfied)
 	{
 		// Through the interface, not the concrete type: that is how the runtime
 		// holds it, and a provider that only worked through its concrete class
@@ -273,11 +270,11 @@ namespace ModernTests
 		const ClassConstantCombatStats concrete = MakeProvider();
 		const ICombatStatsProvider& provider = concrete;
 
-		const WorldCharacter character = MakeCharacter(8u, 1u, 1);
+		const WorldCharacter character = MakeCharacter(8u, 1u, 1); // Extreme, Female
 		CombatStats out{};
-		CHECK(!provider.TryResolve(character, out));
+		CHECK(provider.TryResolve(character, out));
 
-		// And a null provider is handled by the RUNTIME, not by this class: the
+		// A null provider is handled by the RUNTIME, not by this class: the
 		// contract is that `FieldRoleRuntime` checks before calling, so a null
 		// provider keeps the prototype constants. That branch is asserted where
 		// it lives - in the WorldEntryTcpTests regression cases, which run with
