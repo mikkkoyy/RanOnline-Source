@@ -103,6 +103,50 @@ namespace Modern::Server::World
 
 	const char* ToString(DamageOutcome outcome) noexcept;
 
+	// ---------------------------------------------------------------------------
+	// THE RUNTIME CONTEXT: the two characters' levels and HP
+	// ---------------------------------------------------------------------------
+	//
+	// Legacy's CALCDAMAGE_20060328 (GLogixExPC.cpp:1363-1723) reads the attacker's
+	// level and HP and the target's level: `nLEVEL = pActor->GetLevel()`,
+	// `GETHP()`, `GETMAXHP()`, `GETLEVEL()`. Those are not statistics and they
+	// are not recoverable from `class<N>.classconst` - they are live per-attack
+	// state, so they belong to the runtime, and 002K could not supply them.
+	//
+	// 002K therefore hardcoded them (attacker/target level 1, HP 100/100), which
+	// was labelled a prototype. This struct is what removes that: the caller
+	// states the values AND says where they came from.
+	//
+	// `authoritative` is the load-bearing field. When it is false, every other
+	// field is a placeholder and the resolver REFUSES the attack rather than
+	// computing with a level it substituted. Legacy's own level term is the
+	// single largest lever in the damage formula (`CriticalBaseRate` takes a
+	// ±5 level delta, and the final defence reduction is scaled by the target's
+	// level), so a silently-wrong level produces a confidently wrong number.
+	//
+	// The values it carries are:
+	//
+	//   attackerLevel / targetLevel   `WorldCharacter::level`, authoritative
+	//   attackerCurrentHP             `ResourceSyncService`'s live HP
+	//   attackerMaxHP                 `ResourceSyncService`'s maximum
+	//
+	// HP is READ from the owner, never duplicated: `FieldRoleRuntime` borrows
+	// `ResourceSyncService`, which stays the single owner. `targetCurrentHP` is
+	// deliberately absent - the calculator does not read the target's current HP,
+	// only its level, and carrying a value nothing consumes invites a caller to
+	// think it mattered.
+	struct DamageContext
+	{
+		std::int32_t  attackerLevel = 1;
+		std::int32_t  targetLevel   = 1;
+		std::uint32_t attackerMaxHP     = 100;
+		std::uint32_t attackerCurrentHP = 100;
+
+		// True only when every field above was read from authoritative runtime
+		// state for THIS attack. False means the resolver must refuse.
+		bool authoritative = false;
+	};
+
 	// Everything the resolution is allowed to know.
 	struct DamageInput
 	{
@@ -149,8 +193,27 @@ namespace Modern::Server::World
 			// through unreduced, and the flag says so.
 			std::int32_t defense      = 0;
 			std::int32_t defenseBody  = 0;
+
+			// The TARGET's item defence, and why zero is the correct value here
+			// rather than a placeholder.
+			//
+			// Legacy's CALCDAMAGE reads `nITEM_DEFENSE = pActor->GetItemDefense()`
+			// (GLogixExPC.cpp:1385), and the base `GLACTOR::GetItemDefense()`
+			// returns 0 (GLogicEx.h:49) - only the PC override returns
+			// `m_sSUMITEM.nDefense` (GLogicEx.h:495). The live world server has no
+			// equipped items, so the honest value for an unarmoured target is 0,
+			// and the final body-by-item defence reduction is skipped by the
+			// calculator's own `defenseItem > 0` guard
+			// (PhysicalDamageCalculator.h:227). This field exists so that when
+			// equipment lands it has somewhere to go; it is NOT a missing input.
 			std::int32_t defenseItem  = 0;
+
+			// The TARGET's level, for the caller's bookkeeping only. The level the
+			// calculator uses is `DamageContext::targetLevel` - see the struct
+			// above. This one is left at its default so a caller cannot mistake it
+			// for an input that was wired up.
 			std::int32_t level        = 1;
+
 			std::int32_t resistElement = 0;
 
 			// Multipliers, all neutral by default so the prototype formula reduces
@@ -161,6 +224,11 @@ namespace Modern::Server::World
 		};
 
 		PrototypeStats stats{};
+
+		// The live per-attack context: both characters' levels and the
+		// attacker's HP. 002L-C. Not authoritative by default, and a
+		// non-authoritative context refuses the attack.
+		DamageContext context{};
 	};
 
 	// What the resolution decided.

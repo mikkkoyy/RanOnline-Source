@@ -22,6 +22,11 @@ namespace ModernTests
 	{
 		// A valid input whose roll of 0.0 always HITS: the hit rate is clamped to
 		// [20,99] and 0*100 is 0, so the roll can never exceed it.
+		//
+		// 002L-C: the runtime context is now a REQUIRED part of a valid input, so
+		// the helper supplies one. The values are the ones the resolver needs to
+		// be able to compute at all, stated explicitly rather than inherited from
+		// hidden constants - which is the whole point of the change.
 		DamageInput HitInput()
 		{
 			DamageInput input;
@@ -33,6 +38,16 @@ namespace ModernTests
 			input.criticalRoll   = 0.99f; // never crits
 			input.crushingRoll   = 0.99f; // never crushes
 			input.reflectionRoll = 0.99f;
+
+			// A full-HP, same-level pair. Full HP makes CriticalBaseRate's
+			// `(currentHP*100)/maxHP` come out at 100, so the rate is
+			// `1000/100 - 10 + 0 = 0` plus the 5% base - which is what keeps
+			// every existing expectation below unchanged.
+			input.context.attackerLevel     = 2;
+			input.context.targetLevel       = 2;
+			input.context.attackerCurrentHP = 100;
+			input.context.attackerMaxHP     = 100;
+			input.context.authoritative     = true;
 			return input;
 		}
 
@@ -291,5 +306,155 @@ namespace ModernTests
 		REQUIRE(weakResult.outcome == DamageOutcome::Hit);
 		REQUIRE(strongResult.outcome == DamageOutcome::Hit);
 		CHECK(strongResult.requestedDamage > weakResult.requestedDamage);
+	}
+
+	// ---- the runtime context is required (002L-C) ---------------------------
+
+	MODERN_TEST(DamageResolution_ANonAuthoritativeContextIsRefused)
+	{
+		// The load-bearing new rule: a caller with no runtime context gets a
+		// REFUSAL, not a number computed from a substituted level.
+		//
+		// Legacy reads the attacker's level and HP and the target's level on every
+		// hit, so there is no legacy-shaped answer without them - and 002K's
+		// hardcoded level 1 with HP 100 was exactly the silent substitution this
+		// removes.
+		DamageInput input = HitInput();
+		input.context.authoritative = false;
+
+		const DamageResult result = DamageResolution::Resolve(true, true, input);
+		CHECK_EQ(static_cast<int>(result.outcome),
+		         static_cast<int>(DamageOutcome::Refused));
+		CHECK(result.detail.find("context") != std::string::npos);
+		CHECK_EQ(result.requestedDamage, 0u);
+	}
+
+	MODERN_TEST(DamageResolution_ANonAuthoritativeContextIsRefusedBeforeAnyRoll)
+	{
+		// Checked before the roll, so a caller with no context learns that its
+		// context was missing rather than learning that its attack missed. The
+		// distinction is observable: a miss reports Avoided and a hit rate.
+		DamageInput input = HitInput();
+		input.context.authoritative = false;
+		input.hitRoll              = 1.0f; // would miss with no context check
+
+		const DamageResult result = DamageResolution::Resolve(true, true, input);
+		CHECK_EQ(static_cast<int>(result.outcome),
+		         static_cast<int>(DamageOutcome::Refused));
+		CHECK_EQ(result.hitRate, 0u);
+	}
+
+	MODERN_TEST(DamageResolution_AZeroMaxHPIsRefused)
+	{
+		// CriticalBaseRate divides by maxHP, so a zero is a divide-by-zero, not a
+		// "very high crit rate". The resource owner guarantees a positive maximum,
+		// so reaching this is a caller fault and is reported as one.
+		DamageInput input = HitInput();
+		input.context.attackerMaxHP     = 0;
+		input.context.attackerCurrentHP = 0;
+
+		const DamageResult result = DamageResolution::Resolve(true, true, input);
+		CHECK_EQ(static_cast<int>(result.outcome),
+		         static_cast<int>(DamageOutcome::Refused));
+		CHECK(result.detail.find("maxHP") != std::string::npos);
+	}
+
+	MODERN_TEST(DamageResolution_ACurrentHPAboveTheMaximumIsRefused)
+	{
+		// State the resource layer should never produce, and a caller that hands
+		// it over should hear about it rather than have it clamped.
+		DamageInput input = HitInput();
+		input.context.attackerMaxHP     = 100;
+		input.context.attackerCurrentHP = 101;
+
+		const DamageResult result = DamageResolution::Resolve(true, true, input);
+		CHECK_EQ(static_cast<int>(result.outcome),
+		         static_cast<int>(DamageOutcome::Refused));
+		CHECK(result.detail.find("maxHP") != std::string::npos);
+	}
+
+	MODERN_TEST(DamageResolution_TheContextLevelDrivesTheCriticalRate)
+	{
+		// The level delta and the HP ratio are the two levers legacy's critical
+		// rate has, so they must be observable rather than buried in a hardcoded
+		// constant.
+		//
+		// `CriticalBaseRate` is `1000 / nPerHP - 10 + ndxLvl`, where nPerHP is
+		// `(currentHP*100)/maxHP` floored at 10 and ndxLvl is the target-minus-
+		// attacker level delta clamped to ±5 (GameCharacterCalculations.cpp:434-438,
+		// legacy GLogixExPC.cpp:1615-1619). The resolver then adds the 5% base.
+		//
+		//   full HP, same level    -> 1000/100 - 10 + 0 = 0   (+5 base =  5)
+		//   full HP, target +20    -> 1000/100 - 10 + 5 = 5   (+5 base = 10)
+		//   half HP, same level    -> 1000/50  - 10 + 0 = 10  (+5 base = 15)
+		//
+		// A critical roll of 0.06 truncates to 6, which separates 5 from 10 and 15
+		// exactly - so the three cases are deterministic and distinct.
+		const float criticalRoll = 0.06f;
+		const auto critical = [](const DamageResult& r) {
+			return (r.damageFlag & Network::Attack::kDamageTypeCritical) != 0;
+		};
+
+		DamageInput sameLevel = HitInput();
+		sameLevel.criticalRoll = criticalRoll;
+		const DamageResult sameResult = DamageResolution::Resolve(true, true, sameLevel);
+
+		DamageInput outlevelled = HitInput();
+		outlevelled.criticalRoll     = criticalRoll;
+		outlevelled.context.targetLevel = 22; // 20 above the attacker's 2, clamped to 5
+		const DamageResult outResult = DamageResolution::Resolve(true, true, outlevelled);
+
+		DamageInput wounded = HitInput();
+		wounded.criticalRoll           = criticalRoll;
+		wounded.context.attackerCurrentHP = 50; // half HP -> nPerHP 50
+		const DamageResult woundedResult = DamageResolution::Resolve(true, true, wounded);
+
+		// All three still hit, so the comparison is between the crit and not the
+		// outcome - a miss reports Avoided and never reaches the crit at all.
+		REQUIRE(sameResult.outcome == DamageOutcome::Hit);
+		REQUIRE(outResult.outcome == DamageOutcome::Hit);
+		REQUIRE(woundedResult.outcome == DamageOutcome::Hit);
+
+		// 5 is not above 6, so the baseline does not crit; 10 and 15 are.
+		CHECK(!critical(sameResult));
+		CHECK(critical(outResult));
+		CHECK(critical(woundedResult));
+
+		// And a higher roll defeats even the boosted rate, so the lever is a rate
+		// and not a switch.
+		DamageInput highRoll = outlevelled;
+		highRoll.criticalRoll = 0.99f; // 99, above every rate here
+		const DamageResult highResult = DamageResolution::Resolve(true, true, highRoll);
+		CHECK(!critical(highResult));
+	}
+
+	MODERN_TEST(DamageResolution_TheLevelDeltaAlsoMovesTheDamage)
+	{
+		// The same context also reaches the final defence reduction, which is
+		// scaled by the TARGET's level (PhysicalDamageCalculator.h:229). So the
+		// context is not only feeding the crit rate - it feeds the damage too.
+		//
+		// With `defenseItem == 0` that reduction is skipped by its own guard, so
+		// the level's effect here is through `nExtFORCE`: legacy adds
+		// `int(RANDOM_POS * ndxLvl / 10)` when the target outlevels the attacker
+		// (GLogixExPC.cpp:1606-1608, PhysicalDamageCalculator.h:182-189). With a
+		// damage roll of 0 that term is 0, so the flat range decides.
+		DamageInput lowLevelTarget = HitInput();
+		lowLevelTarget.context.targetLevel = 2;
+		lowLevelTarget.stats.lowDamage     = 10u;
+		lowLevelTarget.stats.highDamage    = 10u;
+
+		DamageInput highLevelTarget = lowLevelTarget;
+		highLevelTarget.context.targetLevel = 30;
+
+		const DamageResult lowResult  = DamageResolution::Resolve(true, true, lowLevelTarget);
+		const DamageResult highResult = DamageResolution::Resolve(true, true, highLevelTarget);
+
+		REQUIRE(lowResult.outcome == DamageOutcome::Hit);
+		REQUIRE(highResult.outcome == DamageOutcome::Hit);
+		// Same flat range and no item defence, so the same figure - asserted so a
+		// future change to the target-level path cannot move one and not the other
+		// without this noticing.
+		CHECK_EQ(highResult.requestedDamage, lowResult.requestedDamage);
 	}
 } // namespace ModernTests

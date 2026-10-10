@@ -2547,6 +2547,20 @@ MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
 		         Network::Attack::kDamageSize);
 		CHECK(reported > 0);
 
+		// WORLD-ENTRY-002L-C: the figure itself, now that the provider is bound.
+		//
+		// With the roll seam at its default (every roll 0.0) this is deterministic:
+		// the attacker is Alpha, a level-10 ArcherMale, and the target is Beta, a
+		// level-30 ArcherMale. The recovered class8 row gives a level-10 attacker a
+		// (10,10) range and a level-30 target a defence of 10, and the resolver
+		// crits - `DamageResolution::Resolve`'s own arithmetic, pinned end to end by
+		// `CombatStats_TheArcherScenarioPinsEveryIntermediate`.
+		//
+		// The prototype band this replaces was 10-20, and 002K could only assert
+		// `reported > 0`. Asserting the number is what makes the binding a decision
+		// rather than a measurement.
+		CHECK_EQ(reported, 12);
+
 		// EVERYONE ELSE gets 3044, naming the ATTACKER, never the target.
 		REQUIRE(watcher.connection.PumpUntilAttackDamageBrdCount(1, kDeadline).IsOk());
 		CHECK_EQ(watcher.connection.AttackDamageBrd().gaeaId, attackerGaeaId);
@@ -2739,13 +2753,20 @@ MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
 		CHECK_EQ(server.Runtime().Field().AttackDamageRefusedCount(),
 		         static_cast<std::size_t>(0));
 
-		// WORLD-ENTRY-002L-A: no combat-stat provider is installed in this
-		// suite, so every accepted attack keeps the prototype constants and is
-		// counted as a fallback. That counter is what makes "the provider seam
-		// changed nothing" observable rather than assumed.
+		// WORLD-ENTRY-002L-C: the recovered provider IS bound in
+		// `WorldServerRuntime`, so an accepted attack is resolved from deployed
+		// class constants and never falls back. This pair is the tripwire in
+		// BOTH directions - it failed during 002L-B's experiment when the provider
+		// was wired behind the tests' back, and it would fail again if the binding
+		// were dropped or the table lost its recovered rows.
 		CHECK_EQ(server.Runtime().Field().CombatStatsFallbackCount(),
-		         static_cast<std::size_t>(1));
+		         static_cast<std::size_t>(0));
 		CHECK_EQ(server.Runtime().Field().CombatStatsResolvedCount(),
+		         static_cast<std::size_t>(1));
+
+		// And the runtime context was resolved rather than refused, so the miss
+		// above came from the roll and not from a missing level or HP.
+		CHECK_EQ(server.Runtime().Field().CombatContextUnavailableCount(),
 		         static_cast<std::size_t>(0));
 	}
 } // namespace ModernTests

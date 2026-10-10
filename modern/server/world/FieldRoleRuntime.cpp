@@ -1161,33 +1161,102 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 		return true;
 	}
 
+	void FieldRoleRuntime::FillCombatContext(const PeerPtr& attackerPeer,
+	                                        const AttackResult& accepted,
+	                                        DamageInput& input)
+	{
+		// ---- the two characters ------------------------------------------------
+		//
+		// Both are already-validated world members: `HandleAttack` proved the
+		// attacker's peer is spawned and the target resolves as a peer before the
+		// attack was accepted. So a missing record here is a state the spawn path
+		// should have made impossible, and the answer is a refusal rather than a
+		// guess.
+		const WorldCharacter* attacker =
+		    attackerPeer ? attackerPeer->session.Character() : nullptr;
+		const PeerPtr targetPeer = FindTargetPeer(accepted.targetId);
+		const WorldCharacter* target =
+		    targetPeer ? targetPeer->session.Character() : nullptr;
+
+		// ---- levels, from authoritative character state -----------------------
+		//
+		// `WorldCharacter::level` is the SERVER's record, and 002I already made a
+		// client-supplied level irrelevant. `Stats::IsValidLevel` is RAN's own
+		// 1..255 (`Stats::kMinLevel`/`kMaxLevel`, BaseStats.h:196-197), and a level
+		// outside it could not be fed to `Stats::Calculate` at all - so a character
+		// carrying one is refused rather than clamped.
+		if (attacker == nullptr || target == nullptr ||
+		    !Stats::IsValidLevel(attacker->level) || !Stats::IsValidLevel(target->level))
+		{
+			return; // leaves the context non-authoritative; the resolver refuses
+		}
+
+		// ---- HP, from the authoritative owner ---------------------------------
+		//
+		// Read, never copied. `ResourceSyncService` owns live HP and registers
+		// every spawned character, so a Find that misses is a bookkeeping fault
+		// rather than a character without HP - and it must refuse, because the
+		// alternative (a hardcoded 100) is exactly what this milestone removes.
+		//
+		// The TARGET's state is looked up for its PRESENCE only: the resolver reads
+		// the target's level from the character record and never its HP, so there
+		// is no value to take from it. A target the resource layer is not tracking
+		// is still refused, because the same bookkeeping fault applies.
+		const auto attackerHp  = m_resources.Find(attacker->gaeaId);
+		const auto targetState = m_resources.Find(target->gaeaId);
+
+		using Resources::ResourceKind;
+		if (!attackerHp.has_value() || !targetState.has_value())
+		{
+			return;
+		}
+
+		const std::uint32_t current =
+		    attackerHp->GetCurrent(ResourceKind::Hp);
+		const std::uint32_t maximum =
+		    attackerHp->GetMaximum(ResourceKind::Hp);
+
+		// A positive maximum is what CriticalBaseRate divides by, and a current
+		// figure at or below it is what a live character has. Anything else is
+		// state the resource layer should never have produced.
+		if (maximum == 0 || current > maximum)
+		{
+			return;
+		}
+
+		DamageContext& context = input.context;
+		context.attackerLevel     = static_cast<std::int32_t>(attacker->level);
+		context.targetLevel       = static_cast<std::int32_t>(target->level);
+		context.attackerCurrentHP = current;
+		context.attackerMaxHP     = maximum;
+		context.authoritative     = true;
+	}
+
 	void FieldRoleRuntime::ApplyVerifiedCombatStats(const PeerPtr& attackerPeer,
 	                                                const AttackResult& accepted,
 	                                                DamageInput& input)
 	{
+		// ---- the runtime context, always attempted ------------------------------
+		//
+		// Attempted whether or not a provider is installed, because the resolver
+		// refuses without it. Filling it in is what removes 002K's hardcoded
+		// attacker/target level and HP.
+		FillCombatContext(attackerPeer, accepted, input);
+		if (!input.context.authoritative)
+		{
+			m_combatContextUnavailable.fetch_add(1, std::memory_order_relaxed);
+		}
+
 		// No provider installed: the prototype constants stand, and that is a
 		// counted outcome rather than a silent one.
 		//
-		// THAT IS THE STATE TODAY, AND THE MEASURED REASON IT IS. 002L-B recovered
-		// all sixteen class rows, so this seam CAN now answer - and binding it was
-		// deliberately NOT done, because a measured experiment (wired temporarily,
-		// then reverted) showed what it does to the live path:
-		//
-		//   * the derived range for the suite's level-10 ArcherMale attacker is
-		//     (10, 10) against the prototype (10, 20), and the derived defence for
-		//     its level-30 ArcherMale target is 10 against the prototype 0;
-		//   * the resulting hit was a CRITICAL, which recomputes from the pre-
-		//     defence figure (nDAMAGE_OLD * criticalDamage/100,
-		//     PhysicalDamageCalculator.h:287-290) and reported 12 - so the wire
-		//     figure moved, and it moved by a route (a crit, whose roll is 0)
-		//     that no existing assertion pins;
-		//   * `WorldEntryTcpTests`' forced-miss case caught the change immediately
-		//     through `CombatStatsResolvedCount()` going 0 -> 1.
-		//
-		// So binding this is a change to a live, tested damage figure, and it
-		// belongs to a milestone that owns that consequence rather than to a
-		// data-recovery one. The counter pair below is what makes "the prototype
-		// still governs" observable instead of assumed.
+		// 002L-B wired this temporarily, measured the consequence (the suite's
+		// level-10 ArcherMale attacker derives range (10,10) against the prototype
+		// (10,20); its level-30 target derives defence 10 against 0; the hit
+		// crits and reports 12) and then reverted it, because a data-recovery
+		// milestone should not move a live, tested wire figure. 002L-C owns that
+		// consequence, so the provider is bound in `WorldServerRuntime` and this
+		// branch is the "no provider at all" fallback rather than the default.
 		if (m_combatStats == nullptr)
 		{
 			m_combatStatsFallback.fetch_add(1, std::memory_order_relaxed);

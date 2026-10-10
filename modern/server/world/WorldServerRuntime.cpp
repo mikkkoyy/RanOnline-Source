@@ -12,6 +12,19 @@ namespace Modern::Server::World
 		, m_agent(m_config, authenticator, repository, m_registry)
 		, m_field(m_config, repository, m_registry, m_movement)
 	{
+		// WORLD-ENTRY-002L-C: bind the recovered provider to the live combat path.
+		//
+		// 002L-B deliberately left this unbound and recorded the measured
+		// consequence of binding it - the suite's level-10 ArcherMale attacker
+		// derives range (10,10), its level-30 target derives defence 10, and the
+		// hit crits for 12. This milestone owns that consequence, so the provider
+		// is installed and the wire figure moves from the prototype 10-20 band to
+		// the recovered one.
+		//
+		// The runtime does NOT adopt its state: the provider is stateless and reads
+		// `Stats::ClassConstantTable::Verified()`, so there is no second model of
+		// anything here.
+		m_field.SetCombatStatsProvider(&m_combatStats);
 	}
 
 	WorldServerRuntime::~WorldServerRuntime()

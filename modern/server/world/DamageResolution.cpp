@@ -90,6 +90,41 @@ namespace Modern::Server::World
 			return result;
 		}
 
+		// ---- the runtime context must be authoritative ------------------------
+		//
+		// Legacy reads the attacker's level and HP and the target's level on every
+		// hit (GETHP/GETMAXHP/GETLEVEL at GLogixExPC.cpp:1387-1388, and the
+		// critical kernel at :1615-1619). There is no legacy path that computes
+		// those, so a caller that cannot supply them is not in a position to
+		// resolve an attack at all - and substituting a level here would produce a
+		// number the caller could not explain.
+		//
+		// Checked BEFORE any roll, so a caller with no context learns that rather
+		// than learning that its attack missed.
+		if (!input.context.authoritative)
+		{
+			result.outcome = DamageOutcome::Refused;
+			result.detail  = "the runtime context is not authoritative: no "
+			                 "attacker/target level and HP were supplied";
+			return result;
+		}
+
+		// A maxHP of zero divides by zero inside CriticalBaseRate. The resource
+		// owner guarantees a positive maximum for a registered character, so this
+		// is a caller fault and is reported as one.
+		if (input.context.attackerMaxHP == 0)
+		{
+			result.outcome = DamageOutcome::Refused;
+			result.detail  = "attacker maxHP is zero";
+			return result;
+		}
+		if (input.context.attackerCurrentHP > input.context.attackerMaxHP)
+		{
+			result.outcome = DamageOutcome::Refused;
+			result.detail  = "attacker currentHP exceeds maxHP";
+			return result;
+		}
+
 		const Combat::CombatConstants constants;
 
 		// ---- the hit roll ---------------------------------------------------
@@ -136,22 +171,18 @@ namespace Modern::Server::World
 		damageInput.level               = input.stats.level;
 		damageInput.resistElement       = input.stats.resistElement;
 
-		// ---- the HP figures the critical-rate kernel divides by --------------
+		// ---- the live per-attack context -------------------------------------
 		//
-		// `CriticalBaseRate` computes `(currentHP*100)/maxHP` and only floors the
-		// RESULT at 10 (GameCharacterCalculations.cpp:583, legacy
-		// GLogixExPC.cpp:1603-1613) - the division happens first, so a maxHP of 0
-		// is a divide by zero and not a "very high crit rate". These are
-		// PROTOTYPE values for the same reason the damage range is: the modern
-		// Field path has no derived HP yet. They are non-zero so the kernel is
-		// exercised rather than faulting.
-		damageInput.attackerLevel       = 1;
-		damageInput.attackerMaxHP       = 100;
-		damageInput.attackerCurrentHP   = 100;
+		// 002L-C: these were hardcoded (level 1, HP 100/100) and are now the
+		// caller's authoritative values. `CriticalBaseRate` divides by maxHP, so
+		// these are the values that make the critical rate character-specific
+		// rather than a constant.
+		damageInput.attackerLevel       = input.context.attackerLevel;
+		damageInput.attackerMaxHP       = input.context.attackerMaxHP;
+		damageInput.attackerCurrentHP   = input.context.attackerCurrentHP;
+		damageInput.targetLevel         = input.context.targetLevel;
 		damageInput.attackerCriticalBonus = 0;
 		damageInput.attackerCrushingBonus = 0;
-		damageInput.targetLevel         = 1;
-		damageInput.targetMaxHP         = 100;
 
 		damageInput.brightnessFB        = Engine::GameBrightFB::Aver;
 		damageInput.weatherElementPower = 1.0f;

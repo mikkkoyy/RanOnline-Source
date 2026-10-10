@@ -366,6 +366,15 @@ public:
 		return m_combatStatsFallback.load();
 	}
 
+	// WORLD-ENTRY-002L-C: 3036s where the runtime context (both characters'
+	// levels and the attacker's live HP) could NOT be read from authoritative
+	// state, so `DamageResolution` refused them rather than substituting a
+	// level. Monotonic; written by worker threads, read after Stop().
+	std::size_t CombatContextUnavailableCount() const noexcept
+	{
+		return m_combatContextUnavailable.load();
+	}
+
 	// The rule itself, exposed so a test can exercise validation without a socket.
 	// Read-only: the Field role owns the only instance.
 	// Named AttackRules, NOT Attack: a member called `Attack` would hide the
@@ -557,6 +566,18 @@ private:
 		                              const AttackResult& accepted,
 		                              DamageInput& input);
 
+		// WORLD-ENTRY-002L-C: fills `input.context` - the two characters' levels
+		// and the attacker's live HP - from authoritative runtime state, and marks
+		// it authoritative only when every value was read.
+		//
+		// Leaving `authoritative` false is the documented way to say "the runtime
+		// could not supply this", and `DamageResolution` refuses rather than
+		// substituting a level. Levels come from `WorldCharacter`; HP is READ from
+		// `ResourceSyncService`, which stays the sole owner.
+		void FillCombatContext(const PeerPtr& attackerPeer,
+		                       const AttackResult& accepted,
+		                       DamageInput& input);
+
 		// Sends 3044 to every authorized peer EXCEPT `exclude`. Mirrors BroadcastGoto.
 		void BroadcastAttackDamage(const PeerPtr& exclude,
 		                           const Network::Attack::AttackDamageBroadcast& broadcast);
@@ -672,6 +693,10 @@ std::atomic<std::size_t> m_attackDamageRefused{0};
 	// that kept the prototype constants. Monotonic; written by worker threads.
 	std::atomic<std::size_t> m_combatStatsResolved{0};
 	std::atomic<std::size_t> m_combatStatsFallback{0};
+
+	// WORLD-ENTRY-002L-C: 3036s refused because the runtime context was
+	// unavailable. Monotonic; written by worker threads.
+	std::atomic<std::size_t> m_combatContextUnavailable{0};
 		std::atomic<std::size_t> m_gotoRefused{0};
 		std::atomic<Network::WireU32> m_lastGaeaId{0};
 		std::atomic<std::size_t> m_lastCharacterId{0};

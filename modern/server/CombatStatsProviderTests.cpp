@@ -13,6 +13,7 @@
 #include "TestHarness.h"
 #include "character/CharacterClassTable.h"
 #include "world/CombatStatsProvider.h"
+#include "world/DamageResolution.h"
 #include "world/WorldCharacter.h"
 
 #include "stats/ClassConstantTable.h"
@@ -228,6 +229,114 @@ namespace ModernTests
 	}
 
 	// ---- the wiring is real ---------------------------------------------------
+
+	// ---------------------------------------------------------------------------
+	// THE 002L-B SCENARIO, END TO END
+	// ---------------------------------------------------------------------------
+	//
+	// 002L-B measured, in the live path, that the suite's level-10 ArcherMale
+	// attacker and level-30 ArcherMale target produce range (10,10), target
+	// defence 10, and a critical for 12 - and recorded that no assertion pinned
+	// any of it. This case pins all three, so the wire figure is a decision
+	// rather than a measurement that happens to pass.
+	//
+	// Every number below is derived, not copied: the ranges and defence come from
+	// the recovered `class8.classconst` row through `Stats::Calculate`, and the 12
+	// comes from the damage formula with an explicit context and explicit rolls.
+	MODERN_TEST(CombatStats_TheArcherScenarioPinsEveryIntermediate)
+	{
+		const ClassConstantCombatStats provider = MakeProvider();
+
+		// The suite's characters: `MakeCharacter` sets class 3 (Archer) and the
+		// gender default is Male, so both sides are ArcherMale - EMCHARINDEX 8.
+		const WorldCharacter attacker = MakeCharacter(3u, 0u, 10); // Alpha, level 10
+		const WorldCharacter target   = MakeCharacter(3u, 0u, 30); // Beta, level 30
+
+		CombatStats attackerStats{};
+		CombatStats targetStats{};
+		REQUIRE(provider.TryResolve(attacker, attackerStats));
+		REQUIRE(provider.TryResolve(target, targetStats));
+
+		// ---- the recovered inputs, hand-derived from class8.classconst ----------
+		//
+		// sBEGIN_STATS (5,34,18,12,0,7); sLVLUP_STATS (0.3,4.4,0.64,0.47,0,2.4)
+		//
+		// Attacker, level 10 (ZBLEVEL 9):
+		//   totalStats  pow 5+int(0.3*9)=7   str 34+int(4.4*9)=73
+		//               spi 18+int(0.64*9)=23  dex 12+int(0.47*9)=16
+		//   m_wSUM_AP  = (5 + 1.2*9)  * 0.4 = 15.8*0.4 = 6.32 -> 6
+		//   m_wPA      = (2 + 0.3*9)  * 0.6 =  4.7*0.6 = 2.82 -> 2
+		//                + int(7*0.12 + 16*0.08) = int(2.12) = 2     -> 4
+		//   m_gdDAMAGE_PHYSIC = 6 + VAR_PARAM(4) = (10, 10)
+		CHECK_EQ(attackerStats.derived.totalStats.dex, static_cast<uint16_t>(16));
+		CHECK_EQ(attackerStats.derived.attackPoint, static_cast<uint16_t>(6));
+		CHECK_EQ(attackerStats.derived.meleePower, static_cast<uint16_t>(4));
+		CHECK_EQ(attackerStats.derived.physicalDamage.low, static_cast<uint32_t>(10));
+		CHECK_EQ(attackerStats.derived.physicalDamage.high, static_cast<uint32_t>(10));
+
+		// fHIT_DEX and fAVOID_DEX are 0 in every recovered row, so an attacker
+		// with no equipment derives 0 of each - which is the deployed data, and
+		// the reason the hit rate here is 100 + 0 - 0 clamped to 99.
+		CHECK_EQ(attackerStats.derived.hit, 0);
+		CHECK_EQ(attackerStats.derived.avoid, 0);
+
+		// Target, level 30 (ZBLEVEL 29):
+		//   dex = 12 + int(0.47*29) = 25
+		//   m_wSUM_DP = (6 + 0.427*29) * 0.57 = 18.383*0.57 = 10.48 -> 10
+		//   m_nDEFENSE_BODY = int(10 + 25*0.024) = int(10.6) = 10
+		CHECK_EQ(targetStats.derived.totalStats.dex, static_cast<uint16_t>(25));
+		CHECK_EQ(targetStats.derived.defensePoint, static_cast<uint16_t>(10));
+		CHECK_EQ(targetStats.derived.defenseBody, 10);
+		CHECK_EQ(targetStats.derived.defense, 10);
+
+		// The target's item defence is 0 because nothing is equipped - legacy's
+		// own unarmoured value, `GLACTOR::GetItemDefense()` (GLogicEx.h:49).
+		// Nothing maps it, and that is correct rather than missing.
+
+		// ---- through the resolver ---------------------------------------------
+		//
+		// The rolls are the seam's default 0.0, which is what makes this
+		// deterministic: the hit roll 0 always hits, and the critical roll 0 is
+		// beaten by any positive rate.
+		DamageInput input;
+		input.attackerGaeaId = 7u;
+		input.targetGaeaId   = 8u;
+		input.targetCrow     = Network::Attack::kCrowPc;
+
+		input.stats.lowDamage   = attackerStats.derived.physicalDamage.low;
+		input.stats.highDamage  = attackerStats.derived.physicalDamage.high;
+		input.stats.meleePower  = 0; // 002L-B: already folded into the range
+		input.stats.hit         = attackerStats.derived.hit;
+		input.stats.avoid       = targetStats.derived.avoid;
+		input.stats.defense     = targetStats.derived.defense;
+		input.stats.defenseBody = targetStats.derived.defenseBody;
+		input.stats.defenseItem = 0; // nothing equipped, and that is legacy's value
+
+		// The context, exactly as `FieldRoleRuntime::FillCombatContext` would
+		// build it from `WorldCharacter::level` and `ResourceSyncService`'s live
+		// HP (a level-10 character carries 3000).
+		input.context.attackerLevel     = 10;
+		input.context.targetLevel       = 30;
+		input.context.attackerCurrentHP = 3000;
+		input.context.attackerMaxHP     = 3000;
+		input.context.authoritative     = true;
+
+		const DamageResult result = DamageResolution::Resolve(true, true, input);
+
+		REQUIRE(result.outcome == DamageOutcome::Hit);
+		CHECK_EQ(result.hitRate, 99u);            // 100 + 0 - 0, clamped
+		CHECK(result.damageFlag & Network::Attack::kDamageTypeCritical);
+
+		// The 12, derived rather than copied:
+		//   nDAMAGE_NOW   = RandomDamageRange(10, 10, 0)          = 10
+		//   nDAMAGE_OLD   = 10 + nExtFORCE(0)                     = 10
+		//   nNetDAMAGE    = int(10*(1-0.05)) - 10 = 9 - 10        = -1 -> 0
+		//   not > 0, so the low-seed branch: int(10*0.05*0)       = 0
+		//   critical:     resultDamage = int(10*120/100)          = 12
+		//   the final body-by-item defence reduction is skipped because the item
+		//   defence is 0 (PhysicalDamageCalculator.h:227)
+		CHECK_EQ(result.requestedDamage, 12u);
+	}
 
 	MODERN_TEST(CombatStats_ARecoveredRowProducesTheSameNumbersAsTheCalculator)
 	{

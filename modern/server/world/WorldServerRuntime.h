@@ -55,6 +55,7 @@
 #include "world/CharacterClassMovementSpeed.h"
 #include "world/CharacterRepository.h"
 #include "world/FieldRoleRuntime.h"
+#include "world/CombatStatsProvider.h"
 #include "world/MovementStateService.h"
 #include "world/WorldEntryService.h"
 #include "world/WorldServerConfig.h"
@@ -226,6 +227,16 @@ MovementStateService& Movement() noexcept { return m_movement; }
 
 		AgentRoleRuntime m_agent;
 		FieldRoleRuntime m_field;
+
+		// WORLD-ENTRY-002L-C: the recovered class-constant provider, bound to the
+		// live Field role so a resolved attack uses deployed coefficients.
+		//
+		// Declared AFTER `m_field` because the field borrows it by pointer and must
+		// outlive it - the setter is called in the constructor body, which runs
+		// after every member is built and before anything can use either. It is a
+		// member rather than a temporary so its lifetime is the runtime's, which is
+		// the only lifetime that outlives the worker threads that call it.
+		ClassConstantCombatStats m_combatStats;
 
 		Network::Endpoint m_fieldEndpoint;
 
