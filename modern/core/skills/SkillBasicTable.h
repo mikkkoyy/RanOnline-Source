@@ -165,6 +165,21 @@ namespace Modern::Skill
 		// guessed type.
 		std::size_t rejectedUnmappableImpactType = 0;
 
+	// SKILL-012: specs recovered from `SPECS`.
+	std::size_t specsRecovered = 0;
+
+	// `emSPEC` cells whose type is outside the modern `PassiveSpecType`
+	// vocabulary. In the real export this is 1348 of the 5695 cells, spread
+	// over ~52 distinct EMSPECA values; each is counted here and its slot left
+	// EMPTY, never recorded as one of the three range types. See
+	// PassiveSpecType for the inventory.
+	std::size_t rejectedUnmappableSpecType = 0;
+
+	// `emSPEC` cells that are EMSPECA_NULL (0) - an empty slot, not data.
+	// Counted so that every spec cell in the export is accounted for by
+	// exactly one of: this, `specsRecovered`, or `rejectedUnmappableSpecType`.
+	std::size_t nullSpecCells = 0;
+
 		// SKILL-002: a definition is COMPLETE when both halves were recovered.
 	// An incomplete one is still registered - it carries real learn
 	// requirements - but a caller that needs a castable skill must be able

@@ -193,6 +193,13 @@ namespace Modern::Skill
 			// guessing an offset.
 			std::size_t addonType[kMaxSkillImpacts] = {};
 			std::size_t addonVar[kMaxSkillImpacts][kMaxSkillLevel + 1] = {};
+
+			// SKILL-012: SPECS. Same writer format as the impacts above:
+			// `emSPEC<j>` then `sSPEC <j><i> fVAR1`, with slot and level
+			// concatenated into one number. `sSPEC 21 fVAR1` is therefore
+			// spec slot 2, level 1 - never slot 21.
+			std::size_t specType[kMaxSkillSpecs] = {};
+			std::size_t specVar1[kMaxSkillSpecs][kMaxSkillLevel + 1] = {};
 		};
 
 		// The `sDATA_LVL` members `SkillLevelData` models. Order is the order
@@ -350,6 +357,33 @@ namespace Modern::Skill
 						return false;
 					}
 					out.addonVar[impact - 1][level] = index;
+				}
+			}
+
+			// SPECS, resolved by the writer's own name format, using the same
+			// slot/level concatenation rule the impacts use.
+			for (int spec = 1; spec <= kMaxSkillSpecs; ++spec)
+			{
+				const std::string typeName = "emSPEC" + std::to_string(spec);
+				std::size_t index = 0;
+				bool ambiguous = false;
+				if (!FindColumn(header, starts, typeName.c_str(), index, ambiguous))
+				{
+					return false;
+				}
+				out.specType[spec - 1] = index;
+
+				for (uint8_t level = 1; level <= kMaxSkillLevel; ++level)
+				{
+					// Slot and level concatenated: <j><i>.
+					const std::string varName = "sSPEC " +
+						std::to_string(spec) + std::to_string(level) +
+						" fVAR1";
+					if (!FindColumn(header, starts, varName.c_str(), index, ambiguous))
+					{
+						return false;
+					}
+					out.specVar1[spec - 1][level] = index;
 				}
 			}
 
@@ -612,6 +646,70 @@ namespace Modern::Skill
 				++result.impactsRecovered;
 			}
 
+			// SKILL-012: SPECS, the `emSPEC1..5` slots and their per-level
+			// `sSPEC <j><i> fVAR1` values.
+			for (int spec = 0; spec < kMaxSkillSpecs; ++spec)
+			{
+				long specType = 0;
+				if (!ParseLong(FieldAt(line, starts, columns.specType[spec]), specType))
+				{
+					++result.rejectedSapplyFieldCount;
+					return false;
+				}
+				// Out of the EMSPECA 0..83 vocabulary. Counted and the slot
+				// left empty, exactly as an unmappable impact is handled -
+				// a wrong number here would be a corrupt schema, not a value.
+				if (specType < 0 || specType > 83)
+				{
+					++result.rejectedUnmappableSpecType;
+					continue;
+				}
+
+				// EMSPECA_NULL is an empty slot and is skipped rather than
+				// parsed, which keeps a zeroed slot out of `specs`.
+				if (specType == 0)
+				{
+					++result.nullSpecCells;
+					continue;
+				}
+
+				PassiveSpecType mapped = PassiveSpecType::None;
+				if (!LegacySpecTypeToModern(static_cast<int>(specType), mapped))
+				{
+					// A real EMSPECA value the modern vocabulary does not carry.
+					// Counted, and the slot left EMPTY - not recorded with a
+					// nearby but wrong name.
+					++result.rejectedUnmappableSpecType;
+					continue;
+				}
+
+				SkillSpec& entry = definition.specs[spec];
+				// The values are read into a local buffer and the slot is only
+				// committed once all nine parse. Assigning `type` first would
+				// leave a slot that LOOKS populated - a real type with zeroed
+				// values - if a later level failed, which is precisely the
+				// fabricated-data case this loader is built to avoid.
+				float parsed[kMaxSkillLevel + 1] = {};
+				for (uint8_t level = 1; level <= kMaxSkillLevel; ++level)
+				{
+					if (!ParseFloat(FieldAt(line, starts, columns.specVar1[spec][level]),
+						parsed[level]))
+					{
+						++result.rejectedSapplyFieldCount;
+						return false;
+					}
+				}
+				entry.type = mapped;
+				for (uint8_t level = 1; level <= kMaxSkillLevel; ++level)
+				{
+					// Signed and preserved as written. A negative range
+					// adjustment is meaningful and the export carries many
+					// (SKILL-011: 50 skills, mostly reductions), so neither
+					// the sign nor a meaningful zero is discarded here.
+					entry.values[level] = parsed[level];
+				}
+				++result.specsRecovered;
+			}
 
 			return true;
 		}

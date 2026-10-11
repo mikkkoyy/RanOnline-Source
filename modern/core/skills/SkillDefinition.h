@@ -202,9 +202,53 @@ namespace Modern
 	// Note: Most specs (pierce, range, velocity, delay, damage reduce)
 	// are NOT part of the verified stat pipeline. Only those that
 	// contribute to Stats::PassiveContribution are carried.
+	//
+	// SKILL-012: the range specs are carried as DATA and TYPE IDENTITY only.
+	// Nothing here aggregates them, and no range calculation reads them yet -
+	// see SkillRange.h for the bonuses that still have no modern source.
+	//
+	// The legacy vocabulary is EMSPECA (GLCharDefine.h:1007-1108) and runs
+	// 0..83, far larger than this enum. SKILL-003's precedent applies: a type
+	// outside the vocabulary is COUNTED and its slot left EMPTY, never recorded
+	// under a nearby but wrong name. Use `LegacySpecTypeToModern` to make that
+	// distinction.
+	//
+	// Exported by ASURA Skill.csv but NOT representable here, left unsupported
+	// on purpose rather than guessed (values from `emSPEC1..5`):
+	//
+	//     1 PushPull        3 Rebirth        4 HpGather      5 MpGather
+	//     6 SpGather       10 NonBlow       11 RecBlow       14 MoveVelo
+	//    15 Onward         16 Invisible      17 Recvisible    18 AttackVelo
+	//    19 SkillDelay     20 CrushingBlow  21 PsyDamageReduce
+	//    22 MagicDamageReduce 23 PsyDamageReflection
+	//    24 MagicDamageReflection 25 BuffRemove 26 Stun 28 Pull 29 Push
+	//    30 ContinuousDamage 31 Curse 34 ProhibitPotion 35 ProhibitSkill
+	//    36 IgnoreDamage  37 ItemDropRate   38 MoneyDropRate 39 GetExpRate
+	//    40 TalkToNpc     41 SpecialItemDrop 42 Teleport 43 PositionShift
+	//    44 Enhancement   45 Illusion       46 VehicleOff  47 DurationChange
+	//    48 Stigma        49 Transform      50 EffectDuration 51 DamageLoop
+	//    53 Immune        54 HostileOn      57 Manipulate   58 RandomExpRate
+	//    59 SkillLink
+	//
+	// Several of the above (14 MoveVelo, 18 AttackVelo, 19 SkillDelay, 20..24)
+	// ARE aggregated by `Stats::PassiveContribution`, which reaches them
+	// through `EMIMPACTA` on the impact side rather than through these specs.
+	// Their appearance here means "present in the export", not "aggregated".
 	enum class PassiveSpecType : uint8_t
 	{
 		None = 0,
+
+		// EMSPECA_TARRANGE = 13 (GLCharDefine.h:1024). The +GETSUM_TARRANGE()
+		// long-range bonus, and legacy's `m_fSUM_TARRANGE`.
+		TarRange = 13,
+
+		// EMSPECA_CHANGE_ATTACK_RANGE = 32 (GLCharDefine.h:1049). Contributes to
+		// `m_fSUM_SKILL_ATTACKRANGE`, added to the TARGET reach.
+		ChangeAttackRange = 32,
+
+		// EMSPECA_CHANGE_APPLY_RANGE = 33 (GLCharDefine.h:1050). Contributes to
+		// `m_fSUM_SKILL_APPLYRANGE`, added to the APPLY reach.
+		ChangeApplyRange = 33,
 	};
 
 	// One impact entry: a type and its per-level value.
@@ -678,6 +722,17 @@ namespace Modern
 	// than picking the nearest name. The caller must count the impact as
 	// unmappable instead of recording a plausible but wrong type.
 	bool LegacyImpactTypeToModern(int legacyType, PassiveImpactType& out) noexcept;
+	// SKILL-012: EMSPECA -> PassiveSpecType.
+	//
+	// Unlike the impact mapping this is NOT an identity mapping: the modern
+	// vocabulary carries only 13, 32 and 33 out of a legacy 0..83 range, so a
+	// raw cast would label an unsupported spec as one of those three.
+	//
+	// Returns false for every other value - including legacy 2 (REFDAMAGE),
+	// 7..9 (the DIV types) and 27/52/55, which are valid EMSPECA values but
+	// absent from the export - and the caller counts the slot as unmappable
+	// rather than recording a plausible but wrong type.
+	bool LegacySpecTypeToModern(int legacyType, PassiveSpecType& out) noexcept;
 	// SKILL-002: converts legacy `EMELEMENT` (GLCharDefine.h:622-641) to
 	// `SkillElement`.
 	//

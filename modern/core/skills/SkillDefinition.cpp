@@ -321,3 +321,28 @@ bool Modern::LegacyImpactTypeToModern(int legacyType, Modern::PassiveImpactType&
 	out = static_cast<Modern::PassiveImpactType>(legacyType);
 	return true;
 }
+
+// SKILL-012: EMSPECA -> PassiveSpecType.
+//
+// Only the three range specs are in the modern vocabulary. Everything else -
+// including the ~50 other EMSPECA values the export actually carries - returns
+// false so the loader can count the slot and leave it empty. The switch is
+// explicit rather than a range test so that ADDING a vocabulary entry without
+// adding a case here is a compile-visible decision, not a silent acceptance.
+bool Modern::LegacySpecTypeToModern(int legacyType, Modern::PassiveSpecType& out) noexcept
+{
+	switch (legacyType)
+	{
+	case 13: // EMSPECA_TARRANGE
+		out = Modern::PassiveSpecType::TarRange;
+		return true;
+	case 32: // EMSPECA_CHANGE_ATTACK_RANGE
+		out = Modern::PassiveSpecType::ChangeAttackRange;
+		return true;
+	case 33: // EMSPECA_CHANGE_APPLY_RANGE
+		out = Modern::PassiveSpecType::ChangeApplyRange;
+		return true;
+	default:
+		return false;
+	}
+}

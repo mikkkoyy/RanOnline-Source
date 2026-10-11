@@ -189,6 +189,19 @@ namespace ModernTests
 					                std::to_string(level));
 				}
 			}
+			// SKILL-012: `SPECS`, written by the same writer in the same
+			// format - `emSPEC<j>` then `sSPEC <j><i> fVAR1`, slot and level
+			// concatenated. The fixture reproduces that concatenation, which
+			// is what makes this a test of name resolution, not of offsets.
+			for (int spec = 1; spec <= kMaxSkillSpecs; ++spec)
+			{
+				names.push_back("emSPEC" + std::to_string(spec));
+				for (int level = 1; level <= kMaxSkillLevel; ++level)
+				{
+					names.push_back("sSPEC " + std::to_string(spec) +
+					                std::to_string(level) + " fVAR1");
+				}
+			}
 			// 718 names + the trailing comma = 719 FIELDS, matching the
 			// export's SAPPLY line. The width checks compare fields.
 			for (std::size_t i = names.size(); i < 718; ++i)
@@ -1628,6 +1641,348 @@ namespace ModernTests
 		REQUIRE(ordinary != nullptr);
 		CHECK_EQ(ordinary->targetRange, static_cast<std::uint16_t>(999));
 		CHECK(ordinary->levelData[1].applyRange < 1000);
+	}
+
+	// ===========================================================================
+	// SKILL-012: the SPECS table
+	// ===========================================================================
+
+	MODERN_TEST(SkillTable_AllFiveSpecSlotsResolveToTheirOwnColumns)
+	{
+		// Every slot carries its own type and its own nine level values. The
+		// slot index in the writer's name is CONCATENATED with the level, so
+		// "sSPEC 21 fVAR1" is slot 2 level 1 - a parser reading it as slot 21,
+		// or as a linear offset, reads the wrong cells entirely.
+		const std::string apply = ApplyRow({
+			{ "emSPEC1", "13" },  // TarRange
+			{ "emSPEC2", "32" },  // ChangeAttackRange
+			{ "emSPEC3", "33" },  // ChangeApplyRange
+			{ "emSPEC4", "13" },
+			{ "emSPEC5", "32" },
+			// Slot 1, level 3 is -40; slot 2, level 3 is 70. If the mapping
+			// collapsed the two dimensions these would be indistinguishable.
+			{ "sSPEC 13 fVAR1", "-40" },
+			{ "sSPEC 23 fVAR1", "70" },
+			// Slot 5 is only reachable through "sSPEC 5<level>".
+			{ "sSPEC 51 fVAR1", "5" },
+			{ "sSPEC 52 fVAR1", "6" },
+			{ "sSPEC 59 fVAR1", "10" },
+		});
+
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
+			GoodRow(20, 1, "SPECS") + "\n" + apply + "\n";
+
+		const Fixture fixture = { WriteFixture("skill-specs.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		REQUIRE(LoadSkillCsv(fixture.path.string(), provider).IsOk());
+
+		const SkillDefinition* skill = provider.Find(SkillId{ 20, 1 });
+		REQUIRE(skill != nullptr);
+
+		// The five types landed in the five slots, in order.
+		CHECK(skill->specs[0].type == PassiveSpecType::TarRange);
+		CHECK(skill->specs[1].type == PassiveSpecType::ChangeAttackRange);
+		CHECK(skill->specs[2].type == PassiveSpecType::ChangeApplyRange);
+		CHECK(skill->specs[3].type == PassiveSpecType::TarRange);
+		CHECK(skill->specs[4].type == PassiveSpecType::ChangeAttackRange);
+
+		// Slot-to-level: negative, positive and zero all survive exactly.
+		CHECK(skill->specs[0].values[3] == -40.0f);
+		CHECK(skill->specs[1].values[3] == 70.0f);
+		CHECK(skill->specs[0].values[1] == 0.0f);
+		CHECK(skill->specs[0].values[2] == 0.0f);
+
+		// Slot 5's three levels, proving "sSPEC 5<level>" resolves into the
+		// fifth slot and not into another.
+		CHECK(skill->specs[4].values[1] == 5.0f);
+		CHECK(skill->specs[4].values[2] == 6.0f);
+		CHECK(skill->specs[4].values[9] == 10.0f);
+
+		// And slot 5's levels did not leak into slot 1.
+		CHECK(skill->specs[0].values[1] == 0.0f);
+	}
+
+	MODERN_TEST(SkillTable_TheThreeRangeSpecTypesMapByTheirLegacyNumbers)
+	{
+		// The type identity is the whole point of this milestone for SKILL-011:
+		// 13, 32 and 33 must not be confused with each other or with a
+		// neighbouring EMSPECA value.
+		PassiveSpecType mapped = PassiveSpecType::None;
+		CHECK(LegacySpecTypeToModern(13, mapped));
+		CHECK(mapped == PassiveSpecType::TarRange);
+		CHECK(LegacySpecTypeToModern(32, mapped));
+		CHECK(mapped == PassiveSpecType::ChangeAttackRange);
+		CHECK(LegacySpecTypeToModern(33, mapped));
+		CHECK(mapped == PassiveSpecType::ChangeApplyRange);
+
+		// Valid EMSPECA values the vocabulary does not carry must NOT be
+		// accepted, and in particular must not land on a range type.
+		for (int value : { -1, 0, 1, 2, 7, 12, 14, 18, 19, 20, 26, 27, 30, 31,
+		                   34, 52, 55, 59, 84, 999 })
+		{
+			PassiveSpecType rejected = PassiveSpecType::TarRange;
+			CHECK(!LegacySpecTypeToModern(value, rejected));
+			// `out` is untouched on failure, so a caller cannot read a
+			// half-written mapping as a result.
+			CHECK(rejected == PassiveSpecType::TarRange);
+		}
+	}
+
+	MODERN_TEST(SkillTable_AnUnmappableSpecIsCountedAndItsSlotLeftEmpty)
+	{
+		// The export carries ~50 EMSPECA values outside the vocabulary. They
+		// are real data, so they are counted rather than silently dropped -
+		// and the slot is left EMPTY rather than filled with a nearby name.
+		const std::string apply = ApplyRow({
+			{ "emSPEC1", "14" },  // EMSPECA_MOVEVELO - real, unrepresented
+			{ "emSPEC2", "13" },  // TarRange - representable
+			{ "emSPEC3", "18" },  // EMSPECA_ATTACKVELO - real, unrepresented
+		});
+
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
+			GoodRow(21, 1, "MIXEDSPECS") + "\n" + apply + "\n";
+
+		const Fixture fixture = { WriteFixture("skill-mixedspecs.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+		REQUIRE(loaded.IsOk());
+
+		const SkillTableLoadResult& result = loaded.GetValue();
+		CHECK_EQ(result.rejectedUnmappableSpecType, static_cast<std::size_t>(2));
+		CHECK_EQ(result.specsRecovered, static_cast<std::size_t>(1));
+
+		const SkillDefinition* skill = provider.Find(SkillId{ 21, 1 });
+		REQUIRE(skill != nullptr);
+
+		// Slot 1 is EMPTY, not "MoveVelo" and not TarRange.
+		CHECK(skill->specs[0].type == PassiveSpecType::None);
+		CHECK(!skill->specs[0].IsValid());
+		// Slot 3 likewise.
+		CHECK(skill->specs[2].type == PassiveSpecType::None);
+		// And the one representable spec is intact.
+		CHECK(skill->specs[1].type == PassiveSpecType::TarRange);
+	}
+
+	MODERN_TEST(SkillTable_ASpecOutsideTheEmspecaRangeIsRefused)
+	{
+		// A number outside the documented 0..83 vocabulary is a corrupt cell,
+		// not a spec type. The row is refused rather than parsed.
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
+			GoodRow(22, 1, "BADSPECNUM") + "\n" +
+			ApplyRow({ { "emSPEC1", "999" } }) + "\n";
+
+		const Fixture fixture =
+		    { WriteFixture("skill-badspecnum.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+		REQUIRE(loaded.IsOk());
+		CHECK(loaded.GetValue().rejectedUnmappableSpecType >
+		      static_cast<std::size_t>(0));
+	}
+
+	MODERN_TEST(SkillTable_AMalformedSpecNumberIsRefusedNotZeroed)
+	{
+		// A non-numeric type or value cell refuses the row, matching how the
+		// impact table refuses a malformed emADDON. Requirement: a bad spec
+		// must not become a valid-looking zero reach.
+		// Two distinct faults: an unparseable TYPE cell, and an unparseable
+		// VALUE cell under a valid type.
+		//
+		// `ApplyRow` takes the FIRST override that matches a name, so the two
+		// cases need separate lists - prefixing the bad cell with a good one
+		// would hide the fault being tested.
+		const auto refused = [](std::initializer_list<std::pair<std::string, std::string>>
+		                            overrides)
+		{
+			const std::string contents =
+				JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+				JoinWithCommas(ApplyHeaderNames()) + "\n" +
+				GoodRow(23, 1, "BADSPEC") + "\n" +
+				ApplyRow(overrides) + "\n";
+
+			const Fixture fixture =
+			    { WriteFixture("skill-badspec.csv", contents) };
+
+			InMemorySkillDefinitions provider;
+			const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+			REQUIRE(loaded.IsOk());
+			CHECK(loaded.GetValue().rejectedSapplyFieldCount >
+			      static_cast<std::size_t>(0));
+		};
+
+		refused({ { "emSPEC1", "not-a-number" } });
+		refused({ { "emSPEC1", "13" }, { "sSPEC 11 fVAR1", "not-a-number" } });
+	}
+
+	MODERN_TEST(SkillTable_AMalformedSpecDoesNotDisturbTheOtherFields)
+	{
+		// Isolation: a refused SAPPLY row leaves every other recovered field
+		// exactly as it was. The canonical half is parsed independently, so a
+		// spec fault must not corrupt wTARRANGE, the name or the grade.
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
+			CanonicalRow({
+				{ "sNATIVEID wMainID", "24" }, { "sNATIVEID wSubID", "1" },
+				{ "szNAME", "ISOLATED" }, { "wTARRANGE", "1234" },
+				{ "dwGRADE", "5" }, { "dwMAXLEVEL", "9" },
+			}) + "\n" +
+			ApplyRow({ { "emSPEC1", "13" },
+			           { "sSPEC 11 fVAR1", "not-a-number" } }) + "\n";
+
+		const Fixture fixture =
+		    { WriteFixture("skill-specisolation.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+		REQUIRE(loaded.IsOk());
+
+		const SkillDefinition* skill = provider.Find(SkillId{ 24, 1 });
+		REQUIRE(skill != nullptr);
+		CHECK(skill->name == "ISOLATED");
+		CHECK_EQ(skill->targetRange, static_cast<std::uint16_t>(1234));
+		CHECK_EQ(skill->grade, static_cast<std::uint16_t>(5));
+		// And no spec was fabricated from the refused cell.
+		CHECK(skill->specs[0].type == PassiveSpecType::None);
+	}
+
+	MODERN_TEST(SkillTable_AHeaderWithoutSpecColumnsIsRefused)
+	{
+		// The same contract as every other required SAPPLY column: a header
+		// that does not name them means the export changed, so the FILE is
+		// refused rather than the columns guessed.
+		const std::vector<std::string> all = ApplyHeaderNames();
+		std::vector<std::string> names;
+		names.reserve(all.size());
+		for (const std::string& name : all)
+		{
+			// Rename rather than remove: removing shortens the line below the
+			// 719-field shape `IsLegacyHeader` requires, so it would stop being
+			// recognised as a header at all and nothing would test resolution.
+			if (name.rfind("emSPEC", 0) == 0)
+			{
+				names.push_back(name + "_RENAMED");
+				continue;
+			}
+			if (name.rfind("sSPEC ", 0) == 0)
+			{
+				names.push_back(name.substr(0, name.size() - 5) + "RENAMED");
+				continue;
+			}
+			names.push_back(name);
+		}
+		REQUIRE(names.size() == all.size());
+
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(names) + "\n" +
+			GoodRow(25, 1, "NOSPEC") + "\n" +
+			JoinWithCommas(std::vector<std::string>(names.size(), "0")) + "\n";
+
+		const Fixture fixture =
+		    { WriteFixture("skill-nospecheader.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+		CHECK(!loaded.IsOk());
+		CHECK(loaded.GetError() == ErrorCode::InvalidArgument);
+	}
+
+	// ===========================================================================
+	// SKILL-012 against the real ASURA export
+	// ===========================================================================
+
+	MODERN_TEST(SkillTable_TheRealExportRecoversTheSpecTable)
+	{
+		std::error_code code;
+		std::filesystem::path csv =
+		    "D:/FILES/project/RanOnline-Build/ASURA CLIENT/data/glogic/Skill.csv";
+		if (!std::filesystem::is_regular_file(csv, code))
+		{
+			std::printf("      SKIPPED the real export: ASURA Skill.csv not found\n");
+			return;
+		}
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(csv.string(), provider);
+		REQUIRE(loaded.IsOk());
+
+		const SkillTableLoadResult& result = loaded.GetValue();
+
+		// Requirement: recovering SPECS must not disturb the earlier
+		// milestones. These are the SKILL-001/003 counts, unchanged.
+		CHECK_EQ(result.canonicalHeaders, static_cast<std::size_t>(1139));
+		CHECK_EQ(result.legacyHeaders, static_cast<std::size_t>(1139));
+		CHECK_EQ(result.accepted, static_cast<std::size_t>(1139));
+		CHECK_EQ(result.sapplyParsed, static_cast<std::size_t>(1139));
+		CHECK_EQ(result.paired, static_cast<std::size_t>(1139));
+		CHECK_EQ(result.rejectedSapplyFieldCount, static_cast<std::size_t>(0));
+		CHECK_EQ(result.impactsRecovered, static_cast<std::size_t>(535));
+
+		// Every one of the 5 x 1139 = 5695 spec cells is accounted for by
+		// exactly one bucket, and the three figures below were read directly
+		// from the export's emSPEC1..5 columns rather than assumed.
+		CHECK_EQ(result.nullSpecCells, static_cast<std::size_t>(4293));
+		CHECK_EQ(result.specsRecovered, static_cast<std::size_t>(54));
+		CHECK_EQ(result.rejectedUnmappableSpecType, static_cast<std::size_t>(1348));
+		CHECK_EQ(result.specsRecovered + result.rejectedUnmappableSpecType +
+		             result.nullSpecCells,
+		         static_cast<std::size_t>(5695));
+	}
+
+	MODERN_TEST(SkillTable_TheRealExportCarriesTheVerifiedRangeSpecs)
+	{
+		std::error_code code;
+		std::filesystem::path csv =
+		    "D:/FILES/project/RanOnline-Build/ASURA CLIENT/data/glogic/Skill.csv";
+		if (!std::filesystem::is_regular_file(csv, code))
+		{
+			std::printf("      SKIPPED the real export: ASURA Skill.csv not found\n");
+			return;
+		}
+
+		InMemorySkillDefinitions provider;
+		REQUIRE(LoadSkillCsv(csv.string(), provider).IsOk());
+
+		// SKILL-011 read these straight from the export's emSPEC1..5 columns.
+		// Skill (34,3) slot 1 is EMSPECA_CHANGE_ATTACK_RANGE with fVAR1 -700
+		// at level 1 - the largest negative in the table, and the reason a
+		// negative value must not be clamped or dropped.
+		const SkillDefinition* big = provider.Find(SkillId{ 34, 3 });
+		REQUIRE(big != nullptr);
+		REQUIRE(big->specs[0].IsValid());
+		CHECK(big->specs[0].type == PassiveSpecType::ChangeAttackRange);
+		CHECK(big->specs[0].values[1] == -700.0f);
+
+		// (10,2) slot 1 is EMSPECA_TARRANGE with fVAR1 +5 - a positive value,
+		// which must not be lost to a signed-unsigned mistake either.
+		const SkillDefinition* positive = provider.Find(SkillId{ 10, 2 });
+		REQUIRE(positive != nullptr);
+		REQUIRE(positive->specs[0].IsValid());
+		CHECK(positive->specs[0].type == PassiveSpecType::TarRange);
+		CHECK(positive->specs[0].values[1] == 5.0f);
+
+		// (4,9) slot 1 is EMSPECA_CHANGE_APPLY_RANGE with fVAR1 -10.
+		const SkillDefinition* applySpec = provider.Find(SkillId{ 4, 9 });
+		REQUIRE(applySpec != nullptr);
+		REQUIRE(applySpec->specs[0].IsValid());
+		CHECK(applySpec->specs[0].type == PassiveSpecType::ChangeApplyRange);
+		CHECK(applySpec->specs[0].values[1] == -10.0f);
+
+		// A skill whose specs are all unrepresented keeps every slot EMPTY
+		// rather than one of them being borrowed to make a count look right.
+		const SkillDefinition* unrepresented = provider.Find(SkillId{ 10, 15 });
+		REQUIRE(unrepresented != nullptr);
+		CHECK(unrepresented->specs[1].type == PassiveSpecType::None);
 	}
 
 } // namespace ModernTests
