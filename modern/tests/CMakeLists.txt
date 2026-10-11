@@ -10,6 +10,7 @@ add_executable(ModernCoreTests
     EquipmentTests.cpp
     SkillTests.cpp
     SkillBasicTableTests.cpp
+    SkillRangeTests.cpp
     ActiveSkillTests.cpp
     CodexTests.cpp
     CombatTests.cpp

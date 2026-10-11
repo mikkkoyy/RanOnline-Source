@@ -259,6 +259,22 @@ namespace Modern
 		uint16_t useHp = 0;
 		uint16_t useMp = 0;
 
+		// SKILL-010: the per-level application range. Mirrors
+		// SKILL::CDATA_LVL::wAPPLYRANGE (GLSkillApply.h:249, a `WORD`).
+		//
+		// This is NOT the target range. That is `SkillDefinition::targetRange`,
+		// from SSKILLBASIC::wTARRANGE. The two names are one character apart in
+		// legacy while living in DIFFERENT structs, one per skill and one per
+		// level, and legacy reads this one through `GETSKILLRANGE_APPLY`
+		// (GLogixExPC.cpp:4522).
+		//
+		// Values are carried exactly as exported. Exactly seven cells in the
+		// deployed table reach 1000 or more: six of 60000 and one of 57599, each
+		// at LEVEL 1 of a distinct skill (52,1) (52,3) (52,4) (52,5) (52,6)
+		// (52,7) (52,8). Legacy clamps neither range at the top, so clamping
+		// here would silently disagree with the shipped game.
+		uint16_t applyRange = 0;
+
 		// VERTICAL-011: base cooldown. Mirrors SKILL::CDATA_LVL.fDELAYTIME
 		// (GLSkillApply.h:247). The real delay is derived from it together with
 		// `grade` and the caster's level; see ActiveSkillResolver.

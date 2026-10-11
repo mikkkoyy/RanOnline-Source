@@ -47,6 +47,9 @@ set(MODERN_SOURCES
 skills/SkillBasicTable.cpp
     skills/PassiveContributionAggregator.cpp
     skills/ActiveSkill.cpp
+    # SKILL-010: the legacy skill target/apply range rules, kept apart from
+    # AttackService's basic-attack reach on purpose.
+    skills/SkillRange.cpp
     skills/SkillFactTypes.h
     skills/SkillFactContainer.h
     skills/SkillFactAggregator.h

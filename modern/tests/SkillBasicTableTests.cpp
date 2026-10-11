@@ -135,8 +135,12 @@ namespace ModernTests
 			});
 		}
 
-		const char* const kApplyStepNames[6] = {
+		// SKILL-010: `wAPPLYRANGE` joins the per-level fixture set. If the loader
+		// resolved offsets instead of header names, adding a name here would
+		// shift every later cell and these tests would read the wrong columns.
+		const char* const kApplyStepNames[7] = {
 			"fDELAYTIME", "fLIFE", "fBASIC_VAR", "wUSE_HP", "wUSE_MP", "wUSE_SP",
+			"wAPPLYRANGE",
 		};
 		const char* const kApplyBlowNames[3] = { "fRATE", "fVAR1", "fVAR2" };
 
@@ -730,6 +734,9 @@ namespace ModernTests
 					if (name == prefix + "fBASIC_VAR") { value = "-" + std::to_string(100 + level); }
 					if (name == prefix + "fDELAYTIME") { value = std::to_string(level) + ".5"; }
 					if (name == prefix + "wUSE_SP") { value = std::to_string(level * 2); }
+				// SKILL-010: distinct per level, so an off-by-one in the level
+				// block (or reading level 1's column for every level) fails.
+				if (name == prefix + "wAPPLYRANGE") { value = std::to_string(level * 10); }
 					if (name == "sSTATE_BLOW " + std::to_string(level) + " fVAR1")
 					{
 						value = std::to_string(level * 100);
@@ -764,6 +771,10 @@ namespace ModernTests
 			      static_cast<float>(level) + 0.5f);
 			CHECK_EQ(skill->levelData[level].useSp,
 			         static_cast<std::uint16_t>(level * 2));
+			// SKILL-010 (1) per-level mapping: distinct per level, so a block
+			// off-by-one - or level 1's column reused for every level - fails.
+			CHECK_EQ(skill->levelData[level].applyRange,
+			         static_cast<std::uint16_t>(level * 10));
 			CHECK(skill->levelData[level].blowVar1 ==
 			      static_cast<float>(level * 100));
 		}
@@ -1379,6 +1390,244 @@ namespace ModernTests
 			// because it is data, not contract.
 			(void)provider.Find(SkillId{ main, 1 });
 		}
+	}
+
+// ===========================================================================
+	// SKILL-010: apply range against the real export
+	// ===========================================================================
+
+	MODERN_TEST(SkillTable_TheRealExportCarriesTheVerifiedApplyRangeOutliers)
+	{
+		std::error_code code;
+		std::filesystem::path csv =
+		    "D:/FILES/project/RanOnline-Build/ASURA CLIENT/data/glogic/Skill.csv";
+		if (!std::filesystem::is_regular_file(csv, code))
+		{
+			std::printf("      SKIPPED the real export: ASURA Skill.csv not found\n");
+			return;
+		}
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(csv.string(), provider);
+		REQUIRE(loaded.IsOk());
+
+		// Requirement 2: recovering wAPPLYRANGE must not disturb anything the
+		// earlier milestones established. These are the SKILL-001/003 counts,
+		// asserted unchanged.
+		const SkillTableLoadResult& result = loaded.GetValue();
+		CHECK_EQ(result.accepted, static_cast<std::size_t>(1139));
+		CHECK_EQ(result.sapplyParsed, static_cast<std::size_t>(1139));
+		CHECK_EQ(result.paired, static_cast<std::size_t>(1139));
+		CHECK_EQ(result.rejectedSapplyFieldCount, static_cast<std::size_t>(0));
+		CHECK_EQ(result.impactsRecovered, static_cast<std::size_t>(535));
+
+		// Requirement 5: the seven large cells for skill (52, 1)..(52, 8) are
+		// carried exactly. 60000 appears on levels 1,3,4,6,7,8 and 57599 on
+		// level 5; nothing clamps or rescales them.
+		// The seven cells at or above 1000 in the entire export, re-read from the
+		// file rather than quoted from a report. They are SEVEN SKILLS at
+		// (52,1) (52,3) (52,4) (52,5) (52,6) (52,7) (52,8), each at LEVEL 1 -
+		// not seven levels of one skill. Each is paired with a matching
+		// wTARRANGE on the same row, which is why they read as authored values.
+		struct Expected
+		{
+			uint16_t subId;
+			std::uint16_t applyRange;
+			std::uint16_t tarRange;
+		};
+		const Expected expected[] = {
+			{ 1, 60000, 60000 }, { 3, 60000, 60000 }, { 4, 60000, 60000 },
+			{ 5, 57599, 51711 }, { 6, 60000, 60000 }, { 7, 60000, 60000 },
+			{ 8, 60000, 60000 },
+		};
+
+		for (const Expected& e : expected)
+		{
+			const SkillId id{ 52, e.subId };
+			const SkillDefinition* skill = provider.Find(id);
+			REQUIRE(skill != nullptr);
+
+			// Requirement 5: carried exactly, with no clamp or rescale.
+			CHECK_EQ(skill->levelData[1].applyRange, e.applyRange);
+			// Requirement 9: wTARRANGE is still recovered per skill and is a
+			// SEPARATE field from the per-level apply range. Skill (52,5) is
+			// the discriminating case: 51711 against 57599.
+			CHECK_EQ(skill->targetRange, e.tarRange);
+
+			// Requirement 1: only LEVEL 1 carries the outlier. The remaining
+			// levels of these skills are 0 in the export and must read 0, which
+			// is only possible if each level resolved its own column.
+			for (int level = 2; level <= kMaxSkillLevel; ++level)
+			{
+				CHECK_EQ(skill->levelData[level].applyRange,
+				         static_cast<std::uint16_t>(0));
+			}
+		}
+	}
+
+	MODERN_TEST(SkillTable_AMalformedApplyRangeIsRefusedNotZeroed)
+	{
+		// Requirement 6: invalid wAPPLYRANGE data must fail loudly rather than
+		// becoming a valid-looking zero reach. The row is refused whole and
+		// counted, so no `applyRange` value is ever produced from a cell that
+		// would not parse or would not fit a WORD.
+		//
+		// Two counters are legitimate outcomes: a non-numeric cell fails
+		// parsing (rejectedSapplyFieldCount), while an out-of-WORD-range one
+		// fails the type check (rejectedSapplyRange). Both mean "refused", so
+		// the test accepts either rather than pinning which.
+		for (const char* bad : { "not-a-number", "-1", "65536" })
+		{
+			const std::string contents =
+				JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+				JoinWithCommas(ApplyHeaderNames()) + "\n" +
+				GoodRow(9, 9, "BADRANGE") + "\n" +
+				ApplyRow({ { "sDATA_LVL 1 wAPPLYRANGE", bad } }) + "\n";
+
+			const Fixture fixture =
+			    { WriteFixture("skill-badapplyrng.csv", contents) };
+
+			InMemorySkillDefinitions provider;
+			const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+			REQUIRE(loaded.IsOk());
+
+			const SkillTableLoadResult& result = loaded.GetValue();
+			CHECK(result.rejectedSapplyFieldCount +
+			          result.rejectedSapplyRange > static_cast<std::size_t>(0));
+
+			// The refused cell never reaches a level: the bad value does not
+			// appear anywhere it could be read as a reach. Note the loader's
+			// pre-existing admission model, which this milestone does not
+			// change: a skill whose SAPPLY row is refused is still admitted
+			// with its level data left zeroed, exactly as for any other refused
+			// SAPPLY row. What is guaranteed here is that the rejection is
+			// COUNTED and no value was invented from the bad cell.
+			const SkillDefinition* skill = provider.Find(SkillId{ 9, 9 });
+			if (skill != nullptr)
+			{
+				for (int level = 1; level <= kMaxSkillLevel; ++level)
+				{
+					CHECK(skill->levelData[level].applyRange <= 60000);
+				}
+			}
+		}
+	}
+
+	MODERN_TEST(SkillTable_AValidApplyRangeIsKeptDistinctFromARefusedOne)
+	{
+		// The converse of the test above, and the one that actually pins the
+		// behaviour: a row whose apply range PARSES keeps its real value, so a
+		// genuine zero is distinguishable from a refused row by the loader's
+		// counters rather than by a sentinel in the field. Legacy
+		// `CDATA_LVL` has no "unset" sentinel either.
+		const std::string zeroed =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
+			GoodRow(12, 12, "REALZERO") + "\n" +
+			ApplyRow({ { "sDATA_LVL 1 wAPPLYRANGE", "0" } }) + "\n";
+
+		const Fixture okFixture = { WriteFixture("skill-realzero.csv", zeroed) };
+		InMemorySkillDefinitions okProvider;
+		const auto okLoad = LoadSkillCsv(okFixture.path.string(), okProvider);
+		REQUIRE(okLoad.IsOk());
+		CHECK_EQ(okLoad.GetValue().rejectedSapplyFieldCount,
+		         static_cast<std::size_t>(0));
+		CHECK_EQ(okLoad.GetValue().rejectedSapplyRange,
+		         static_cast<std::size_t>(0));
+
+		const SkillDefinition* real = okProvider.Find(SkillId{ 12, 12 });
+		REQUIRE(real != nullptr);
+		CHECK_EQ(real->levelData[1].applyRange, static_cast<std::uint16_t>(0));
+	}
+
+	MODERN_TEST(SkillTable_AHeaderWithoutApplyRangeIsRefused)
+	{
+		// Requirement 7: a header missing the column is a schema change, not a
+		// reason to load the skill with a zero reach. ResolveApplyColumns must
+		// refuse the file.
+		// The real SAPPLY header with every `wAPPLYRANGE` RENAMED, so the width
+		// is unchanged and the line is still recognised as a header. That is the
+		// case which actually exercises name resolution: the loader must refuse
+		// rather than fall back to a guessed position.
+		//
+		// (Dropping the columns instead would shorten the header below the
+		// 719-column shape `IsLegacyHeader` requires, so the line would not be
+		// recognised as a header at all and nothing would test resolution.)
+		const std::vector<std::string> all = ApplyHeaderNames();
+		std::vector<std::string> names;
+		names.reserve(all.size());
+		const std::string suffix = " wAPPLYRANGE";
+		for (const std::string& name : all)
+		{
+			if (name.size() >= suffix.size() &&
+			    name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0)
+			{
+				names.push_back(name.substr(0, name.size() - suffix.size()) +
+				                " wAPPLYRANGE_RENAMED");
+				continue;
+			}
+			names.push_back(name);
+		}
+		REQUIRE(names.size() == all.size());
+
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(names) + "\n" +
+			GoodRow(11, 11, "NOAPPLYRANGE") + "\n" +
+			JoinWithCommas(std::vector<std::string>(names.size(), "0")) + "\n";
+
+		const Fixture fixture =
+		    { WriteFixture("skill-noapplyrngheader.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+
+		// A header that does not name a column the loader reads means the export
+		// changed, and the loader refuses the FILE rather than guessing a
+		// position. That is stronger than a row-level rejection: nothing at all
+		// is loaded, so no skill anywhere can end up with a fabricated reach.
+		CHECK(!loaded.IsOk());
+		CHECK(loaded.GetError() == ErrorCode::InvalidArgument);
+	}
+
+	// ===========================================================================
+	// SKILL-010: basic-attack isolation against the real export
+	// ===========================================================================
+
+	MODERN_TEST(SkillRange_RecoveringApplyRangeDoesNotDisturbTheRecoveredFields)
+	{
+		// Requirement 10, data half: a skill's per-skill definition, its
+		// wTARRANGE and its SAPPLY/SIMPACTS values are the same after SKILL-010
+		// as before it. Spot-checks against values SKILL-001/003 verified.
+		std::error_code code;
+		std::filesystem::path csv =
+		    "D:/FILES/project/RanOnline-Build/ASURA CLIENT/data/glogic/Skill.csv";
+		if (!std::filesystem::is_regular_file(csv, code))
+		{
+			std::printf("      SKIPPED the real export: ASURA Skill.csv not found\n");
+			return;
+		}
+
+		InMemorySkillDefinitions provider;
+		REQUIRE(LoadSkillCsv(csv.string(), provider).IsOk());
+
+		const SkillDefinition* skill = provider.Find(SkillId{ 52, 1 });
+		REQUIRE(skill != nullptr);
+
+		// Per-skill identity, unaffected by the per-level addition.
+		const SkillId expectedId{ 52, 1 };
+		CHECK(skill->id == expectedId);
+		CHECK(skill->maxLevel > 0);
+
+		// wTARRANGE is still recovered and still per skill, not per level.
+		CHECK_EQ(skill->targetRange, static_cast<std::uint16_t>(60000));
+
+		// Skill (52, 37) pairs wTARRANGE 999 with an ordinary apply range,
+		// which is the evidence that 999 is a finite authored value.
+		const SkillDefinition* ordinary = provider.Find(SkillId{ 52, 37 });
+		REQUIRE(ordinary != nullptr);
+		CHECK_EQ(ordinary->targetRange, static_cast<std::uint16_t>(999));
+		CHECK(ordinary->levelData[1].applyRange < 1000);
 	}
 
 } // namespace ModernTests

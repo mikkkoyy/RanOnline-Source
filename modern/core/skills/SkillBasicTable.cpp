@@ -182,7 +182,7 @@ namespace Modern::Skill
 			std::size_t stateBlow = 0;
 
 			// sDATA_LVL <n> <field>, for n in 1..9.
-			std::size_t step[kMaxSkillLevel + 1][6] = {};
+			std::size_t step[kMaxSkillLevel + 1][7] = {};
 
 			// sSTATE_BLOW <n> <field>, for n in 1..9.
 			std::size_t blow[kMaxSkillLevel + 1][3] = {};
@@ -197,8 +197,13 @@ namespace Modern::Skill
 
 		// The `sDATA_LVL` members `SkillLevelData` models. Order is the order
 		// of the matching fields in `ApplyColumns::step`.
-		const char* const kApplyStepNames[6] = {
+		// SKILL-010: `wAPPLYRANGE` joins the per-level set. It is the eighth
+		// `CDATA_LVL` member legacy reads for range, and it is the one the
+		// loader previously skipped. Its position in THIS list is the position it
+		// occupies in the `step` row below - keep the two in step.
+		const char* const kApplyStepNames[7] = {
 			"fDELAYTIME", "fLIFE", "fBASIC_VAR", "wUSE_HP", "wUSE_MP", "wUSE_SP",
+			"wAPPLYRANGE",
 		};
 		const char* const kApplyBlowNames[3] = { "fRATE", "fVAR1", "fVAR2" };
 		bool ResolveColumns(const std::string& header,
@@ -293,7 +298,7 @@ namespace Modern::Skill
 			for (uint8_t level = 1; level <= kMaxSkillLevel; ++level)
 			{
 				const std::string prefix = "sDATA_LVL " + std::to_string(level) + " ";
-				for (int field = 0; field < 6; ++field)
+				for (int field = 0; field < 7; ++field)
 				{
 					std::size_t index = 0;
 					bool ambiguous = false;
@@ -430,7 +435,7 @@ namespace Modern::Skill
 		// SKILL-002: fills a definition's per-level and per-skill SAPPLY data
 		// from one 719-column row. Returns false after counting the reason.
 		//
-		// Note what it does NOT touch: `wAPPLYRANGE`, `wAPPLYNUM`,
+		// Note what it does NOT touch: `wAPPLYNUM`,
 		// `wAPPLYANGLE`, `wPIERCENUM`, `wTARNUM`, the arrow/charm/bullet and
 		// EXP/CP costs, `dwDATA` and the `wUSE_*_PTY` fields all stay unread.
 		// They need a world, an inventory or an item-requirement table that
@@ -492,13 +497,15 @@ namespace Modern::Skill
 				long useHp = 0;
 				long useMp = 0;
 				long useSp = 0;
+				long applyRange = 0;
 
 				if (!ParseFloat(FieldAt(line, starts, at[0]), delayTime) ||
 				    !ParseFloat(FieldAt(line, starts, at[1]), life) ||
 				    !ParseFloat(FieldAt(line, starts, at[2]), basicVar) ||
 				    !ParseLong(FieldAt(line, starts, at[3]), useHp) ||
 				    !ParseLong(FieldAt(line, starts, at[4]), useMp) ||
-				    !ParseLong(FieldAt(line, starts, at[5]), useSp))
+				    !ParseLong(FieldAt(line, starts, at[5]), useSp) ||
+				    !ParseLong(FieldAt(line, starts, at[6]), applyRange))
 				{
 					++result.rejectedSapplyFieldCount;
 					return false;
@@ -507,7 +514,13 @@ namespace Modern::Skill
 				// The costs are `WORD` (CDATA_LVL:259-261), so a negative or
 				// over-wide value is a corrupt cell rather than a discount.
 				if (useHp < 0 || useHp > 65535 || useMp < 0 || useMp > 65535 ||
-				    useSp < 0 || useSp > 65535)
+				    useSp < 0 || useSp > 65535 ||
+				    // SKILL-010: wAPPLYRANGE is a legacy WORD (GLSkillApply.h:249).
+				    // The check is a TYPE check only. Values such as 60000 are
+				    // carried through untouched - legacy clamps neither the
+				    // apply nor the target range at the top, so clamping here
+				    // would silently disagree with the shipped game.
+				    applyRange < 0 || applyRange > 65535)
 				{
 					++result.rejectedSapplyRange;
 					return false;
@@ -536,6 +549,7 @@ namespace Modern::Skill
 				levelData.useHp      = static_cast<std::uint16_t>(useHp);
 				levelData.useMp      = static_cast<std::uint16_t>(useMp);
 				levelData.useSp      = static_cast<std::uint16_t>(useSp);
+				levelData.applyRange = static_cast<std::uint16_t>(applyRange);
 				levelData.blowRate   = blowRate;
 				levelData.blowVar1   = blowVar1;
 				levelData.blowVar2   = blowVar2;
