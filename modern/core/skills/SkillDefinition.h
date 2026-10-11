@@ -648,6 +648,20 @@ namespace Modern
 	// Convert modern weapon type to legacy (for compatibility layer).
 	int ModernWeaponTypeToLegacy(SkillWeaponType type);
 
+	// SKILL-003: converts legacy `EMIMPACT_ADDON` (GLCharDefine.h:970-1000)
+	// to `PassiveImpactType`.
+	//
+	// The two agree exactly from NONE(0) through RESIST(17), so those are the
+	// identity mapping. They DIVERGE from 18: legacy 18 is
+	// EMIMPACTA_CHANGESTATS, 19 is EMIMPACTA_HP_RECOVERY_VAR, and so on
+	// through CP_AUTO_VAR(23), while modern 18 is CriticalRate, 19 is
+	// CrushingBlow, and so on. A raw cast would label a stat-change impact as
+	// a critical-rate one.
+	//
+	// Legacy 18..23 have NO modern counterpart, so this returns false rather
+	// than picking the nearest name. The caller must count the impact as
+	// unmappable instead of recording a plausible but wrong type.
+	bool LegacyImpactTypeToModern(int legacyType, PassiveImpactType& out) noexcept;
 	// SKILL-002: converts legacy `EMELEMENT` (GLCharDefine.h:622-641) to
 	// `SkillElement`.
 	//

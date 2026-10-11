@@ -60,14 +60,26 @@
 //     CDATA_LVL    fDELAYTIME, fLIFE, fBASIC_VAR, wUSE_HP, wUSE_MP, wUSE_SP
 //     SSTATE_BLOW  fRATE, fVAR1, fVAR2  (per level)
 //
+// SKILL-003 added the impact block:
+//
+//     SIMPACTS    emADDON[5], fADDON_VAR[5][9]
+//
 // Deliberately NOT carried, with no substitute invented:
 //
 //   * CDATA_LVL's `wAPPLYRANGE`, `wAPPLYNUM`, `wAPPLYANGLE`, `wPIERCENUM`,
 //     `wTARNUM`, the arrow/charm/bullet and EXP/CP costs, `dwDATA` and the
 //     `wUSE_*_PTY` fields. Each needs a world, an inventory or an
 //     item-requirement table that does not exist yet.
-//   * `SIMPACTS` and `SSPECS` (the fADDON_VAR and sSPEC blocks) - the payload
-//     of impacts and special specs, which no runtime consumes yet.
+//   * `SSPECS` entirely - `emSPEC[5]` and `sSPEC[5][9]`. It is present and
+//     clean in the export (EMSPEC_ADDON runs to 59, EMSPECA_NSIZE = 60), but
+//     `PassiveSpecType` has only `None`, and legacy `SSPEC` carries fVAR1..4,
+//     `dwFLAG` and two `SNATIVEID` per level where `SkillSpec` has a single
+//     float array. There is no lossless home for it and `IsValid()` does not
+//     consult specs, so recording part of it would be inventing the rest.
+//   * `SIMPACTS::fADDON_VAR2`. Present in the export, but every runtime
+//     consumer - GLChar.cpp:6543, :8571, :8799, GLCharacter.cpp:6494,
+//     GLAnySummon.cpp:1527 - reads only `emADDON` and `fADDON_VAR`. The only
+//     other references are the authoring editor and the CSV writer.
 //   * `dwCUREFLAG`, `dwUnknownData`, `fRunningEffTime`.
 //   * `SEXT_DATA` and `SSPECIAL_SKILL`, which share the 322-column line.
 //   * `emIMPACT_REALM`, `emACTION`, `dwFlags`, `bLearnView`,
@@ -144,7 +156,16 @@ namespace Modern::Skill
 			       rejectedUnpairedSapply;
 		}
 
-	// SKILL-002: a definition is COMPLETE when both halves were recovered.
+	// SKILL-003: impacts recovered from `SIMPACTS`.
+		std::size_t impactsRecovered = 0;
+
+		// `emADDON` values outside the modern `PassiveImpactType` vocabulary.
+		// Legacy 18..23 (CHANGESTATS, the *_RECOVERY_VAR and CP values) have no
+		// modern name, so the impact is counted here and NOT recorded with a
+		// guessed type.
+		std::size_t rejectedUnmappableImpactType = 0;
+
+		// SKILL-002: a definition is COMPLETE when both halves were recovered.
 	// An incomplete one is still registered - it carries real learn
 	// requirements - but a caller that needs a castable skill must be able
 	// to tell the difference rather than discover it as zeroed effects.

@@ -186,6 +186,13 @@ namespace Modern::Skill
 
 			// sSTATE_BLOW <n> <field>, for n in 1..9.
 			std::size_t blow[kMaxSkillLevel + 1][3] = {};
+
+			// SKILL-003: SIMPACTS. The export writes the impact slot and the
+			// level as one number - ADDON_VAR 11 is impact 1 level 1 - so
+			// [impact][level] is resolved from that combined name, never by
+			// guessing an offset.
+			std::size_t addonType[kMaxSkillImpacts] = {};
+			std::size_t addonVar[kMaxSkillImpacts][kMaxSkillLevel + 1] = {};
 		};
 
 		// The `sDATA_LVL` members `SkillLevelData` models. Order is the order
@@ -313,6 +320,34 @@ namespace Modern::Skill
 					out.blow[level][field] = index;
 				}
 			}
+
+			// SIMPACTS, resolved by the writer's own name format
+			// (GLSkillApply.cpp:770-775): mADDON<j> then ADDON_VAR <j><i>.
+			for (int impact = 1; impact <= kMaxSkillImpacts; ++impact)
+			{
+				const std::string typeName = "emADDON" + std::to_string(impact);
+				std::size_t index = 0;
+				bool ambiguous = false;
+				if (!FindColumn(header, starts, typeName.c_str(), index, ambiguous))
+				{
+					return false;
+				}
+				out.addonType[impact - 1] = index;
+
+				for (uint8_t level = 1; level <= kMaxSkillLevel; ++level)
+				{
+					// Slot and level are concatenated, so <j><i> for impact j
+					// and level i.
+					const std::string varName = "fADDON_VAR " +
+						std::to_string(impact) + std::to_string(level);
+					if (!FindColumn(header, starts, varName.c_str(), index, ambiguous))
+					{
+						return false;
+					}
+					out.addonVar[impact - 1][level] = index;
+				}
+			}
+
 			return true;
 		}
 		// Is this row the verified 322-column definition header?
@@ -494,7 +529,7 @@ namespace Modern::Skill
 					return false;
 				}
 
-				SkillLevelData& levelData = definition.levelData[level];
+			SkillLevelData& levelData = definition.levelData[level];
 				levelData.delayTime = delayTime;
 				levelData.life       = life;
 				levelData.basicVar   = basicVar;
@@ -505,6 +540,64 @@ namespace Modern::Skill
 				levelData.blowVar1   = blowVar1;
 				levelData.blowVar2   = blowVar2;
 			}
+
+			// SKILL-003: `SIMPACTS`, the impact slots.
+			//
+			// Only `emADDON` and `fADDON_VAR` are read. `fADDON_VAR2` is
+			// DELIBERATELY left unread: every runtime consumer - GLChar.cpp:6543,
+			// :8571, :8799, GLCharacter.cpp:6494, GLAnySummon.cpp:1527 - reads
+			// only `emADDON` and `fADDON_VAR`, and the only other references are
+			// the authoring editor and the CSV writer itself. Filling it in would
+			// add data with no consumer and no verified meaning.
+			//
+			// The per-level value is what legacy copies onto the effect
+			// (GLChar.cpp:6547), so `values[level]` is exactly its
+			// `fADDON_VAR[wlevel]`.
+			for (int impact = 0; impact < kMaxSkillImpacts; ++impact)
+			{
+				long impactType = 0;
+				if (!ParseLong(FieldAt(line, starts, columns.addonType[impact]),
+				               impactType))
+				{
+					++result.rejectedSapplyFieldCount;
+					return false;
+				}
+
+				// EMSPECA/EMIMPACTA none is 0. An empty slot is skipped rather
+				// than parsed, which keeps a zeroed slot out of `impacts`.
+				if (impactType == 0)
+				{
+					continue;
+				}
+
+				PassiveImpactType mapped = PassiveImpactType::None;
+				if (!LegacyImpactTypeToModern(static_cast<int>(impactType), mapped))
+				{
+					// Legacy 18..23. Counted, and the slot is left EMPTY - not
+					// recorded with a nearby but wrong name.
+					++result.rejectedUnmappableImpactType;
+					continue;
+				}
+
+				SkillImpact& entry = definition.impacts[impact];
+				entry.type = mapped;
+				for (uint8_t level = 1; level <= kMaxSkillLevel; ++level)
+				{
+					float value = 0.0f;
+					if (!ParseFloat(FieldAt(line, starts, columns.addonVar[impact][level]),
+					                value))
+					{
+						++result.rejectedSapplyFieldCount;
+						return false;
+					}
+					// Negative and zero are preserved as written: a negative
+					// impact value is meaningful, and `SkillImpact::IsValid`
+					// is what decides whether it contributes.
+					entry.values[level] = value;
+				}
+				++result.impactsRecovered;
+			}
+
 
 			return true;
 		}

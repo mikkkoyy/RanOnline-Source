@@ -309,3 +309,15 @@ bool Modern::LegacyElementToModern(int legacyElement, Modern::SkillElement& out)
 	default: return false;  // EMELEMENT_STUN (7) and anything unknown
 	}
 }
+
+// SKILL-003: EMIMPACT_ADDON -> PassiveImpactType. Identical for 0..17; legacy
+// 18..23 have no modern name and are reported rather than guessed.
+bool Modern::LegacyImpactTypeToModern(int legacyType, Modern::PassiveImpactType& out) noexcept
+{
+	if (legacyType < 0 || legacyType > 17)
+	{
+		return false;
+	}
+	out = static_cast<Modern::PassiveImpactType>(legacyType);
+	return true;
+}

@@ -163,6 +163,28 @@ namespace ModernTests
 					names.push_back("sSTATE_BLOW " + std::to_string(step) + " " + field);
 				}
 			}
+			// SKILL-003: `SIMPACTS`, written by the legacy writer as
+			// `emADDON<j>` then `fADDON_VAR <j><i>` - slot and level run
+			// together into one number (GLSkillApply.cpp:770-775). The fixture
+			// reproduces that format, because it is what the loader has to
+			// resolve.
+			for (int impact = 1; impact <= kMaxSkillImpacts; ++impact)
+			{
+				names.push_back("emADDON" + std::to_string(impact));
+				for (int level = 1; level <= kMaxSkillLevel; ++level)
+				{
+					names.push_back("fADDON_VAR " + std::to_string(impact) +
+					                std::to_string(level));
+				}
+				// `fADDON_VAR2` is present in the real export and is NOT read
+				// by the loader. Carrying it here proves that: a test can set it
+				// to anything and see it change nothing.
+				for (int level = 1; level <= kMaxSkillLevel; ++level)
+				{
+					names.push_back("fADDON_VAR2 " + std::to_string(impact) +
+					                std::to_string(level));
+				}
+			}
 			// 718 names + the trailing comma = 719 FIELDS, matching the
 			// export's SAPPLY line. The width checks compare fields.
 			for (std::size_t i = names.size(); i < 718; ++i)
@@ -945,6 +967,215 @@ namespace ModernTests
 		CHECK(!LegacyElementToModern(-1, element));
 	}
 	// ===========================================================================
+	// SKILL-003: SIMPACTS
+	// ===========================================================================
+
+	// One block, canonical plus SAPPLY, with the given SAPPLY overrides.
+	static std::string SkillFileWithApply(
+	    std::initializer_list<std::pair<std::string, std::string>> applyOverrides,
+	    uint16_t mainId = 4, uint16_t subId = 5)
+	{
+		return JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+		       JoinWithCommas(ApplyHeaderNames()) + "\n" +
+		       CanonicalRow({
+		           { "sNATIVEID wMainID", std::to_string(mainId) },
+		           { "sNATIVEID wSubID", std::to_string(subId) },
+		           { "szNAME", "IMPACTS" },
+		           { "dwMAXLEVEL", "9" },
+		       }) + "\n" +
+		       ApplyRow(applyOverrides) + "\n";
+	}
+
+	MODERN_TEST(SkillTable_AnImpactIsRecoveredWithItsPerLevelValues)
+	{
+		// The loader must read `fADDON_VAR` into the SAME level index, or a
+		// damage-rate curve read one level off is still a plausible-looking
+		// number and nobody notices.
+		const Fixture fixture = { WriteFixture("skill-impact.csv",
+			SkillFileWithApply({
+				{ "emADDON1", "9" },
+				{ "fADDON_VAR 11", "0.05" },
+				{ "fADDON_VAR 12", "0.06" },
+				{ "fADDON_VAR 13", "0.07" },
+				{ "fADDON_VAR 14", "0.08" },
+				{ "fADDON_VAR 15", "0.09" },
+				{ "fADDON_VAR 16", "0.10" },
+				{ "fADDON_VAR 17", "0.11" },
+				{ "fADDON_VAR 18", "0.13" },
+				{ "fADDON_VAR 19", "0.15" },
+			})) };
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+		REQUIRE(loaded.IsOk());
+		CHECK_EQ(loaded.GetValue().impactsRecovered, static_cast<std::size_t>(1));
+		CHECK_EQ(loaded.GetValue().rejectedUnmappableImpactType,
+		         static_cast<std::size_t>(0));
+
+		const SkillDefinition* skill = provider.Find(SkillId{ 4, 5 });
+		REQUIRE(skill != nullptr);
+		REQUIRE(skill->impacts[0].IsValid());
+		// Legacy 9 is EMIMPACTA_DAMAGE_RATE, and modern 9 is DamageRate - the
+		// two agree exactly across 0..17.
+		CHECK(skill->impacts[0].type == PassiveImpactType::DamageRate);
+
+		const float expected[9] = { 0.05f, 0.06f, 0.07f, 0.08f, 0.09f,
+			                        0.10f, 0.11f, 0.13f, 0.15f };
+		for (int level = 1; level <= kMaxSkillLevel; ++level)
+		{
+			CHECK(skill->impacts[0].values[level] == expected[level - 1]);
+		}
+		// Index 0 is never written; legacy indexes from 1.
+		CHECK(skill->impacts[0].values[0] == 0.0f);
+
+		// Slots with no impact stay empty rather than becoming typed zeros.
+		for (int impact = 1; impact < kMaxSkillImpacts; ++impact)
+		{
+			CHECK(!skill->impacts[impact].IsValid());
+		}
+
+		// fBASIC_VAR is zero here, so the definition is valid ONLY because of
+		// the impact that was just recovered.
+		CHECK(skill->IsValid());
+	}
+
+	MODERN_TEST(SkillTable_AnEmptyImpactSlotIsNotRecorded)
+	{
+		// `emADDON` 0 is EMIMPACTA_NONE. Legacy skips those
+		// (GLChar.cpp:6543: `!= EMIMPACTA_NONE`), so recording them would add
+		// five typed entries to every skill.
+		const Fixture fixture = { WriteFixture("skill-noimpact.csv",
+			SkillFileWithApply({
+				{ "emADDON1", "0" },
+				{ "fADDON_VAR 11", "7.5" },
+			})) };
+
+		InMemorySkillDefinitions provider;
+		REQUIRE(LoadSkillCsv(fixture.path.string(), provider).IsOk());
+
+		const SkillDefinition* skill = provider.Find(SkillId{ 4, 5 });
+		REQUIRE(skill != nullptr);
+		for (const auto& impact : skill->impacts)
+		{
+			CHECK(!impact.IsValid());
+		}
+	}
+
+	MODERN_TEST(SkillTable_AnUnmappableImpactTypeIsCountedNotGuessed)
+	{
+		// Legacy 18..23 (CHANGESTATS, *_RECOVERY_VAR, CP values) have no
+		// modern name. Recording them as the nearest modern value would label a
+		// stat change as a critical rate, so the slot is left EMPTY and counted.
+		const Fixture fixture = { WriteFixture("skill-badimpact.csv",
+			SkillFileWithApply({
+				{ "emADDON1", "18" },
+				{ "fADDON_VAR 11", "5.0" },
+				{ "emADDON2", "9" },
+				{ "fADDON_VAR 21", "0.5" },
+			})) };
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+		REQUIRE(loaded.IsOk());
+
+		const SkillTableLoadResult& result = loaded.GetValue();
+		CHECK_EQ(result.rejectedUnmappableImpactType, static_cast<std::size_t>(1));
+		// Only the mappable slot was recovered.
+		CHECK_EQ(result.impactsRecovered, static_cast<std::size_t>(1));
+
+		const SkillDefinition* skill = provider.Find(SkillId{ 4, 5 });
+		REQUIRE(skill != nullptr);
+		CHECK(!skill->impacts[0].IsValid());   // the 18 slot is empty
+		REQUIRE(skill->impacts[1].IsValid());   // the 9 slot survived
+		CHECK(skill->impacts[1].type == PassiveImpactType::DamageRate);
+		CHECK(skill->impacts[1].values[1] == 0.5f);
+	}
+
+	MODERN_TEST(SkillTable_FAddonVar2IsNotRecovered)
+	{
+		// `fADDON_VAR2` exists in the export but has NO runtime consumer - only
+		// the authoring editor and the CSV writer reference it. It is therefore
+		// not read, and setting it must change nothing at all.
+		const Fixture fixture = { WriteFixture("skill-var2.csv",
+			SkillFileWithApply({
+				{ "emADDON1", "9" },
+				{ "fADDON_VAR 11", "0.25" },
+				{ "fADDON_VAR2 11", "99.5" },
+				{ "fADDON_VAR2 19", "-77.25" },
+			})) };
+
+		InMemorySkillDefinitions provider;
+		REQUIRE(LoadSkillCsv(fixture.path.string(), provider).IsOk());
+
+		const SkillDefinition* skill = provider.Find(SkillId{ 4, 5 });
+		REQUIRE(skill != nullptr);
+		REQUIRE(skill->impacts[0].IsValid());
+		CHECK(skill->impacts[0].values[1] == 0.25f);
+		CHECK(skill->impacts[0].values[9] == 0.0f);
+	}
+
+	MODERN_TEST(SkillTable_AMalformedImpactValueRefusesTheRow)
+	{
+		const Fixture fixture = { WriteFixture("skill-badimpactval.csv",
+			SkillFileWithApply({
+				{ "emADDON1", "9" },
+				{ "fADDON_VAR 13", "not-a-number" },
+			})) };
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+		REQUIRE(loaded.IsOk());
+		CHECK_EQ(loaded.GetValue().rejectedSapplyFieldCount,
+		         static_cast<std::size_t>(1));
+		CHECK_EQ(loaded.GetValue().impactsRecovered, static_cast<std::size_t>(0));
+	}
+
+	MODERN_TEST(SkillTable_AMissingImpactColumnRefusesTheFile)
+	{
+		std::vector<std::string> dropped = ApplyHeaderNames();
+		for (std::string& name : dropped)
+		{
+			if (name == "emADDON1")
+			{
+				name = "somethingElse";
+			}
+		}
+
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(dropped) + "\n" +
+			GoodRow(3, 3, "X") + "\n";
+
+		const Fixture fixture = { WriteFixture("skill-noaddoncol.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		CHECK(!LoadSkillCsv(fixture.path.string(), provider).IsOk());
+	}
+
+	MODERN_TEST(SkillImpact_TheEnumIsTranslatedAndRefusesLegacyEighteenPlus)
+	{
+		// Legacy and modern agree exactly for 0..17, so those are identity.
+		for (int value = 0; value <= 17; ++value)
+		{
+			PassiveImpactType mapped = PassiveImpactType::None;
+			CHECK(LegacyImpactTypeToModern(value, mapped));
+			CHECK_EQ(static_cast<int>(mapped), value);
+		}
+		CHECK(static_cast<int>(PassiveImpactType::Resist) == 17);
+
+		// Legacy 18 is CHANGESTATS, but modern 18 is CriticalRate. Casting
+		// would silently relabel it, so the conversion refuses instead.
+		PassiveImpactType mapped = PassiveImpactType::None;
+		CHECK(!LegacyImpactTypeToModern(18, mapped));
+		CHECK(mapped == PassiveImpactType::None);
+		for (int value = 18; value <= 23; ++value)
+		{
+			CHECK(!LegacyImpactTypeToModern(value, mapped));
+		}
+		CHECK(!LegacyImpactTypeToModern(-1, mapped));
+		CHECK(!LegacyImpactTypeToModern(999, mapped));
+	}
+	// ===========================================================================
 	// INTEGRATION: the real ASURA export
 	// ===========================================================================
 
@@ -978,6 +1209,12 @@ namespace ModernTests
 		CHECK_EQ(result.unpairedCanonical, static_cast<std::size_t>(0));
 		CHECK_EQ(result.rejectedUnpairedSapply, static_cast<std::size_t>(0));
 		CHECK_EQ(result.rejectedSapplyFieldCount, static_cast<std::size_t>(0));
+
+		// SKILL-003: every impact slot with a mappable type was recovered, and
+		// the 23 legacy types outside the modern vocabulary were counted and
+		// left empty rather than relabelled.
+		CHECK_EQ(result.impactsRecovered, static_cast<std::size_t>(535));
+		CHECK_EQ(result.rejectedUnmappableImpactType, static_cast<std::size_t>(23));
 		CHECK_EQ(result.duplicateIds, static_cast<std::size_t>(0));
 		CHECK_EQ(result.blankLines, static_cast<std::size_t>(0));
 		CHECK_EQ(result.Rejected(), static_cast<std::size_t>(0));
@@ -1043,11 +1280,25 @@ namespace ModernTests
 
 		// WHY `AddRecoveredBasic` STILL EXISTS
 		//
-		// 851 of the 1,139 skills carry a non-zero fBASIC_VAR and therefore
-		// satisfy the existing `IsValid()`. The other 288 do not - their effect
-		// lives in SIMPACTS or SSPECS, which this milestone deliberately does
-		// not read. So the special admission path is still required, and is not
-		// removable on this evidence.
+		// SKILL-003 recovered `SIMPACTS`, which moved 128 of the 288 incomplete
+		// skills over the line: 979 of 1,139 now satisfy the existing
+		// `IsValid()`. 160 still do not, and the milestone's own retirement rule
+		// is therefore NOT met.
+		//
+		// The 160 break down by cause, measured from the export rather than
+		// assumed to be one category:
+		//
+		//   137  have `SSPECS` but no impact and no basicVar
+		//    19  have neither impacts nor specs
+		//     4  have an impact, but only of a legacy type (18/19/22/23) with no
+		//        modern name, so nothing was recorded for it
+		//
+		// `IsValid()` also does not consult `specs` at all - it only looks at
+		// `basicVar` and `impacts` - so recovering the 137 would not help even
+		// if `SSPECS` could be represented. `PassiveSpecType` has only `None`,
+		// and legacy `SSPEC` carries fVAR1..4, dwFLAG and two SNATIVEIDs per
+		// level, which `SkillSpec` has no field for. Representing it would be
+		// lossy and invented.
 		//
 		// Counted through the provider by walking the id space, since the
 		// provider exposes lookup rather than iteration.
@@ -1070,8 +1321,55 @@ namespace ModernTests
 			}
 		}
 		CHECK_EQ(present, static_cast<std::size_t>(1139));
-		CHECK_EQ(fullyValid, static_cast<std::size_t>(851));
+		CHECK_EQ(fullyValid, static_cast<std::size_t>(979));
+		CHECK_EQ(present - fullyValid, static_cast<std::size_t>(160));
 		CHECK(fullyValid < present);
+
+		// Of the 160 that remain invalid, NONE carries a recovered impact -
+		// so the gap is not a mapping failure in this milestone. Each is
+		// invalid because legacy gave it neither a basicVar nor an impact the
+		// modern model can name.
+		std::size_t invalidWithImpact = 0;
+		for (uint16_t main = 0; main <= 53; ++main)
+		{
+			for (uint16_t sub = 0; sub <= 79; ++sub)
+			{
+				const SkillDefinition* found = provider.Find(SkillId{ main, sub });
+				if (found == nullptr || found->IsValid())
+				{
+					continue;
+				}
+				for (const auto& impact : found->impacts)
+				{
+					if (impact.IsValid())
+					{
+						++invalidWithImpact;
+						break;
+					}
+				}
+			}
+		}
+		CHECK_EQ(invalidWithImpact, static_cast<std::size_t>(0));
+
+		// SKILL-003 golden records, read from the export. (3,3) carries a
+		// constant impact curve and (4,3) a rising one, so both a level shift
+		// and a slot shift are caught.
+		const SkillDefinition* flatImpact = provider.Find(SkillId{ 3, 3 });
+		REQUIRE(flatImpact != nullptr);
+		REQUIRE(flatImpact->impacts[0].IsValid());
+		CHECK(flatImpact->impacts[0].type == PassiveImpactType::DamageRate);
+		CHECK(flatImpact->impacts[0].values[1] == 0.25f);
+		CHECK(flatImpact->impacts[0].values[9] == 0.25f);
+		CHECK(flatImpact->IsValid());
+
+		const SkillDefinition* risingImpact = provider.Find(SkillId{ 4, 3 });
+		REQUIRE(risingImpact != nullptr);
+		REQUIRE(risingImpact->impacts[0].IsValid());
+		CHECK(risingImpact->impacts[0].type == PassiveImpactType::DefenseRate);
+		CHECK(risingImpact->impacts[0].values[1] == 0.05f);
+		CHECK(risingImpact->impacts[0].values[5] == 0.09f);
+		CHECK(risingImpact->impacts[0].values[9] == 0.15f);
+		CHECK(risingImpact->IsValid());
 
 		// And the ids are unique across the recovered set, which is the
 		// collision property the identity model promises.
