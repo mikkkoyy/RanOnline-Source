@@ -302,6 +302,34 @@ namespace Modern
 		}
 	}
 
+	// SKILL-013: a recovered spec type's value into its contribution field.
+	//
+	// Mirrors `AddImpactToContribution` but WITHOUT an int cast: legacy adds
+	// `sSPEC.fVAR1` straight into a float accumulator
+	// (GLogixExPC.cpp:1093, :1142, :1147) and truncates only later, at the
+	// consumer. An unsupported or empty type matches no case and leaves the
+	// contribution untouched, which is what keeps the slots the loader
+	// refused genuinely inert.
+	void AddSpecToContribution(Stats::PassiveContribution& c,
+	                           PassiveSpecType type, float value)
+	{
+		switch (type)
+		{
+		case PassiveSpecType::TarRange:
+			c.tarRange += value;
+			break;
+		case PassiveSpecType::ChangeAttackRange:
+			c.skillAttackRange += value;
+			break;
+		case PassiveSpecType::ChangeApplyRange:
+			c.skillApplyRange += value;
+			break;
+		default:
+			// PassiveSpecType::None, and any spec type the loader refused.
+			break;
+		}
+	}
+
 	Result<PassiveContributionResult> PassiveContributionAggregator::Aggregate(
 		const SkillState& skills,
 		const SkillDefinitionProvider& provider,
@@ -374,9 +402,36 @@ namespace Modern
 				}
 			}
 
-			// Process specs. Currently no specs feed the stat pipeline.
-			// If we add specs that do, handle them here.
-			(void)def->specs;
+			// SKILL-013: the three range specs.
+			//
+			// Legacy GLogixExPC.cpp:1082-1148 walks ALL `MAX_SPEC` slots of
+			// `m_sAPPLY.sSpecs` and, for each, reads
+			// `sSpecs[nSpec].sSPEC[sCharSkill.wLevel].fVAR1` - the LEARNED
+			// level, not level 1 and not a flat value. There is no
+			// `isPhysicalLongRange` or `affectsEnemy` test here: those
+			// conditions gate CONSUMPTION in SkillTargetRange/SkillApplyRange,
+			// not accumulation, so applying them here would drop bonuses
+			// legacy keeps.
+			//
+			// Accumulation is `+=` with no cast and no clamp, so a negative
+			// range spec reduces the bonus exactly as legacy does.
+			//
+			// Every slot is visited - a character may carry more than one of
+			// these types, and the relevant one is not guaranteed to be slot
+			// zero. Slots the loader left empty are inert because
+			// `PassiveSpecType::None` matches no case.
+			for (const SkillSpec& spec : def->specs)
+			{
+				if (!spec.IsValid())
+				{
+					continue;
+				}
+				// A zero value at the learned level contributes nothing but is
+				// still added, so the result is identical either way and no
+				// special case is needed for it.
+				AddSpecToContribution(result.contribution, spec.type,
+				                      spec.values[level]);
+			}
 		}
 
 		return result;

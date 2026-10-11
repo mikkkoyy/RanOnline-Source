@@ -262,6 +262,28 @@ namespace Modern::Stats
 		float damageReflection = 0.0f;
 		float damageReflectionRate = 0.0f;
 
+		// SKILL-013: skill range bonuses from learned passive skills.
+		//
+		// Legacy: `m_sSUM_PASSIVE.m_fTARRANGE` (GLogixExPC.cpp:1093),
+		// `m_fSUM_SKILL_ATTACKRANGE` (:1142) and `m_fSUM_SKILL_APPLYRANGE`
+		// (:1147). Each is accumulated as `+= sSPEC.fVAR1` with NO cast -
+		// unlike the impact fields above, which truncate to int32 at this
+		// point. These stay `float` for exactly that reason: legacy truncates
+		// only at the consumer, inside SkillTargetRange/SkillApplyRange, so
+		// truncating here would lose fractions.
+		//
+		// These are BONUSES added to a reach, not distances. The export's
+		// range specs are mostly NEGATIVE reductions (SKILL-011: 50 skills),
+		// so sign is preserved rather than clamped.
+		//
+		// NOT consumed by anything yet. Nothing in DerivedStats,
+		// CombatStatsProvider, AttackService or the world reads these, and
+		// the granted-skill and buff paths that complete the legacy total are
+		// still unrepresented. See skills/SkillRange.h.
+		float tarRange = 0.0f;
+		float skillAttackRange = 0.0f;
+		float skillApplyRange = 0.0f;
+
 		constexpr bool operator==(const PassiveContribution& other) const noexcept
 		{
 			return hp == other.hp && mp == other.mp && sp == other.sp &&
@@ -277,7 +299,10 @@ namespace Modern::Stats
 			       crushingBlow == other.crushingBlow &&
 			       damageReduce == other.damageReduce &&
 			       damageReflection == other.damageReflection &&
-			       damageReflectionRate == other.damageReflectionRate;
+			       damageReflectionRate == other.damageReflectionRate &&
+			       tarRange == other.tarRange &&
+			       skillAttackRange == other.skillAttackRange &&
+			       skillApplyRange == other.skillApplyRange;
 		}
 	};
 

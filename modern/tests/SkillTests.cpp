@@ -836,3 +836,358 @@ MODERN_TEST(PassiveAggregator_DoesNotMutateItsInputs)
 	CHECK(equipment.Get(EquipmentSlot::RightHand).item == rightHandBefore.item);
 	CHECK_EQ(equipment.GetOccupiedCount(), static_cast<size_t>(1));
 }
+
+// ===========================================================================
+// SKILL-013: passive skill range specs
+//
+// Legacy GLogixExPC.cpp SUM_PASSIVE() at :1082-1148:
+//
+//   for (nSpec = 0; nSpec < MAX_SPEC; ++nSpec) {
+//     const SSPEC &sSPEC = pSkill->m_sAPPLY.sSpecs[nSpec]
+//                                       .sSPEC[sCharSkill.wLevel];
+//     switch (pSkill->m_sAPPLY.sSpecs[nSpec].emSPEC) {
+//     case EMSPECA_TARRANGE:
+//       m_sSUM_PASSIVE.m_fTARRANGE += sSPEC.fVAR1;              break;
+//     case EMSPECA_CHANGE_ATTACK_RANGE:
+//       m_sSUM_PASSIVE.m_fSUM_SKILL_ATTACKRANGE += sSPEC.fVAR1; break;
+//     case EMSPECA_CHANGE_APPLY_RANGE:
+//       m_sSUM_PASSIVE.m_fSUM_SKILL_APPLYRANGE += sSPEC.fVAR1;  break;
+//     } }
+//
+// Three properties the tests below pin one at a time: the value is read at
+// the LEARNED level, accumulation is `+=` with no cast and no clamp, and
+// there is NO isPhysicalLongRange or affectsEnemy test here - those gate
+// CONSUMPTION in SkillTargetRange/SkillApplyRange, not accumulation.
+// ===========================================================================
+
+// A passive carrying one spec in a chosen slot. File scope, like the helpers
+// above, so it shares MakeHpSkill and Id.
+static SkillDefinition MakeRangeSpecSkill(uint16_t skillIndex,
+                                          PassiveSpecType type,
+                                          uint8_t slot,
+                                          float value)
+{
+	// The 1.0f basicVar is not what these tests are about. It is here so the
+	// definition is ADMISSIBLE: `InMemorySkillDefinitions::Add` validates
+	// through `SkillDefinition::IsValid`, which requires a non-zero basicVar
+	// or impact and - as of SKILL-012 data - does not yet consider specs.
+	// A real passive such as (38,1) is spec-only and would need that widened
+	// before it could be registered through this provider; that is reported
+	// rather than worked around here. No assertion below reads `hp`.
+	SkillDefinition def = MakeHpSkill(skillIndex, 1.0f);
+	def.specs[slot].type      = type;
+	def.specs[slot].values[1] = value;
+	return def;
+}
+
+MODERN_TEST(PassiveAggregator_EachRangeSpecTypeLandsInItsOwnField)
+{
+	// One skill per type. A single skill carrying all three would let a
+	// swapped field pair cancel out and still pass.
+	InMemorySkillDefinitions provider;
+	{
+		SkillDefinition a = MakeRangeSpecSkill(1, PassiveSpecType::TarRange, 0, 15.0f);
+		SkillDefinition b = MakeRangeSpecSkill(2, PassiveSpecType::ChangeAttackRange, 0, -260.0f);
+		SkillDefinition c = MakeRangeSpecSkill(3, PassiveSpecType::ChangeApplyRange, 0, -10.0f);
+		CHECK(provider.Add(a).IsOk());
+		CHECK(provider.Add(b).IsOk());
+		CHECK(provider.Add(c).IsOk());
+	}
+
+	SkillState skills;
+	CHECK(skills.LearnSkill(Id(1)).IsOk());
+	CHECK(skills.LearnSkill(Id(2)).IsOk());
+	CHECK(skills.LearnSkill(Id(3)).IsOk());
+	EquipmentState equipment;
+
+	const Stats::PassiveContribution& c =
+		PassiveContributionAggregator::Aggregate(skills, provider, equipment)
+			.GetValue().contribution;
+
+	CHECK_EQ(c.tarRange, 15.0f);
+	CHECK_EQ(c.skillAttackRange, -260.0f);
+	CHECK_EQ(c.skillApplyRange, -10.0f);
+}
+
+MODERN_TEST(PassiveAggregator_RangeSpecValueIsReadForTheLearnedLevel)
+{
+	// The most important property here. Legacy indexes
+	// `sSpecs[nSpec].sSPEC[sCharSkill.wLevel]`, so a level-1 read, a level-9
+	// read, or "first non-zero level" would all pass a single-level test.
+	SkillDefinition def = MakeHpSkill(1, 1.0f, 3);  // basicVar for admission, see above
+	def.specs[0].type = PassiveSpecType::TarRange;
+	def.specs[0].values[1] = -40.0f;
+	def.specs[0].values[2] = 55.0f;
+	def.specs[0].values[3] = 70.0f;
+
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(def).IsOk());
+
+	SkillState skills;
+	CHECK(skills.LearnSkill(Id(1)).IsOk());
+	EquipmentState equipment;
+
+	const auto at = [&]()
+	{
+		return PassiveContributionAggregator::Aggregate(skills, provider, equipment)
+			.GetValue().contribution.tarRange;
+	};
+
+	CHECK_EQ(at(), -40.0f);
+	CHECK(skills.SetSkillLevel(Id(1), 2).IsOk());
+	CHECK_EQ(at(), 55.0f);
+	CHECK(skills.SetSkillLevel(Id(1), 3).IsOk());
+	CHECK_EQ(at(), 70.0f);
+}
+
+MODERN_TEST(PassiveAggregator_AllFiveSpecSlotsAreVisited)
+{
+	// Legacy loops every MAX_SPEC slot, and the relevant type is not
+	// guaranteed to be slot zero. Slot 4 is the discriminating case.
+	SkillDefinition def = MakeHpSkill(1, 1.0f);  // basicVar for admission, see above
+	def.specs[0].type = PassiveSpecType::TarRange;          def.specs[0].values[1] = 1.0f;
+	def.specs[1].type = PassiveSpecType::TarRange;          def.specs[1].values[1] = 2.0f;
+	def.specs[2].type = PassiveSpecType::ChangeAttackRange; def.specs[2].values[1] = 4.0f;
+	def.specs[3].type = PassiveSpecType::ChangeApplyRange;  def.specs[3].values[1] = 8.0f;
+	def.specs[4].type = PassiveSpecType::TarRange;          def.specs[4].values[1] = 16.0f;
+
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(def).IsOk());
+
+	SkillState skills;
+	CHECK(skills.LearnSkill(Id(1)).IsOk());
+	EquipmentState equipment;
+
+	const Stats::PassiveContribution& c =
+		PassiveContributionAggregator::Aggregate(skills, provider, equipment)
+			.GetValue().contribution;
+
+	// 1 + 2 + 16 into tarRange, not just slot zero's 1.
+	CHECK_EQ(c.tarRange, 19.0f);
+	CHECK_EQ(c.skillAttackRange, 4.0f);
+	CHECK_EQ(c.skillApplyRange, 8.0f);
+}
+
+MODERN_TEST(PassiveAggregator_RangeSpecsFromSeveralSkillsStackAdditively)
+{
+	// Legacy `+=` across every learned passive, so two skills carrying the
+	// same type must sum rather than overwrite.
+	InMemorySkillDefinitions provider;
+	{
+		SkillDefinition a = MakeRangeSpecSkill(1, PassiveSpecType::ChangeAttackRange, 0, -260.0f);
+		SkillDefinition b = MakeRangeSpecSkill(2, PassiveSpecType::ChangeAttackRange, 0, 100.0f);
+		CHECK(provider.Add(a).IsOk());
+		CHECK(provider.Add(b).IsOk());
+	}
+
+	SkillState skills;
+	CHECK(skills.LearnSkill(Id(1)).IsOk());
+	CHECK(skills.LearnSkill(Id(2)).IsOk());
+	EquipmentState equipment;
+
+	CHECK_EQ(PassiveContributionAggregator::Aggregate(skills, provider, equipment)
+		.GetValue().contribution.skillAttackRange, -160.0f);
+}
+
+MODERN_TEST(PassiveAggregator_RangeSpecSignsArePreservedNotClamped)
+{
+	// The export's range specs are mostly NEGATIVE reductions (SKILL-011),
+	// so clamping at zero here would silently erase most of the table.
+	InMemorySkillDefinitions provider;
+	{
+		SkillDefinition neg = MakeRangeSpecSkill(1, PassiveSpecType::TarRange, 0, -700.0f);
+		SkillDefinition pos = MakeRangeSpecSkill(2, PassiveSpecType::TarRange, 0, 5.0f);
+		CHECK(provider.Add(neg).IsOk());
+		CHECK(provider.Add(pos).IsOk());
+	}
+
+	SkillState skills;
+	CHECK(skills.LearnSkill(Id(1)).IsOk());
+	CHECK(skills.LearnSkill(Id(2)).IsOk());
+	EquipmentState equipment;
+
+	CHECK_EQ(PassiveContributionAggregator::Aggregate(skills, provider, equipment)
+		.GetValue().contribution.tarRange, -695.0f);
+}
+
+MODERN_TEST(PassiveAggregator_EmptyAndUnsupportedSpecSlotsStayInert)
+{
+	// Slots the loader left empty carry PassiveSpecType::None. The negative
+	// assertions prove aggregation is driven by the TYPE, not by the presence
+	// of a value - a big value under a None type must not leak anywhere.
+	SkillDefinition def = MakeHpSkill(1, 1.0f);
+	def.specs[0].values[1] = 999.0f;   // type stays None
+	def.specs[1].type      = PassiveSpecType::None;
+	def.specs[1].values[1] = -999.0f;
+
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(def).IsOk());
+
+	SkillState skills;
+	CHECK(skills.LearnSkill(Id(1)).IsOk());
+	EquipmentState equipment;
+
+	const Stats::PassiveContribution& c =
+		PassiveContributionAggregator::Aggregate(skills, provider, equipment)
+			.GetValue().contribution;
+
+	CHECK_EQ(c.tarRange, 0.0f);
+	CHECK_EQ(c.skillAttackRange, 0.0f);
+	CHECK_EQ(c.skillApplyRange, 0.0f);
+}
+
+MODERN_TEST(PassiveAggregator_CharacterWithNoRangeSpecsKeepsZeroRangeValues)
+{
+	// The default case stays zero rather than being initialised to something
+	// that looks like a real bonus.
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(MakeHpSkill(1, 150.0f)).IsOk());
+
+	SkillState skills;
+	CHECK(skills.LearnSkill(Id(1)).IsOk());
+	EquipmentState equipment;
+
+	const Stats::PassiveContribution& c =
+		PassiveContributionAggregator::Aggregate(skills, provider, equipment)
+			.GetValue().contribution;
+
+	CHECK_EQ(c.hp, 150);
+	CHECK_EQ(c.tarRange, 0.0f);
+	CHECK_EQ(c.skillAttackRange, 0.0f);
+	CHECK_EQ(c.skillApplyRange, 0.0f);
+}
+
+MODERN_TEST(PassiveAggregator_WeaponRequirementAlsoGatesRangeSpecs)
+{
+	// Legacy checks emUSE_LITEM/emUSE_RITEM before the spec loop
+	// (GLogixExPC.cpp:892-914), so a passive whose requirement is unmet
+	// contributes no range bonus - not even a negative one.
+	SkillDefinition def = MakeRangeSpecSkill(1, PassiveSpecType::TarRange, 0, -400.0f);
+	def.leftWeapon = SkillWeaponType::Shield;
+
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(def).IsOk());
+
+	SkillState skills;
+	CHECK(skills.LearnSkill(Id(1)).IsOk());
+
+	// Nothing in the left hand: inactive, and no error.
+	EquipmentState empty;
+	CHECK_EQ(PassiveContributionAggregator::Aggregate(skills, provider, empty)
+		.GetValue().contribution.tarRange, 0.0f);
+
+	// Satisfying the requirement lets it through, which shows the gate - not
+	// a silent drop - is what excluded it.
+	EquipmentState worn;
+	CHECK(worn.Equip(EquipmentSlot::LeftHand, MakeInstance(1)).IsOk());
+	CHECK_EQ(PassiveContributionAggregator::Aggregate(skills, provider, worn)
+		.GetValue().contribution.tarRange, -400.0f);
+}
+
+MODERN_TEST(PassiveAggregator_RebuildingTheContributionDoesNotDoubleCount)
+{
+	// Aggregation must rebuild from the learned set every call. Accumulating
+	// onto a stored total would double it on the second call, which is the
+	// failure legacy avoids by resetting `m_sSUM_PASSIVE = SPASSIVE_SKILL_DATA()`
+	// at GLogixExPC.cpp:865.
+	InMemorySkillDefinitions provider;
+	{
+		SkillDefinition a = MakeRangeSpecSkill(1, PassiveSpecType::TarRange, 0, 25.0f);
+		SkillDefinition b = MakeRangeSpecSkill(2, PassiveSpecType::TarRange, 0, -10.0f);
+		CHECK(provider.Add(a).IsOk());
+		CHECK(provider.Add(b).IsOk());
+	}
+
+	SkillState skills;
+	CHECK(skills.LearnSkill(Id(1)).IsOk());
+	CHECK(skills.LearnSkill(Id(2)).IsOk());
+	EquipmentState equipment;
+
+	const auto total = [&]()
+	{
+		return PassiveContributionAggregator::Aggregate(skills, provider, equipment)
+			.GetValue().contribution.tarRange;
+	};
+
+	CHECK_EQ(total(), 15.0f);
+	CHECK_EQ(total(), 15.0f);
+	CHECK_EQ(total(), 15.0f);
+
+	// Learning order must not matter either.
+	SkillState reversed;
+	CHECK(reversed.LearnSkill(Id(2)).IsOk());
+	CHECK(reversed.LearnSkill(Id(1)).IsOk());
+	CHECK_EQ(PassiveContributionAggregator::Aggregate(reversed, provider, equipment)
+		.GetValue().contribution.tarRange, 15.0f);
+}
+
+MODERN_TEST(PassiveAggregator_ImpactAggregationIsUnaffectedByRangeSpecs)
+{
+	// The pre-existing impact path must keep working alongside the new one,
+	// and the two must not share a field.
+	SkillDefinition def = MakeHpSkill(1, 200.0f);
+	def.impacts[0].type      = PassiveImpactType::Pa;
+	def.impacts[0].values[1] = 5.0f;
+	def.specs[0].type        = PassiveSpecType::ChangeAttackRange;
+	def.specs[0].values[1]   = -700.0f;
+
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(def).IsOk());
+
+	SkillState skills;
+	CHECK(skills.LearnSkill(Id(1)).IsOk());
+	EquipmentState equipment;
+
+	const Result<PassiveContributionResult> aggregated =
+		PassiveContributionAggregator::Aggregate(skills, provider, equipment);
+	REQUIRE(aggregated.IsOk());
+
+	const Stats::PassiveContribution& c = aggregated.GetValue().contribution;
+	CHECK_EQ(c.hp, 200);
+	CHECK_EQ(c.meleePower, 5);
+	CHECK_EQ(c.skillAttackRange, -700.0f);
+	CHECK_EQ(aggregated.GetValue().contributingSkills, static_cast<size_t>(1));
+
+	// And a spec does not by itself make a skill "contributing". This uses
+	// DirectProvider so the definition can bypass `Add`'s admission check,
+	// which is the only way to present a genuinely spec-only passive - the
+	// shape of the real skill (38,1).
+	DirectProvider direct;
+	direct.definition = MakeHpSkill(2, 0.0f);
+	direct.definition.specs[0].type      = PassiveSpecType::TarRange;
+	direct.definition.specs[0].values[1] = 5.0f;
+
+	SkillState skills2;
+	CHECK(skills2.LearnSkill(Id(2)).IsOk());
+
+	const Result<PassiveContributionResult> specOnly =
+		PassiveContributionAggregator::Aggregate(skills2, direct, equipment);
+	REQUIRE(specOnly.IsOk());
+	CHECK_EQ(specOnly.GetValue().contribution.tarRange, 5.0f);
+	CHECK_EQ(specOnly.GetValue().contributingSkills, static_cast<size_t>(0));
+}
+
+MODERN_TEST(PassiveAggregator_ContributionEqualitySeesRangeValues)
+{
+	// `operator==` must compare the new fields. If it did not, two
+	// contributions differing only in range would compare equal and the
+	// no-double-count property above could not be trusted.
+	Stats::PassiveContribution a;
+	Stats::PassiveContribution b;
+	CHECK(a == b);
+
+	b.skillAttackRange = 1.0f;
+	CHECK(!(a == b));
+
+	Stats::PassiveContribution c;
+	c.skillAttackRange = 1.0f;
+	CHECK(b == c);
+
+	Stats::PassiveContribution d;
+	d.tarRange = -1.0f;
+	CHECK(!(a == d));
+
+	Stats::PassiveContribution e;
+	e.skillApplyRange = -1.0f;
+	CHECK(!(a == e));
+}
