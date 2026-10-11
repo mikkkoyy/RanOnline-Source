@@ -1191,3 +1191,138 @@ MODERN_TEST(PassiveAggregator_ContributionEqualitySeesRangeValues)
 	e.skillApplyRange = -1.0f;
 	CHECK(!(a == e));
 }
+
+// ===========================================================================
+// SKILL-014: definition validity honours specs
+//
+// `SkillDefinition::IsValid` always claimed, in its own comment, that a
+// definition needs "at least one level has non-zero basicVar or
+// impacts/specs" - but only the first two were consulted. Two real
+// definitions in the export are rejected because of it; both carry
+// EMSPECA_CHANGE_ATTACK_RANGE and nothing else the model can name:
+// (34,3) at -700 and (34,39) at -200.
+//
+// NOTE ON THE OBVIOUS CANDIDATE: skill (38,1) / SN_038_001 has a spec of
+// +4 and a zero basicVar, so it looks like a spec-only definition. It is
+// NOT - it carries emADDON1 = 13 (EMIMPACTA_MA) with non-zero per-level
+// values, so it was already valid before SKILL-014. The tests below pin the
+// genuine cases and pin (38,1) as already-valid, so the distinction cannot
+// be re-introduced.
+// ===========================================================================
+
+// A definition with nothing but a spec, which is what the fix must accept.
+static SkillDefinition MakeSpecOnlySkill(uint16_t skillIndex,
+                                         PassiveSpecType type,
+                                         float value)
+{
+	SkillDefinition def;
+	def.id       = Id(skillIndex);
+	def.name     = "SpecOnly" + std::to_string(skillIndex);
+	def.maxLevel = 9;
+	def.applyType = PassiveApplyType::Hp;
+	// Every basic value stays 0 and every impact stays empty.
+	def.specs[0].type      = type;
+	def.specs[0].values[1] = value;
+	return def;
+}
+
+MODERN_TEST(SkillDefinition_ASpecOnlyDefinitionIsValid)
+{
+	// The headline case: no non-zero basicVar at any level, no impacts, and a
+	// recognised non-zero spec.
+	const SkillDefinition def =
+		MakeSpecOnlySkill(1, PassiveSpecType::ChangeAttackRange, -700.0f);
+
+	CHECK(def.specs[0].IsValid());
+	CHECK(def.IsValid());
+
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(def).IsOk());
+
+	const SkillDefinition* stored = provider.Find(Id(1));
+	REQUIRE(stored != nullptr);
+	CHECK_EQ(stored->specs[0].type, PassiveSpecType::ChangeAttackRange);
+	CHECK(stored->specs[0].values[1] == -700.0f);
+}
+
+MODERN_TEST(SkillDefinition_EachRecognisedSpecTypeCanCarryAValidDefinition)
+{
+	for (const PassiveSpecType type : { PassiveSpecType::TarRange,
+		                                 PassiveSpecType::ChangeAttackRange,
+		                                 PassiveSpecType::ChangeApplyRange })
+	{
+		SkillDefinition def;
+		def.id       = Id(1);
+		def.name     = "T";
+		def.maxLevel = 1;
+		def.specs[2].type      = type;
+		def.specs[2].values[1] = 4.0f;
+		CHECK(def.IsValid());
+	}
+}
+
+MODERN_TEST(SkillDefinition_AnEmptySpecWithValuesDoesNotMakeADefinitionValid)
+{
+	// Rule 3: a None/empty slot is not a contribution, however many numbers
+	// its value array happens to hold.
+	SkillDefinition def;
+	def.id       = Id(1);
+	def.name     = "EMPTYSPEC";
+	def.maxLevel = 9;
+	def.specs[0].values[1] = 999.0f;
+	def.specs[1].values[1] = -999.0f;
+	def.specs[4].values[3] = 42.0f;
+
+	CHECK(!def.specs[0].IsValid());
+	CHECK(!def.IsValid());
+	CHECK(!InMemorySkillDefinitions().Add(def).IsOk());
+}
+
+MODERN_TEST(SkillDefinition_ARecognisedSpecWithAllZeroValuesIsNotValidAlone)
+{
+	// The recognised type is necessary but not sufficient: the value loop
+	// still has to find something, so a spec the loader kept but whose levels
+	// are all zero cannot carry a definition on its own.
+	SkillDefinition def;
+	def.id       = Id(1);
+	def.name     = "ZEROSPEC";
+	def.maxLevel = 9;
+	def.specs[0].type = PassiveSpecType::TarRange;   // recognised
+	// every value stays 0
+
+	CHECK(def.specs[0].IsValid());
+	CHECK(!def.IsValid());
+}
+
+MODERN_TEST(SkillDefinition_AZeroValuedSpecDoesNotHideAnAlreadyValidDefinition)
+{
+	// Rule 5, the other direction: adding a zero spec must not disturb a
+	// definition that is already valid through its basic values.
+	SkillDefinition def = MakeHpSkill(1, 200.0f);
+	def.specs[0].type = PassiveSpecType::TarRange;   // recognised, zero values
+	CHECK(def.IsValid());
+
+	SkillDefinition viaImpact = MakeHpSkill(2, 0.0f);
+	viaImpact.impacts[0].type      = PassiveImpactType::Pa;
+	viaImpact.impacts[0].values[1] = 5.0f;
+	viaImpact.specs[0].type        = PassiveSpecType::TarRange;
+	CHECK(viaImpact.IsValid());
+}
+
+MODERN_TEST(SkillDefinition_BasicAndImpactValidityIsUnchanged)
+{
+	// Rule 5 again, stated directly: the pre-existing routes still work on
+	// their own.
+	SkillDefinition viaBasic = MakeHpSkill(1, 300.0f);
+	CHECK(viaBasic.IsValid());
+	CHECK_EQ(viaBasic.specs[0].type, PassiveSpecType::None);
+
+	SkillDefinition viaImpact = MakeHpSkill(2, 0.0f);
+	viaImpact.impacts[0].type      = PassiveImpactType::Defense;
+	viaImpact.impacts[0].values[1] = 12.0f;
+	CHECK(viaImpact.IsValid());
+
+	// And an all-zero basicVar with an all-zero impact is still invalid.
+	SkillDefinition empty = MakeHpSkill(3, 0.0f);
+	CHECK(!empty.IsValid());
+}

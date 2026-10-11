@@ -1317,12 +1317,16 @@ namespace ModernTests
 		//     4  have an impact, but only of a legacy type (18/19/22/23) with no
 		//        modern name, so nothing was recorded for it
 		//
-		// `IsValid()` also does not consult `specs` at all - it only looks at
-		// `basicVar` and `impacts` - so recovering the 137 would not help even
-		// if `SSPECS` could be represented. `PassiveSpecType` has only `None`,
-		// and legacy `SSPEC` carries fVAR1..4, dwFLAG and two SNATIVEIDs per
-		// level, which `SkillSpec` has no field for. Representing it would be
-		// lossy and invented.
+		// SKILL-014: `IsValid()` now also consults `specs`, so recovering the
+		// SPECS table (SKILL-012) makes two definitions valid that were
+		// previously rejected. Both are `EMSPECA_CHANGE_ATTACK_RANGE` with no
+		// non-zero basicVar at any level and no recovered impact:
+		// (34,3) at -700 and (34,39) at -200.
+		//
+		// The remaining gap is still not a mapping failure. `SkillSpec` carries
+		// only fVAR1, while legacy `SSPEC` also has fVAR2..4, dwFLAG and two
+		// SNATIVEIDs per level; those are unrepresented, and the other EMSPECA
+		// types the export carries are counted as unmappable.
 		//
 		// Counted through the provider by walking the id space, since the
 		// provider exposes lookup rather than iteration.
@@ -1345,15 +1349,20 @@ namespace ModernTests
 			}
 		}
 		CHECK_EQ(present, static_cast<std::size_t>(1139));
-		CHECK_EQ(fullyValid, static_cast<std::size_t>(979));
-		CHECK_EQ(present - fullyValid, static_cast<std::size_t>(160));
+		// SKILL-014 moved this from 979. The delta is pinned against the export
+		// by SkillTable_TheRealExportHasExactlyTwoSpecOnlyDefinitions below.
+		CHECK_EQ(fullyValid, static_cast<std::size_t>(981));
+		CHECK_EQ(present - fullyValid, static_cast<std::size_t>(158));
 		CHECK(fullyValid < present);
 
-		// Of the 160 that remain invalid, NONE carries a recovered impact -
-		// so the gap is not a mapping failure in this milestone. Each is
-		// invalid because legacy gave it neither a basicVar nor an impact the
-		// modern model can name.
+		// Of the 158 that remain invalid, NONE carries a recovered impact AND
+		// NONE carries a recognised spec with a non-zero value - so the gap is
+		// not a mapping failure in this milestone. Each is invalid because
+		// legacy gave it neither a basicVar nor an impact the modern model can
+		// name, and any spec it carries is a type the vocabulary does not
+		// represent.
 		std::size_t invalidWithImpact = 0;
+		std::size_t invalidWithSpec = 0;
 		for (uint16_t main = 0; main <= 53; ++main)
 		{
 			for (uint16_t sub = 0; sub <= 79; ++sub)
@@ -1371,9 +1380,28 @@ namespace ModernTests
 						break;
 					}
 				}
+				// The mirror of the fix: nothing still-invalid may qualify
+				// through a recognised spec, or the count above is wrong.
+				for (const auto& spec : found->specs)
+				{
+					if (!spec.IsValid())
+					{
+						continue;
+					}
+					for (uint8_t lvl = 1; lvl <= found->maxLevel; ++lvl)
+					{
+						if (spec.values[lvl] != 0.0f)
+						{
+							++invalidWithSpec;
+							break;
+						}
+					}
+					break;
+				}
 			}
 		}
 		CHECK_EQ(invalidWithImpact, static_cast<std::size_t>(0));
+		CHECK_EQ(invalidWithSpec, static_cast<std::size_t>(0));
 
 		// SKILL-003 golden records, read from the export. (3,3) carries a
 		// constant impact curve and (4,3) a rising one, so both a level shift
@@ -1985,4 +2013,108 @@ namespace ModernTests
 		CHECK(unrepresented->specs[1].type == PassiveSpecType::None);
 	}
 
+	// ===========================================================================
+	// SKILL-014: the two definitions the validity fix actually rescues
+	// ===========================================================================
+
+	MODERN_TEST(SkillTable_TheRealExportHasExactlyTwoSpecOnlyDefinitions)
+	{
+		// Corroborates the 979 -> 981 count asserted above, and pins WHICH
+		// definitions they are so the delta cannot be accidental.
+		std::error_code code;
+		const std::filesystem::path csv =
+		    "D:/FILES/project/RanOnline-Build/ASURA CLIENT/data/glogic/Skill.csv";
+		if (!std::filesystem::is_regular_file(csv, code))
+		{
+			std::printf("      SKIPPED the real export: ASURA Skill.csv not found\n");
+			return;
+		}
+
+		InMemorySkillDefinitions provider;
+		REQUIRE(LoadSkillCsv(csv.string(), provider).IsOk());
+
+		struct Expected { uint16_t main; uint16_t sub; float value; };
+		const Expected rescued[] = {
+			{ 34, 3, -700.0f },
+			{ 34, 39, -200.0f },
+		};
+
+		std::size_t specOnly = 0;
+		for (const Expected& e : rescued)
+		{
+			const SkillDefinition* def = provider.Find(SkillId{ e.main, e.sub });
+			REQUIRE(def != nullptr);
+
+			// The spec is recognised, with the value the export carries.
+			bool found = false;
+			for (const auto& spec : def->specs)
+			{
+				if (spec.type == PassiveSpecType::ChangeAttackRange)
+				{
+					CHECK(spec.values[1] == e.value);
+					found = true;
+				}
+			}
+			REQUIRE(found);
+
+			// And nothing else in the model could have carried it.
+			bool hasBasic = false;
+			for (int lvl = 1; lvl <= def->maxLevel; ++lvl)
+			{
+				if (def->levelData[lvl].basicVar != 0.0f) { hasBasic = true; }
+			}
+			bool hasImpact = false;
+			for (const auto& impact : def->impacts)
+			{
+				if (impact.IsValid()) { hasImpact = true; }
+			}
+			CHECK(!hasBasic);
+			CHECK(!hasImpact);
+
+			CHECK(def->IsValid());
+			++specOnly;
+		}
+		CHECK_EQ(specOnly, static_cast<std::size_t>(2));
+	}
+
+	MODERN_TEST(SkillTable_SkillThirtyEightOneWasAlreadyValidBeforeThisFix)
+	{
+		// (38,1) is the tempting false reference: zero basicVar everywhere and
+		// a range spec of +4. It is NOT spec-only - it carries emADDON1 = 13
+		// (EMIMPACTA_MA) with non-zero per-level values, so `IsValid` accepted
+		// it before SKILL-014. Pinned so the two cases cannot be conflated.
+		std::error_code code;
+		const std::filesystem::path csv =
+		    "D:/FILES/project/RanOnline-Build/ASURA CLIENT/data/glogic/Skill.csv";
+		if (!std::filesystem::is_regular_file(csv, code))
+		{
+			std::printf("      SKIPPED the real export: ASURA Skill.csv not found\n");
+			return;
+		}
+
+		InMemorySkillDefinitions provider;
+		REQUIRE(LoadSkillCsv(csv.string(), provider).IsOk());
+
+		const SkillDefinition* def = provider.Find(SkillId{ 38, 1 });
+		REQUIRE(def != nullptr);
+
+		// The spec is exactly what was reported: ChangeAttackRange at +4.
+		REQUIRE(def->specs[0].IsValid());
+		CHECK(def->specs[0].type == PassiveSpecType::ChangeAttackRange);
+		CHECK(def->specs[0].values[1] == 4.0f);
+
+		// But a recovered impact is what carries the definition.
+		bool hasImpact = false;
+		for (const auto& impact : def->impacts)
+		{
+			if (impact.IsValid()) { hasImpact = true; }
+		}
+		REQUIRE(hasImpact);
+
+		// Strip the spec and it is STILL valid - proving the spec is not what
+		// makes (38,1) valid, unlike (34,3).
+		SkillDefinition impactOnly = *def;
+		impactOnly.specs = {};
+		CHECK(impactOnly.IsValid());
+	}
 } // namespace ModernTests

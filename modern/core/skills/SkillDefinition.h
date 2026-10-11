@@ -656,6 +656,42 @@ namespace Modern
 					}
 				}
 			}
+			// SKILL-014: specs, which this function's own comment has always
+			// claimed to honour. The loop mirrors the impacts one exactly,
+			// including the `IsValid()` guard that keeps an unrepresented slot
+			// from counting - `SkillSpec::IsValid()` is `type != None`, so
+			// only a type the loader actually mapped can qualify, and the
+			// inner loop still demands a non-zero level value, so a recognised
+			// spec whose values are all zero does not qualify on its own.
+			//
+			// Two real definitions in the export need this branch: (34,3)
+			// `SN_034_003` and (34,39) `SN_034_039`, each with no non-zero
+			// `basicVar` at any level, no recovered impact, and a single
+			// EMSPECA_CHANGE_ATTACK_RANGE spec (-700 and -200). Without this
+			// loop they could never be registered through
+			// `InMemorySkillDefinitions::Add`, so their range bonus would be
+			// unreachable.
+			//
+			// Note that (38,1) `SN_038_001` is NOT one of them, despite having
+			// a +4 range spec and a zero basicVar: it also carries
+			// emADDON1 = 13 (EMIMPACTA_MA) with non-zero values, which the
+			// impacts loop above already accepted.
+			//
+			// Scope: `Add` only. The production loader registers through
+			// `AddRecoveredBasic`/`HasRecoveredBasic`, which is unchanged.
+			for (const auto& spec : specs)
+			{
+				if (spec.IsValid())
+				{
+					for (uint8_t lvl = 1; lvl <= maxLevel; ++lvl)
+					{
+						if (spec.values[lvl] != 0.0f)
+						{
+							return true;
+						}
+					}
+				}
+			}
 			return false;
 		}
 
