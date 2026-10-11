@@ -648,6 +648,24 @@ namespace Modern
 	// Convert modern weapon type to legacy (for compatibility layer).
 	int ModernWeaponTypeToLegacy(SkillWeaponType type);
 
+	// SKILL-002: converts legacy `EMELEMENT` (GLCharDefine.h:622-641) to
+	// `SkillElement`.
+	//
+	// The two enums are NOT the same values, and a direct cast is wrong:
+	//
+	//     legacy   SPIRIT 0  FIRE 1  ICE 2  ELECTRIC 3  POISON 4
+	//              STONE 5  MAD 6  STUN 7  CURSE 8  ARM 9
+	//     modern   SPIRIT 0  FIRE 1  ICE 2  ELECTRIC 3  Stone 4
+	//              Mad 5  Poison 6  Curse 7  Zen 8  ArmWeapon 9
+	//
+	// Legacy puts POISON at 4 and modern puts Stone there, so a raw cast would
+	// turn a poison skill into a stone skill.
+	//
+	// Legacy STUN (7) has no modern counterpart at all, so this returns false
+	// rather than substituting something. A caller that gets `false` must
+	// report the skill as partially recovered instead of treating the default
+	// as the truth.
+	bool LegacyElementToModern(int legacyElement, SkillElement& out) noexcept;
 	// Convert legacy basic type to modern enum.
 	PassiveApplyType LegacyBasicTypeToModern(int legacyType);
 

@@ -135,27 +135,64 @@ namespace ModernTests
 			});
 		}
 
-		// The SAPPLY header: 719 columns led by emBASIC_TYPE/emELEMENT.
-		std::string LegacyHeader()
+		const char* const kApplyStepNames[6] = {
+			"fDELAYTIME", "fLIFE", "fBASIC_VAR", "wUSE_HP", "wUSE_MP", "wUSE_SP",
+		};
+		const char* const kApplyBlowNames[3] = { "fRATE", "fVAR1", "fVAR2" };
+
+		// The SAPPLY header. It must NAME the columns the loader resolves, or
+		// the loader refuses the file - so the fixture carries the real names
+		// rather than placeholders. As with the canonical header, the names are
+		// emitted in a different order than the export writes them.
+		std::vector<std::string> ApplyHeaderNames()
 		{
-			std::vector<std::string> cells;
-			cells.emplace_back("emBASIC_TYPE");
-			cells.emplace_back("emELEMENT");
+			std::vector<std::string> names = {
+				"emBASIC_TYPE", "emELEMENT", "emSTATE_BLOW",
+			};
+			for (int step = 1; step <= kMaxSkillLevel; ++step)
+			{
+				for (const char* field : kApplyStepNames)
+				{
+					names.push_back("sDATA_LVL " + std::to_string(step) + " " + field);
+				}
+			}
+			for (int step = 1; step <= kMaxSkillLevel; ++step)
+			{
+				for (const char* field : kApplyBlowNames)
+				{
+					names.push_back("sSTATE_BLOW " + std::to_string(step) + " " + field);
+				}
+			}
 			// 718 names + the trailing comma = 719 FIELDS, matching the
 			// export's SAPPLY line. The width checks compare fields.
-			for (std::size_t i = 2; i < 718; ++i)
+			for (std::size_t i = names.size(); i < 718; ++i)
 			{
-				cells.push_back("legacy" + std::to_string(i));
+				names.push_back("applyFiller" + std::to_string(i));
 			}
-			return JoinWithCommas(cells);
+			return names;
 		}
 
-		std::string LegacyRow()
+		// A SAPPLY data row. Names not overridden get "0", which parses as a
+		// valid zero for both the float and the integer columns.
+		std::string ApplyRow(
+		    std::initializer_list<std::pair<std::string, std::string>> overrides = {})
 		{
+			const std::vector<std::string> names = ApplyHeaderNames();
 			std::vector<std::string> cells;
-			for (std::size_t i = 0; i < 718; ++i)
+			cells.reserve(names.size());
+
+			for (const std::string& name : names)
 			{
-				cells.emplace_back("0");
+				std::string value = "0";
+				for (const auto& pair : overrides)
+				{
+					if (pair.first == name)
+					{
+						value = pair.second;
+						break;
+					}
+				}
+				cells.push_back(value);
 			}
 			return JoinWithCommas(cells);
 		}
@@ -184,13 +221,13 @@ namespace ModernTests
 		std::string TwoSkillFile()
 		{
 			std::string out = JoinWithCommas(CanonicalHeaderNames()) + "\n";
-			out += LegacyHeader() + "\n";
+			out += JoinWithCommas(ApplyHeaderNames()) + "\n";
 			out += GoodRow(1, 2, "SK_1_2") + "\n";
-			out += LegacyRow() + "\n";
+			out += ApplyRow() + "\n";
 			out += JoinWithCommas(CanonicalHeaderNames()) + "\n";
-			out += LegacyHeader() + "\n";
+			out += JoinWithCommas(ApplyHeaderNames()) + "\n";
 			out += GoodRow(3, 4, "SK_3_4") + "\n";
-			out += LegacyRow() + "\n";
+			out += ApplyRow() + "\n";
 			return out;
 		}
 	}
@@ -223,11 +260,15 @@ namespace ModernTests
 		CHECK(provider.Find(SkillId{ 2, 1 }) == nullptr);
 	}
 
-	MODERN_TEST(SkillTable_TheLegacyEffectRowsAreExcludedAndCounted)
+	MODERN_TEST(SkillTable_TheLegacyEffectRowsAttachToASkillAndNeverBecomeOne)
 	{
-		// The 719-column rows are SAPPLY / CDATA_LVL - per-level effect data
-		// belonging to a struct this milestone does not recover. They must be
-		// counted as excluded, never reinterpreted as skill definitions.
+		// SKILL-002 changed what happens to the 719-column rows: they are now
+		// ATTACHED to the canonical row of their block rather than dropped.
+		// What must not change is the property this test originally protected -
+		// a SAPPLY row is never itself a skill definition.
+		//
+		// The fixture's SAPPLY rows are all zeros, so a SAPPLY row parsed as a
+		// definition would register as id (0,0).
 		const Fixture fixture = { WriteFixture("skill-exclude.csv", TwoSkillFile()) };
 
 		InMemorySkillDefinitions provider;
@@ -236,12 +277,12 @@ namespace ModernTests
 
 		const SkillTableLoadResult& result = loaded.GetValue();
 		CHECK_EQ(result.legacyHeaders, static_cast<std::size_t>(2));
-		CHECK_EQ(result.excludedLegacyRows, static_cast<std::size_t>(2));
 		CHECK_EQ(result.accepted, static_cast<std::size_t>(2));
+		CHECK_EQ(result.sapplyParsed, static_cast<std::size_t>(2));
+		CHECK_EQ(result.paired, static_cast<std::size_t>(2));
+		CHECK_EQ(result.unpairedCanonical, static_cast<std::size_t>(0));
+		CHECK_EQ(provider.GetCount(), static_cast<std::size_t>(2));
 
-		// A legacy row's leading numbers must not have become a skill id. The
-		// fixture's legacy rows are all zeros, so (0,0) would appear if any
-		// legacy row were parsed.
 		CHECK(provider.Find(SkillId{ 0, 0 }) == nullptr);
 	}
 
@@ -268,7 +309,7 @@ namespace ModernTests
 
 		const Fixture fixture = { WriteFixture("skill-learn.csv",
 			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
-			LegacyHeader() + "\n" + row + "\n" + LegacyRow() + "\n") };
+			JoinWithCommas(ApplyHeaderNames()) + "\n" + row + "\n" + ApplyRow() + "\n") };
 
 		InMemorySkillDefinitions provider;
 		REQUIRE(LoadSkillCsv(fixture.path.string(), provider).IsOk());
@@ -295,19 +336,19 @@ namespace ModernTests
 		// DETECTION - not line parity - is what keeps a row paired with the
 		// right schema. This fixture interleaves them out of order on purpose.
 		std::string contents = JoinWithCommas(CanonicalHeaderNames()) + "\n";
-		contents += LegacyHeader() + "\n";
+		contents += JoinWithCommas(ApplyHeaderNames()) + "\n";
 		contents += GoodRow(1, 1, "FIRST") + "\n";
-		contents += LegacyRow() + "\n";
+		contents += ApplyRow() + "\n";
 		// A second canonical block, headers again, in the same order.
 		contents += JoinWithCommas(CanonicalHeaderNames()) + "\n";
-		contents += LegacyHeader() + "\n";
+		contents += JoinWithCommas(ApplyHeaderNames()) + "\n";
 		contents += GoodRow(2, 2, "SECOND") + "\n";
-		contents += LegacyRow() + "\n";
+		contents += ApplyRow() + "\n";
 		// A THIRD, to prove it keeps working rather than special-casing two.
 		contents += JoinWithCommas(CanonicalHeaderNames()) + "\n";
-		contents += LegacyHeader() + "\n";
+		contents += JoinWithCommas(ApplyHeaderNames()) + "\n";
 		contents += GoodRow(3, 3, "THIRD") + "\n";
-		contents += LegacyRow() + "\n";
+		contents += ApplyRow() + "\n";
 
 		const Fixture fixture = { WriteFixture("skill-interleave.csv", contents) };
 
@@ -319,7 +360,9 @@ namespace ModernTests
 		CHECK_EQ(result.canonicalHeaders, static_cast<std::size_t>(3));
 		CHECK_EQ(result.legacyHeaders, static_cast<std::size_t>(3));
 		CHECK_EQ(result.accepted, static_cast<std::size_t>(3));
-		CHECK_EQ(result.excludedLegacyRows, static_cast<std::size_t>(3));
+		CHECK_EQ(result.sapplyParsed, static_cast<std::size_t>(3));
+		CHECK_EQ(result.paired, static_cast<std::size_t>(3));
+		CHECK_EQ(result.unpairedCanonical, static_cast<std::size_t>(0));
 
 		REQUIRE(provider.Find(SkillId{ 1, 1 }) != nullptr);
 		REQUIRE(provider.Find(SkillId{ 2, 2 }) != nullptr);
@@ -342,7 +385,7 @@ namespace ModernTests
 		std::string longRow = GoodRow(6, 6, "LONG") + ",1,2,3";
 
 		std::string contents = JoinWithCommas(CanonicalHeaderNames()) + "\n";
-		contents += LegacyHeader() + "\n";
+		contents += JoinWithCommas(ApplyHeaderNames()) + "\n";
 		contents += good + "\n" + shortRow + "\n" + longRow + "\n";
 
 		const Fixture fixture = { WriteFixture("skill-width.csv", contents) };
@@ -366,7 +409,7 @@ namespace ModernTests
 		// is a worse failure than a rejected row.
 		const std::string contents =
 			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
-			LegacyHeader() + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
 			CanonicalRow({
 				{ "sNATIVEID wMainID", "1" },
 				{ "sNATIVEID wSubID", "2" },
@@ -389,7 +432,7 @@ namespace ModernTests
 		// The sentinel matters: `SkillId::Invalid()` is (0xFFFF,0xFFFF), so a
 		// row carrying it would collide with "no skill".
 		std::string contents = JoinWithCommas(CanonicalHeaderNames()) + "\n";
-		contents += LegacyHeader() + "\n";
+		contents += JoinWithCommas(ApplyHeaderNames()) + "\n";
 		contents += CanonicalRow({ { "sNATIVEID wMainID", "" },
 		                           { "sNATIVEID wSubID", "1" },
 		                           { "szNAME", "NO_MAIN" } }) + "\n";
@@ -415,7 +458,7 @@ namespace ModernTests
 		// The second row for an id must NOT silently overwrite the first -
 		// which row wins would otherwise depend on file order.
 		std::string contents = JoinWithCommas(CanonicalHeaderNames()) + "\n";
-		contents += LegacyHeader() + "\n";
+		contents += JoinWithCommas(ApplyHeaderNames()) + "\n";
 		contents += GoodRow(7, 7, "FIRST_NAME") + "\n";
 		contents += CanonicalRow({ { "sNATIVEID wMainID", "7" },
 		                           { "sNATIVEID wSubID", "7" },
@@ -444,7 +487,7 @@ namespace ModernTests
 		// and the level tables, all of which are 9 entries.
 		const std::string contents =
 			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
-			LegacyHeader() + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
 			CanonicalRow({
 				{ "sNATIVEID wMainID", "1" },
 				{ "sNATIVEID wSubID", "2" },
@@ -468,7 +511,7 @@ namespace ModernTests
 		const std::string contents =
 			GoodRow(1, 1, "ORPHAN") + "\n" +
 			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
-			LegacyHeader() + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
 			GoodRow(2, 2, "REAL") + "\n";
 
 		const Fixture fixture = { WriteFixture("skill-orphan.csv", contents) };
@@ -512,7 +555,7 @@ namespace ModernTests
 
 		const Fixture empty = { WriteFixture("skill-empty.csv", "") };
 		const Fixture headersOnly = { WriteFixture("skill-hdronly.csv",
-			JoinWithCommas(CanonicalHeaderNames()) + "\n" + LegacyHeader() + "\n") };
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" + JoinWithCommas(ApplyHeaderNames()) + "\n") };
 
 		InMemorySkillDefinitions provider;
 		// No header at all: not this export.
@@ -547,9 +590,9 @@ namespace ModernTests
 	{
 		// Blank lines are counted and skipped, not treated as malformed rows.
 		std::string contents = JoinWithCommas(CanonicalHeaderNames()) + "\n\n";
-		contents += LegacyHeader() + "\n\n";
+		contents += JoinWithCommas(ApplyHeaderNames()) + "\n\n";
 		contents += GoodRow(1, 1, "ONE") + "\n\n\n";
-		contents += LegacyRow() + "\n";
+		contents += ApplyRow() + "\n";
 
 		const Fixture fixture = { WriteFixture("skill-blank.csv", contents) };
 
@@ -590,10 +633,322 @@ namespace ModernTests
 	}
 
 	// ===========================================================================
+	// SKILL-002: the SAPPLY half
+	// ===========================================================================
+
+	MODERN_TEST(SkillTable_ACompleteSkillCarriesItsPerLevelData)
+	{
+		// The whole point: a canonical row and its SAPPLY row become ONE
+		// definition with both halves populated.
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
+			CanonicalRow({
+				{ "sNATIVEID wMainID", "4" },
+				{ "sNATIVEID wSubID", "5" },
+				{ "szNAME", "COMPLETE" },
+				{ "dwMAXLEVEL", "9" },
+			}) + "\n" +
+			ApplyRow({
+				{ "emBASIC_TYPE", "0" },
+				{ "emELEMENT", "9" },
+				{ "emSTATE_BLOW", "0" },
+				{ "sDATA_LVL 1 fBASIC_VAR", "-35" },
+				{ "sDATA_LVL 1 fDELAYTIME", "2.7" },
+				{ "sDATA_LVL 1 wUSE_SP", "4" },
+				{ "sSTATE_BLOW 1 fRATE", "0.25" },
+			}) + "\n";
+
+		const Fixture fixture = { WriteFixture("skill-complete.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+		REQUIRE(loaded.IsOk());
+
+		const SkillTableLoadResult& result = loaded.GetValue();
+		CHECK_EQ(result.accepted, static_cast<std::size_t>(1));
+		CHECK_EQ(result.sapplyParsed, static_cast<std::size_t>(1));
+		CHECK_EQ(result.paired, static_cast<std::size_t>(1));
+		CHECK_EQ(result.unpairedCanonical, static_cast<std::size_t>(0));
+
+		const SkillDefinition* skill = provider.Find(SkillId{ 4, 5 });
+		REQUIRE(skill != nullptr);
+
+		// Per-skill SAPPLY fields.
+		CHECK(skill->applyType == PassiveApplyType::Hp);
+		CHECK(skill->element == SkillElement::ArmWeapon);
+		CHECK(skill->stateBlow == StatusEffect::StatusEffectType::None);
+
+		// Per-level data.
+		CHECK(skill->levelData[1].basicVar == -35.0f);
+		CHECK(skill->levelData[1].delayTime == 2.7f);
+		CHECK_EQ(skill->levelData[1].useSp, static_cast<std::uint16_t>(4));
+		CHECK(skill->levelData[1].blowRate == 0.25f);
+
+		// And the definition now satisfies the EXISTING rule, unmodified.
+		CHECK(skill->IsValid());
+		CHECK(skill->HasRecoveredBasic());
+	}
+
+	MODERN_TEST(SkillTable_LevelValuesDoNotShift)
+	{
+		// The strongest single check on the level mapping: every level gets a
+		// DIFFERENT value in three different columns. Any index offset - by one,
+		// or by a whole field within the block - produces a different number.
+		std::string apply;
+		{
+			const std::vector<std::string> names = ApplyHeaderNames();
+			std::vector<std::string> cells;
+			for (const std::string& name : names)
+			{
+				std::string value = "0";
+				for (int level = 1; level <= kMaxSkillLevel; ++level)
+				{
+					const std::string prefix = "sDATA_LVL " + std::to_string(level) + " ";
+					if (name == prefix + "fBASIC_VAR") { value = "-" + std::to_string(100 + level); }
+					if (name == prefix + "fDELAYTIME") { value = std::to_string(level) + ".5"; }
+					if (name == prefix + "wUSE_SP") { value = std::to_string(level * 2); }
+					if (name == "sSTATE_BLOW " + std::to_string(level) + " fVAR1")
+					{
+						value = std::to_string(level * 100);
+					}
+				}
+				cells.push_back(value);
+			}
+			apply = JoinWithCommas(cells);
+		}
+
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
+			CanonicalRow({
+				{ "sNATIVEID wMainID", "8" }, { "sNATIVEID wSubID", "8" },
+				{ "szNAME", "LEVELS" }, { "dwMAXLEVEL", "9" },
+			}) + "\n" +
+			apply + "\n";
+
+		const Fixture fixture = { WriteFixture("skill-levels.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		REQUIRE(LoadSkillCsv(fixture.path.string(), provider).IsOk());
+
+		const SkillDefinition* skill = provider.Find(SkillId{ 8, 8 });
+		REQUIRE(skill != nullptr);
+		for (int level = 1; level <= kMaxSkillLevel; ++level)
+		{
+			CHECK(skill->levelData[level].basicVar ==
+			      static_cast<float>(-(100 + level)));
+			CHECK(skill->levelData[level].delayTime ==
+			      static_cast<float>(level) + 0.5f);
+			CHECK_EQ(skill->levelData[level].useSp,
+			         static_cast<std::uint16_t>(level * 2));
+			CHECK(skill->levelData[level].blowVar1 ==
+			      static_cast<float>(level * 100));
+		}
+	}
+
+	MODERN_TEST(SkillTable_ASapplyRowWithNoCanonicalRowIsRejected)
+	{
+		// Pairing integrity: a SAPPLY row with nothing to attach to is counted,
+		// never used to fabricate a skill.
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
+			ApplyRow({ { "emBASIC_TYPE", "0" } }) + "\n";
+
+		const Fixture fixture = { WriteFixture("skill-orphanapply.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+		REQUIRE(loaded.IsOk());
+		CHECK_EQ(loaded.GetValue().rejectedUnpairedSapply,
+		         static_cast<std::size_t>(1));
+		CHECK_EQ(loaded.GetValue().paired, static_cast<std::size_t>(0));
+		CHECK_EQ(provider.GetCount(), static_cast<std::size_t>(0));
+	}
+
+	MODERN_TEST(SkillTable_ASecondSapplyRowInOneBlockIsRejected)
+	{
+		// One canonical row, one SAPPLY row per block. A second SAPPLY row
+		// cannot re-pair against the same skill or silently overwrite it.
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
+			GoodRow(9, 9, "ONE") + "\n" +
+			ApplyRow({ { "sDATA_LVL 1 fBASIC_VAR", "-1" } }) + "\n" +
+			ApplyRow({ { "sDATA_LVL 1 fBASIC_VAR", "-999" } }) + "\n";
+
+		const Fixture fixture = { WriteFixture("skill-twoapply.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+		REQUIRE(loaded.IsOk());
+
+		const SkillTableLoadResult& result = loaded.GetValue();
+		CHECK_EQ(result.paired, static_cast<std::size_t>(1));
+		CHECK_EQ(result.rejectedUnpairedSapply, static_cast<std::size_t>(1));
+
+		// The first SAPPLY row is the one that stuck.
+		const SkillDefinition* skill = provider.Find(SkillId{ 9, 9 });
+		REQUIRE(skill != nullptr);
+		CHECK(skill->levelData[1].basicVar == -1.0f);
+	}
+
+	MODERN_TEST(SkillTable_ACanonicalRowWithNoSapplyRowIsKeptButMarkedIncomplete)
+	{
+		// A skill whose second half is missing is NOT dropped - it keeps its
+		// real learn requirements - but it is reported as unpaired so a caller
+		// can tell it is not castable.
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
+			GoodRow(6, 6, "NO_APPLY") + "\n";
+
+		const Fixture fixture = { WriteFixture("skill-noapply.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+		REQUIRE(loaded.IsOk());
+
+		const SkillTableLoadResult& result = loaded.GetValue();
+		CHECK_EQ(result.accepted, static_cast<std::size_t>(1));
+		CHECK_EQ(result.paired, static_cast<std::size_t>(0));
+		CHECK_EQ(result.unpairedCanonical, static_cast<std::size_t>(1));
+		CHECK(!result.complete(0));
+		CHECK_EQ(provider.GetCount(), static_cast<std::size_t>(1));
+
+		const SkillDefinition* skill = provider.Find(SkillId{ 6, 6 });
+		REQUIRE(skill != nullptr);
+		CHECK(skill->name == "NO_APPLY");
+		CHECK(skill->levelData[1].basicVar == 0.0f);
+	}
+
+	MODERN_TEST(SkillTable_AMalformedSapplyNumberIsRefusedNotZeroed)
+	{
+		// A corrupt float in the field that decides validity must refuse the
+		// SAPPLY row, not silently produce a zero-effect skill.
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
+			GoodRow(5, 5, "CORRUPT") + "\n" +
+			ApplyRow({ { "sDATA_LVL 1 fBASIC_VAR", "not-a-number" } }) + "\n";
+
+		const Fixture fixture = { WriteFixture("skill-badfloat.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+		REQUIRE(loaded.IsOk());
+		CHECK_EQ(loaded.GetValue().rejectedSapplyFieldCount,
+		         static_cast<std::size_t>(1));
+		CHECK_EQ(loaded.GetValue().paired, static_cast<std::size_t>(0));
+		CHECK_EQ(loaded.GetValue().unpairedCanonical, static_cast<std::size_t>(1));
+	}
+
+	MODERN_TEST(SkillTable_ANonFiniteSapplyNumberIsRefused)
+	{
+		// `strtof` accepts "nan" and "inf"; neither may reach a derived number.
+		for (const char* poison : { "nan", "inf", "-inf" })
+		{
+			const std::string contents =
+				JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+				JoinWithCommas(ApplyHeaderNames()) + "\n" +
+				GoodRow(5, 6, "POISON") + "\n" +
+				ApplyRow({ { "sDATA_LVL 2 fBASIC_VAR", poison } }) + "\n";
+
+			const Fixture fixture = { WriteFixture("skill-nan.csv", contents) };
+
+			InMemorySkillDefinitions provider;
+			const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+			REQUIRE(loaded.IsOk());
+			CHECK_EQ(loaded.GetValue().rejectedSapplyFieldCount,
+			         static_cast<std::size_t>(1));
+		}
+	}
+
+	MODERN_TEST(SkillTable_AnOutOfRangeSapplyCostIsRefused)
+	{
+		// The costs are WORD (CDATA_LVL:259-261), so a negative SP cost is a
+		// corrupt cell rather than a discount.
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(ApplyHeaderNames()) + "\n" +
+			GoodRow(5, 7, "NEG_COST") + "\n" +
+			ApplyRow({ { "sDATA_LVL 1 wUSE_SP", "-1" } }) + "\n";
+
+		const Fixture fixture = { WriteFixture("skill-negsp.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		const auto loaded = LoadSkillCsv(fixture.path.string(), provider);
+		REQUIRE(loaded.IsOk());
+		CHECK_EQ(loaded.GetValue().rejectedSapplyRange,
+		         static_cast<std::size_t>(1));
+	}
+
+	MODERN_TEST(SkillTable_ASapplyHeaderMissingAColumnIsRefused)
+	{
+		// A SAPPLY header that does not name the columns this loader reads
+		// means the export changed. Refuse the file rather than parse at
+		// guessed positions - the same contract as the canonical header.
+		std::vector<std::string> dropped = ApplyHeaderNames();
+		for (std::string& name : dropped)
+		{
+			if (name == "sDATA_LVL 1 fBASIC_VAR")
+			{
+				name = "somethingElse";
+			}
+		}
+
+		const std::string contents =
+			JoinWithCommas(CanonicalHeaderNames()) + "\n" +
+			JoinWithCommas(dropped) + "\n" +
+			GoodRow(3, 3, "X") + "\n";
+
+		const Fixture fixture = { WriteFixture("skill-badapplyhdr.csv", contents) };
+
+		InMemorySkillDefinitions provider;
+		CHECK(!LoadSkillCsv(fixture.path.string(), provider).IsOk());
+		CHECK_EQ(provider.GetCount(), static_cast<std::size_t>(0));
+	}
+
+	MODERN_TEST(SkillApply_TheElementEnumIsTranslatedNotCast)
+	{
+		// Legacy EMELEMENT and modern SkillElement DIVERGE from 4 upward:
+		// legacy POISON is 4 and STONE is 5, while modern Stone is 4 and
+		// Poison is 6. A raw cast would turn a poison skill into a stone one,
+		// so the conversion is explicit and each pairing is pinned.
+		SkillElement element = SkillElement::Spirit;
+
+		CHECK(LegacyElementToModern(0, element));
+		CHECK(element == SkillElement::Spirit);
+		CHECK(LegacyElementToModern(1, element));
+		CHECK(element == SkillElement::Fire);
+		CHECK(LegacyElementToModern(2, element));
+		CHECK(element == SkillElement::Ice);
+		CHECK(LegacyElementToModern(3, element));
+		CHECK(element == SkillElement::Electric);
+		CHECK(LegacyElementToModern(4, element));
+		CHECK(element == SkillElement::Poison);   // legacy 4 is POISON
+		CHECK(LegacyElementToModern(5, element));
+		CHECK(element == SkillElement::Stone);    // legacy 5 is STONE
+		CHECK(LegacyElementToModern(6, element));
+		CHECK(element == SkillElement::Mad);
+		CHECK(LegacyElementToModern(8, element));
+		CHECK(element == SkillElement::Curse);
+		CHECK(LegacyElementToModern(9, element));
+		CHECK(element == SkillElement::ArmWeapon);
+
+		// Legacy STUN (7) has no modern counterpart and must not be fudged.
+		const SkillElement before = element;
+		CHECK(!LegacyElementToModern(7, element));
+		CHECK(element == before);
+		CHECK(!LegacyElementToModern(99, element));
+		CHECK(!LegacyElementToModern(-1, element));
+	}
+	// ===========================================================================
 	// INTEGRATION: the real ASURA export
 	// ===========================================================================
 
-	MODERN_TEST(SkillTable_TheRealExportRecoversEveryCanonicalSkillAndNoLegacyRow)
+	MODERN_TEST(SkillTable_TheRealExportPairsEverySkillAndNoSapplyRowBecomesOne)
 	{
 		std::error_code code;
 		std::filesystem::path csv =
@@ -618,7 +973,11 @@ namespace ModernTests
 		CHECK_EQ(result.canonicalHeaders, static_cast<std::size_t>(1139));
 		CHECK_EQ(result.legacyHeaders, static_cast<std::size_t>(1139));
 		CHECK_EQ(result.accepted, static_cast<std::size_t>(1139));
-		CHECK_EQ(result.excludedLegacyRows, static_cast<std::size_t>(1139));
+		CHECK_EQ(result.sapplyParsed, static_cast<std::size_t>(1139));
+		CHECK_EQ(result.paired, static_cast<std::size_t>(1139));
+		CHECK_EQ(result.unpairedCanonical, static_cast<std::size_t>(0));
+		CHECK_EQ(result.rejectedUnpairedSapply, static_cast<std::size_t>(0));
+		CHECK_EQ(result.rejectedSapplyFieldCount, static_cast<std::size_t>(0));
 		CHECK_EQ(result.duplicateIds, static_cast<std::size_t>(0));
 		CHECK_EQ(result.blankLines, static_cast<std::size_t>(0));
 		CHECK_EQ(result.Rejected(), static_cast<std::size_t>(0));
@@ -635,12 +994,84 @@ namespace ModernTests
 		CHECK(first->HasRecoveredBasic());
 		CHECK_EQ(first->learn[1].requiredStats.dex, static_cast<std::uint16_t>(26));
 		CHECK_EQ(first->learn[9].requiredStats.dex, static_cast<std::uint16_t>(64));
-		CHECK(first->IsValid() == false); // the SAPPLY half is not recovered
+		// SKILL-002: with its SAPPLY half attached, this definition now
+		// satisfies the EXISTING `IsValid()` unchanged - fBASIC_VAR is 50 at
+		// every level. That is the point of this milestone: no validity rule
+		// was loosened to get here.
+		CHECK(first->IsValid());
+
+		// SKILL-002 golden values, read from the export rather than guessed.
+		// (0,1) has emBASIC_TYPE 0 (EMFOR_HP), emELEMENT 9 (EMELEMENT_ARM) and
+		// emSTATE_BLOW 0 (EMBLOW_NONE).
+		CHECK(first->applyType == PassiveApplyType::Hp);
+		CHECK(first->element == SkillElement::ArmWeapon);
+		CHECK(first->stateBlow == StatusEffect::StatusEffectType::None);
+
+		// fDELAYTIME runs 2.7 down to 1.9 across the nine levels, so a level
+		// index shifted by even one reads a different number.
+		CHECK(first->levelData[1].delayTime == 2.7f);
+		CHECK(first->levelData[5].delayTime == 2.3f);
+		CHECK(first->levelData[9].delayTime == 1.9f);
+
+		// fBASIC_VAR is NEGATIVE here (-35, -40, -45, -50 rising by five a
+		// level). That sign is not noise: legacy reads it to mean "deal
+		// damage" rather than "heal" (GLChar.cpp:3077-3090), so a loader
+		// that dropped the sign would turn every attack skill into a
+		// restorative one.
+		CHECK(first->levelData[1].basicVar == -35.0f);
+		CHECK(first->levelData[4].basicVar == -50.0f);
+
+		// The per-level costs, which move independently of both of those.
+		CHECK_EQ(first->levelData[1].useMp, static_cast<std::uint16_t>(1));
+		CHECK_EQ(first->levelData[1].useSp, static_cast<std::uint16_t>(4));
+		CHECK_EQ(first->levelData[4].useSp, static_cast<std::uint16_t>(5));
+
+		// (0,2) is the discriminator for the OTHER per-level field: its
+		// fBASIC_VAR moves from -134 at level 1 to -140 at level 2, and the
+		// sign is what legacy reads to mean "damage" rather than "heal"
+		// (GLChar.cpp:3077-3090).
+		const SkillDefinition* second = provider.Find(SkillId{ 0, 2 });
+		REQUIRE(second != nullptr);
+		CHECK(second->levelData[1].basicVar == -134.0f);
+		CHECK(second->levelData[2].basicVar == -140.0f);
+		CHECK(second->IsValid());
 
 		// Not one of the 1,139 SAPPLY rows became a skill. Their leading
 		// fields are emBASIC_TYPE/emELEMENT, so had any been parsed it would
 		// have registered as id (0,0).
 		CHECK(provider.Find(SkillId{ 0, 0 }) == nullptr);
+
+		// WHY `AddRecoveredBasic` STILL EXISTS
+		//
+		// 851 of the 1,139 skills carry a non-zero fBASIC_VAR and therefore
+		// satisfy the existing `IsValid()`. The other 288 do not - their effect
+		// lives in SIMPACTS or SSPECS, which this milestone deliberately does
+		// not read. So the special admission path is still required, and is not
+		// removable on this evidence.
+		//
+		// Counted through the provider by walking the id space, since the
+		// provider exposes lookup rather than iteration.
+		std::size_t present = 0;
+		std::size_t fullyValid = 0;
+		for (uint16_t main = 0; main <= 53; ++main)
+		{
+			for (uint16_t sub = 0; sub <= 79; ++sub)
+			{
+				const SkillDefinition* found = provider.Find(SkillId{ main, sub });
+				if (found == nullptr)
+				{
+					continue;
+				}
+				++present;
+				if (found->IsValid())
+				{
+					++fullyValid;
+				}
+			}
+		}
+		CHECK_EQ(present, static_cast<std::size_t>(1139));
+		CHECK_EQ(fullyValid, static_cast<std::size_t>(851));
+		CHECK(fullyValid < present);
 
 		// And the ids are unique across the recovered set, which is the
 		// collision property the identity model promises.

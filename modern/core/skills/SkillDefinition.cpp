@@ -291,3 +291,21 @@ namespace Modern
 		return "Unknown";
 	}
 }
+// SKILL-002: EMELEMENT -> SkillElement. See the declaration for why this
+// cannot be a cast.
+bool Modern::LegacyElementToModern(int legacyElement, Modern::SkillElement& out) noexcept
+{
+	switch (legacyElement)
+	{
+	case 0: out = Modern::SkillElement::Spirit;   return true;   // EMELEMENT_SPIRIT
+	case 1: out = Modern::SkillElement::Fire;     return true;   // EMELEMENT_FIRE
+	case 2: out = Modern::SkillElement::Ice;      return true;   // EMELEMENT_ICE
+	case 3: out = Modern::SkillElement::Electric; return true;   // EMELEMENT_ELECTRIC
+	case 4: out = Modern::SkillElement::Poison;   return true;   // EMELEMENT_POISON
+	case 5: out = Modern::SkillElement::Stone;    return true;   // EMELEMENT_STONE
+	case 6: out = Modern::SkillElement::Mad;      return true;   // EMELEMENT_MAD
+	case 8: out = Modern::SkillElement::Curse;    return true;   // EMELEMENT_CURSE
+	case 9: out = Modern::SkillElement::ArmWeapon; return true;  // EMELEMENT_ARM
+	default: return false;  // EMELEMENT_STUN (7) and anything unknown
+	}
+}

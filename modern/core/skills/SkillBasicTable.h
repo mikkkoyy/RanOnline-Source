@@ -22,11 +22,10 @@
 // So the two schemas are not "old and new". They are "definition" and
 // "per-level effects", and they belong to different legacy structs:
 //
-//     322 cols  ->  SSKILLBASIC + SLEARN          <- recovered HERE
-//     719 cols  ->  SAPPLY / CDATA_LVL            <- NOT recovered here
+//     322 cols  ->  SSKILLBASIC + SLEARN          <- SKILL-001
+//     719 cols  ->  SAPPLY / CDATA_LVL            <- SKILL-002
 //
-// This loader reads the first and never interprets the second. That boundary is
-// the whole reason the two are counted separately.
+// This loader reads both and joins them into one `SkillDefinition` per block.
 //
 // ---------------------------------------------------------------------------
 // WHY NOT LINE PARITY
@@ -47,26 +46,39 @@
 // WHAT IS RECOVERED, AND WHAT IS NOT
 // ---------------------------------------------------------------------------
 //
-// Recovered, because their meaning is established by the legacy structs and
-// they are what an authoritative server needs to decide whether a character may
-// learn a skill:
+// SKILL-001 recovered, because their meaning is established by the legacy
+// structs and they are what an authoritative server needs to decide whether a
+// character may learn a skill:
 //
 //     SSKILLBASIC  sNATIVEID, szNAME, dwMAXLEVEL, dwGRADE, emROLE, emAPPLY,
 //                  emIMPACT_TAR, emIMPACT_SIDE, wTARRANGE, emUSE_LITEM/RITEM
 //     SLEARN       dwCLASS, emBRIGHT, sSKILL, sLVL_STEP[9]
 //
+// SKILL-002 added the per-level effect half:
+//
+//     SAPPLY       emBASIC_TYPE, emELEMENT, emSTATE_BLOW
+//     CDATA_LVL    fDELAYTIME, fLIFE, fBASIC_VAR, wUSE_HP, wUSE_MP, wUSE_SP
+//     SSTATE_BLOW  fRATE, fVAR1, fVAR2  (per level)
+//
 // Deliberately NOT carried, with no substitute invented:
 //
-//   * SAPPLY / CDATA_LVL entirely - the 719-column rows. This is the per-level
-//     effect data, and it is a separate recovery.
-//   * SEXT_DATA and SSPECIAL_SKILL, which share the 322-column line but are
-//     animation, impact and spec payloads.
+//   * CDATA_LVL's `wAPPLYRANGE`, `wAPPLYNUM`, `wAPPLYANGLE`, `wPIERCENUM`,
+//     `wTARNUM`, the arrow/charm/bullet and EXP/CP costs, `dwDATA` and the
+//     `wUSE_*_PTY` fields. Each needs a world, an inventory or an
+//     item-requirement table that does not exist yet.
+//   * `SIMPACTS` and `SSPECS` (the fADDON_VAR and sSPEC blocks) - the payload
+//     of impacts and special specs, which no runtime consumes yet.
+//   * `dwCUREFLAG`, `dwUnknownData`, `fRunningEffTime`.
+//   * `SEXT_DATA` and `SSPECIAL_SKILL`, which share the 322-column line.
 //   * `emIMPACT_REALM`, `emACTION`, `dwFlags`, `bLearnView`,
 //     `bNonEffectRemove`, `bMobEffectRate`, `bOnlyOneStats`, `sHiddenWeapon`
 //     and `bHiddenWeapon` - all read and verified present in the export, but
 //     none is consulted by anything the server does today, so carrying them
 //     would add fields with no consumer. They are named in the column map so a
 //     later milestone can add them without re-deriving the layout.
+//
+// An unread field is NOT a zero field: it stays absent from the model, so a
+// caller cannot mistake "not recovered" for "recovered as zero".
 
 #include "skills/SkillDefinitionProvider.h"
 #include "types/Result.h"
@@ -93,9 +105,21 @@ namespace Modern::Skill
 		// Rows read as skill data.
 		std::size_t accepted = 0;
 
-		// SAPPLY data rows, excluded by design. They are the per-level effect
-		// half and belong to a struct this milestone does not recover.
-		std::size_t excludedLegacyRows = 0;
+		// SKILL-002: SAPPLY rows whose per-level data was parsed and attached
+		// to a canonical definition.
+		std::size_t sapplyParsed = 0;
+
+		// Definitions that received their SAPPLY half, and those that did not.
+		std::size_t paired = 0;
+		std::size_t unpairedCanonical = 0;
+
+		// SAPPLY rows that could not be parsed, by reason.
+		std::size_t rejectedSapplyFieldCount = 0;
+		std::size_t rejectedSapplyRange = 0;
+
+		// SAPPLY rows that arrived with no canonical row to attach to, or as a
+		// second SAPPLY row inside one block.
+		std::size_t rejectedUnpairedSapply = 0;
 
 		// Rows that could not be used, by reason.
 		std::size_t rejectedFieldCount = 0;
@@ -115,8 +139,22 @@ namespace Modern::Skill
 		std::size_t Rejected() const noexcept
 		{
 			return rejectedFieldCount + rejectedIdentity + rejectedName +
-			       rejectedRange + rejectedUnknownSchema;
+			       rejectedRange + rejectedUnknownSchema +
+			       rejectedSapplyFieldCount + rejectedSapplyRange +
+			       rejectedUnpairedSapply;
 		}
+
+	// SKILL-002: a definition is COMPLETE when both halves were recovered.
+	// An incomplete one is still registered - it carries real learn
+	// requirements - but a caller that needs a castable skill must be able
+	// to tell the difference rather than discover it as zeroed effects.
+	bool complete(std::size_t index) const noexcept
+	{
+		return index < pairedIds.size() && pairedIds[index];
+	}
+
+	// pairedIds[i] is whether definition i got its SAPPLY half.
+	std::vector<bool> pairedIds;
 	};
 
 	// Reads the verified 322-column definition rows out of `path` into
