@@ -51,6 +51,7 @@ namespace
 		def.id       = Id(skillIndex);
 		def.name     = "HpPassive" + std::to_string(skillIndex);
 		def.maxLevel = maxLevel;
+		def.role = SkillRole::Passive;  // SKILL-016
 		def.applyType = PassiveApplyType::Hp;
 		def.levelData[1].basicVar = hp;
 		return def;
@@ -1082,6 +1083,102 @@ MODERN_TEST(PassiveAggregator_WeaponRequirementAlsoGatesRangeSpecs)
 	CHECK(worn.Equip(EquipmentSlot::LeftHand, MakeInstance(1)).IsOk());
 	CHECK_EQ(PassiveContributionAggregator::Aggregate(skills, provider, worn)
 		.GetValue().contribution.tarRange, -400.0f);
+}
+
+// ===========================================================================
+// SKILL-016: PASSIVE-ROLE ELIGIBILITY
+//
+// SUM_PASSIVE's SECOND statement is the role check (GLogixExPC.cpp:878), and it
+// gates everything below it: the weapon check, the per-level read and every
+// accumulation. The aggregator used to have no such check at all, so an
+// active skill learned by the character contributed its basic value, its
+// impacts and its range specs as though it were a passive.
+//
+// The cases below use the SAME definition for both roles and differ in
+// nothing but the role, so nothing but the role can explain the difference.
+// ===========================================================================
+
+MODERN_TEST(PassiveAggregator_APassiveRoleSkillStillContributesItsSpec)
+{
+	// The positive control. Without this, the case below would also pass if
+	// the aggregator dropped every skill regardless of role.
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(MakeRangeSpecSkill(1, PassiveSpecType::TarRange, 0, 15.0f)).IsOk());
+
+	SkillState skills;
+	CHECK(skills.LearnSkill(Id(1)).IsOk());
+	EquipmentState equipment;
+
+	CHECK_EQ(PassiveContributionAggregator::Aggregate(skills, provider, equipment)
+		.GetValue().contribution.tarRange, 15.0f);
+}
+
+MODERN_TEST(PassiveAggregator_AnActiveRoleSkillContributesNothing)
+{
+	// Same definition, same spec, same value, same level - only the role
+	// differs. An active skill is tracked in SkillState like any other, so
+	// LearnSkill succeeding is the point: eligibility is decided by the
+	// DEFINITION, not by whether the character knows the skill.
+	SkillDefinition def = MakeRangeSpecSkill(1, PassiveSpecType::TarRange, 0, 15.0f);
+	def.role = SkillRole::Normal;
+
+	InMemorySkillDefinitions provider;
+	CHECK(provider.Add(def).IsOk());
+
+	SkillState skills;
+	CHECK(skills.LearnSkill(Id(1)).IsOk());
+	EquipmentState equipment;
+
+	const Stats::PassiveContribution& c =
+		PassiveContributionAggregator::Aggregate(skills, provider, equipment)
+			.GetValue().contribution;
+
+	// Every field stays zero, not only the range spec: the role check is
+	// before the basic-value and impact accumulators as well.
+	CHECK_EQ(c.tarRange, 0.0f);
+	CHECK_EQ(c.skillAttackRange, 0.0f);
+	CHECK_EQ(c.skillApplyRange, 0.0f);
+	CHECK_EQ(c.hp, 0);
+}
+
+MODERN_TEST(PassiveAggregator_AMixedSetCountsOnlyThePassiveDefinitions)
+{
+	// The realistic case: a character holds both. The passive contributes
+	// and the active does not, so the total is the passive's value ALONE.
+	// Were the active's value added, this would come out doubled.
+	InMemorySkillDefinitions provider;
+	{
+		SkillDefinition passive = MakeRangeSpecSkill(1, PassiveSpecType::TarRange, 0, 15.0f);
+		passive.levelData[1].basicVar = 200.0f;
+		CHECK(provider.Add(passive).IsOk());
+
+		SkillDefinition active = MakeRangeSpecSkill(2, PassiveSpecType::TarRange, 0, 15.0f);
+		active.role = SkillRole::Normal;
+		active.levelData[1].basicVar = 200.0f;
+		CHECK(provider.Add(active).IsOk());
+	}
+
+	SkillState skills;
+	CHECK(skills.LearnSkill(Id(1)).IsOk());
+	CHECK(skills.LearnSkill(Id(2)).IsOk());
+	EquipmentState equipment;
+
+	const Result<PassiveContributionResult> aggregated =
+		PassiveContributionAggregator::Aggregate(skills, provider, equipment);
+
+	CHECK(aggregated.IsOk());
+	if (aggregated.IsError())
+	{
+		return;
+	}
+
+	// Passive only: 200 HP and +15 range, not 400 HP and +30.
+	CHECK_EQ(aggregated.GetValue().contribution.hp, 200);
+	CHECK_EQ(aggregated.GetValue().contribution.tarRange, 15.0f);
+
+	// contributingSkills counts SKILLS that added something, and the
+	// active skill added nothing - so it is not counted either.
+	CHECK_EQ(aggregated.GetValue().contributingSkills, static_cast<size_t>(1));
 }
 
 MODERN_TEST(PassiveAggregator_RebuildingTheContributionDoesNotDoubleCount)

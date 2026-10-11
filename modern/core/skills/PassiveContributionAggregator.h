@@ -76,6 +76,10 @@ namespace Modern
 		//
 		// Active skills (emROLE != EMROLE_PASSIVE) are skipped silently —
 		// they are tracked in SkillState but do not contribute to stats.
+		// SKILL-016: this is now ENFORCED against SkillDefinition::role,
+		// matching the role check in SUM_PASSIVE at GLogixExPC.cpp:878.
+		// The two lines above described the intent; before this
+		// milestone the aggregator did not check the role at all.
 		static Result<PassiveContributionResult> Aggregate(
 			const SkillState& skills,
 			const SkillDefinitionProvider& provider,

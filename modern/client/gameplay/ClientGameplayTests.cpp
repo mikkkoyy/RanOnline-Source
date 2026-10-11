@@ -94,6 +94,8 @@ namespace
 		def.id = SkillId{ 1, static_cast<uint16_t>(id) };
 		def.name = "TestSkill";
 		def.maxLevel = 1;
+		def.role = SkillRole::Passive;  // SKILL-016
+		def.role = SkillRole::Passive;  // SKILL-016
 		def.applyType = PassiveApplyType::Hp;
 		def.levelData[1].basicVar = static_cast<float>(stats.hp);
 		if (stats.hpRecoveryRate != 0.0f)

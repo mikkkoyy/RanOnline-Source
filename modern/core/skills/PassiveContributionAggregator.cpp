@@ -352,12 +352,29 @@ namespace Modern
 				return result;
 			}
 
-			// Skip active skills (only passive skills contribute to stats).
-			// In the modern model, we don't track role on the definition;
-			// the caller should only pass passive skills. But for defense
-			// in depth, we could check if the definition has any passive
-			// apply type. Since all definitions in this system are passive
-			// by construction, we don't need this check.
+			// SKILL-016: only EMROLE_PASSIVE contributes.
+			//
+			// Legacy GLogixExPC.cpp:878, inside SUM_PASSIVE, is the SECOND
+			// statement of the loop body - immediately after the definition
+			// lookup, and ahead of the weapon check, the per-level read and
+			// every accumulation below. So this is where it belongs here too.
+			//
+			// `SkillRole::Passive` (SkillDefinition.h:350) mirrors
+			// `SKILL::EMROLE_PASSIVE = 1` (GLSkillBasic.h:133). Both enums are
+			// 0/1 and the loader range-checks the column to 0..1 before casting
+			// (SkillBasicTable.cpp:1004, :1020), so no cast is needed here.
+			//
+			// Skipped SILENTLY, like the weapon check below: having learned an
+			// active skill is not a data fault.
+			//
+			// The previous revision of this file declined this check on the
+			// stated ground that all definitions in this system are passive by
+			// construction. That is false of a definition loaded from the
+			// export, where emROLE is a real column.
+			if (def->role != SkillRole::Passive)
+			{
+				continue;
+			}
 
 			// Check if the definition has non-finite values.
 			if (!IsDefinitionFinite(*def))
