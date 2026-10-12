@@ -90,6 +90,9 @@ world/WorldServerConfig.cpp
     # WORLD-ENTRY-002h: the authoritative resource synchronisation service.
     world/ResourceSyncService.cpp
     world/ResourceSyncService.h
+    # SKILL-018: the world character's authoritative skill state.
+    world/SkillRuntime.cpp
+    world/SkillRuntime.h
 )
 
 add_library(ModernServer STATIC ${MODERN_SERVER_SOURCES})
@@ -145,6 +148,8 @@ add_executable(ModernServerTests
     WorldMovementRuntimeTests.cpp
     # WORLD-ENTRY-002h: the authoritative resource synchronisation service.
     ResourceSyncServiceTests.cpp
+    # SKILL-018: the world skill runtime - deterministic, no sockets.
+    SkillRuntimeTests.cpp
 )
 
 target_include_directories(ModernServerTests PRIVATE

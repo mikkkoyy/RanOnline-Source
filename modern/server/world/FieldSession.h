@@ -59,6 +59,7 @@
 #include "world/GotoService.h"
 #include "world/WorldCharacter.h"
 #include "world/MovementStateService.h"
+#include "world/SkillRuntime.h"
 #include "world/WorldEntryService.h"
 #include "world/WorldMovementRuntime.h"
 
@@ -148,6 +149,15 @@ namespace Modern::Server::World
 		Network::WireU64 AuthorizationId() const noexcept { return m_authorizationId; }
 		Network::WireU64 AgentSessionId() const noexcept { return m_agentSessionId; }
 		WorldAccountId          Account() const noexcept { return m_accountId; }
+
+		// ---- skill state (SKILL-018) ----------------------------------------
+
+		// The session's authoritative skill state. Owned by the session, so it
+		// is created with it and destroyed with it. Null-provider construction
+		// is valid; the runtime then refuses to learn or level skills until a
+		// definition provider is installed.
+		SkillRuntime& Skills() noexcept { return m_skills; }
+		const SkillRuntime& Skills() const noexcept { return m_skills; }
 
 		// ---- authorisation --------------------------------------------------
 
@@ -253,6 +263,13 @@ namespace Modern::Server::World
 		// Borrowed. Null until the Field role installs it, which it does before it
 		// serves anything - so a null here is a wiring error, reported as one.
 		WorldMovementRuntime* m_movementRuntime = nullptr;
+
+		// SKILL-018: this session's authoritative skill state. Owned by the
+		// session, so it is created with it and destroyed with it - a reconnect
+		// starts clean rather than inheriting a previous appearance's skills
+		// or cooldowns. It owns no position, no resource pools and no derived
+		// statistics; those stay with their own authoritative owners.
+		SkillRuntime m_skills{ nullptr };
 
 		FieldState m_state = FieldState::Connected;
 	};
