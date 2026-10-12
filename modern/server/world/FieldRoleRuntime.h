@@ -77,9 +77,11 @@
 #include "ServerBatchEncoder.h"
 #include "TcpListener.h"
 #include "TcpTransport.h"
+#include "SkillProtocol.h"
 #include "UpdateStateProtocol.h"
 #include "WorldEntryProtocol.h"
 #include "types/Result.h"
+#include "skills/SkillDefinitionProvider.h"
 #include "world/CharacterRepository.h"
 #include "world/CombatStatsProvider.h"
 #include "world/FieldSession.h"
@@ -160,6 +162,28 @@ enum class FieldEvent : std::uint8_t
 	// silence, and it is the difference an operator has.
 	AttackRejected,
 
+	// SKILL-021: a 3303 was refused and a 3304 went back to the caster naming
+	// the reason: EMSKILL_UNKNOWN or EMSKILL_NOTLEARN, both of which legacy
+	// also announces (GLCharSkillMsg.cpp:361-363).
+	//
+	// Only the two refusals legacy genuinely announces land here. A cast this
+	// server cannot EXECUTE is NOT in this event, because nothing went on the
+	// wire.
+	SkillRefused,
+
+	// SKILL-021: a 3303 arrived for a skill the character HAS learned and this
+	// server knows, and could not be executed, so it was refused SILENTLY.
+	//
+	// Its own event rather than a reuse of SkillRefused, because the difference
+	// is the whole point: a client that got a 3304 knows what happened and a
+	// client that got nothing does not. One counter for the two would hide which
+	// is which, and an operator chasing "why does my skill do nothing" needs
+	// exactly that distinction.
+	//
+	// What is deliberately NOT in this milestone: no damage, no resource spend,
+	// no cooldown and no 3305. See HandleSkillCast.
+	SkillDeferred,
+
 	ClientRejected,
 	ClientDisconnected,
 };
@@ -208,6 +232,12 @@ enum class FieldEvent : std::uint8_t
 		// value for the same reason as GotoBeforeSpawn - the count it feeds is an
 		// ATTACK count, and an operator should not have to read two refusal kinds.
 		AttackBeforeSpawn,
+
+	// SKILL-021: a 3303 arrived before the connection was spawned. Its own value
+	// for the same reason as GotoBeforeSpawn and AttackBeforeSpawn - the count it
+	// feeds is a SKILL count, and an operator should not have to read three
+	// refusal kinds to find one message.
+	SkillBeforeSpawn,
 	};
 
 	const char* ToString(FieldRefusal refusal) noexcept;
@@ -362,6 +392,41 @@ public:
 		m_itemDefinitions = provider;
 	}
 
+	// SKILL-021: borrows the skill-definition provider every FieldSession's
+	// SkillRuntime is constructed with.
+	//
+	// Same lifetime rule as `SetCombatStatsProvider` and
+	// `SetItemDefinitions`: the pointer must outlive the role. Null is legal and
+	// means "no skill definitions are known", which is the state a deployment
+	// with no skill table is in - SkillRuntime::LearnSkill then refuses rather
+	// than guessing, and a 3303 naming an unknown skill is answered with
+	// EMSKILL_UNKNOWN, which is exactly what legacy returns from
+	// `if (!pSkill)` (GLogixExPC.cpp:4092).
+	//
+	// It is a SEAM and not a table. No production skill table is bound yet, and
+	// installing a stand-in here would be worse than leaving it null: a provider
+	// full of invented definitions would make "unknown skill" untestable and
+	// would let a character appear to have learned something it has not.
+	//
+	// Only sessions created AFTER this call see it. A session constructed before
+	// the provider arrives keeps the null one it was built with, which is the
+	// same rule every other borrowed seam in this class follows.
+	void SetSkillDefinitions(const SkillDefinitionProvider* provider) noexcept
+	{
+		m_skillDefinitions = provider;
+	}
+
+	// SKILL-021: 3303s refused with an announced 3304 (unknown skill, or a skill
+	// this character has not learned), and 3303s that were well formed and for
+	// a skill the character HAS learned but that this server cannot yet execute,
+	// so nothing went on the wire.
+	//
+	// Reported as a PAIR because "the client was told no" and "the client was
+	// told nothing" are different operator questions, and one counter cannot
+	// answer both. Monotonic; written by worker threads, read after Stop().
+	std::size_t SkillRefusedCount() const noexcept { return m_skillRefused.load(); }
+	std::size_t SkillDeferredCount() const noexcept { return m_skillDeferred.load(); }
+
 	// How many 3036s were resolved with verified derived stats, and how many
 	// fell back to the prototype constants because no provider resolved them.
 	// Monotonic; written by worker threads, read after Stop().
@@ -455,8 +520,9 @@ private:
 			// FieldSession takes its repository, registry and session id, and two Field
 			// sessions must never disagree about who owns which character.
 			explicit Peer(ICharacterRepository& repository, FieldEntryRegistry& registry,
-			            Network::WireU64 sessionId)
-				: session(repository, registry, sessionId)
+			            Network::WireU64 sessionId,
+			            const SkillDefinitionProvider* skillDefinitions = nullptr)
+				: session(repository, registry, sessionId, skillDefinitions)
 			{
 			}
 
@@ -517,6 +583,54 @@ private:
 		// check would be a behaviour change, not a reproduction.
 		bool HandleAttack(PeerPtr peer, Network::ServerBatchEncoder& batcher,
 		                  const Network::Message& message);
+
+	// SKILL-021: the 3303 path. Returns whether the connection may continue.
+	//
+	// A MALFORMED 3303 refuses the connection, exactly as a malformed 3032,
+	// 3034 or 3036 does - a length that is not 63 + 4n is a peer that cannot
+	// count its own bytes, and there is no resynchronisation point after it.
+	//
+	// A well-formed one NEVER does, whatever this server decides about it.
+	//
+	// WHAT THIS DOES NOT DO, and the reason each thing is absent rather than
+	// merely unfinished:
+	//
+	//   * it never sends EMSKILL_OK. Nothing was cast, so the one bit that says
+	//     "your cast happened" is never set;
+	//   * it never sends a 3305. A broadcast is the announcement that the cast
+	//     happened, and it did not;
+	//   * it spends no HP/MP/SP and starts no cooldown, because the cast never
+	//     ran and charging for it would be the worse bug;
+	//   * it accepts no range and resolves no target.
+	//
+	// That last group is not caution. Executing a cast needs four things this
+	// server does not yet have an authoritative answer for: a strict
+	// compare-and-spend (ResourceSyncService::Spend saturates rather than
+	// refusing, so it cannot gate a cast), a CP decision (ResourceKind has no
+	// CP at all, and legacy charges wUSE_CP), an authoritative source for the
+	// three range bonuses (SkillRange.h:40-56 requires them as explicit
+	// parameters and says they have no modern source today), and non-player
+	// target resolution (FindTargetPeer resolves spawned player peers only).
+	// Cooldown ticking is also missing - nothing calls AdvanceCooldowns - so a
+	// cooldown started here would never expire.
+	//
+	// So a well-formed, known, learned request is answered the way legacy
+	// answers its silent branches: NOTHING, a counter and a log line.
+	bool HandleSkillCast(PeerPtr peer, Network::ServerBatchEncoder& batcher,
+	                     const Network::Message& message);
+
+	// SKILL-021: the rule half of the 3303 path, split out from the decoding so
+	// the two refusals it can answer are one read of the session's own skill
+	// state rather than a block inside a transport handler.
+	bool EvaluateSkillCast(PeerPtr peer, Network::ServerBatchEncoder& batcher,
+	                       const Network::Skill::SkillRequest& request,
+	                       const SkillId& skillId);
+
+	// SKILL-021: sends a 3304 to the caster. Returns whether the connection may
+	// continue - false only when the packet could not be encoded or sent, which
+	// is a transport fault and not a gameplay refusal.
+	bool SendSkillFeedback(PeerPtr peer, Network::ServerBatchEncoder& batcher,
+	                       Network::WireI32 check);
 
 		// Resolves `gaeaId` to a live spawned peer, or nullptr.
 		//
@@ -719,6 +833,17 @@ std::atomic<std::size_t> m_attackDamageRefused{0};
 	// WORLD-ENTRY-002M: the borrowed item-definition provider. Null means "no
 	// items are known"; see `SetItemDefinitions`.
 	const ItemDefinitionProvider* m_itemDefinitions{nullptr};
+
+	// SKILL-021: the borrowed skill-definition provider, handed to every
+	// FieldSession created after it is installed. Null means "no skill
+	// definitions are known"; see `SetSkillDefinitions`.
+	const SkillDefinitionProvider* m_skillDefinitions{nullptr};
+
+	// SKILL-021: 3303 outcomes. `m_skillRefused` counts the announced
+	// refusals, `m_skillDeferred` the silent ones. Monotonic; written by worker
+	// threads.
+	std::atomic<std::size_t> m_skillRefused{0};
+	std::atomic<std::size_t> m_skillDeferred{0};
 
 	// WORLD-ENTRY-002L-C: 3036s refused because the runtime context was
 	// unavailable. Monotonic; written by worker threads.

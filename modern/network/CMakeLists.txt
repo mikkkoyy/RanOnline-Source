@@ -91,6 +91,12 @@ set(MODERN_NETWORK_SOURCES
     # WORLD-ENTRY-002k: the ATTACK_DAMAGE result - 3043 to the attacker, 3044 to the view.
     AttackDamageProtocol.h
     AttackDamageProtocol.cpp
+    # SKILL-021: the SKILL-CAST protocol - 3303/3304/3305. The first
+    # VARIABLE-LENGTH messages in the tree: 3303 is 63 + 4n bytes and 3305 is
+    # 36 + 4n, so neither uses the exact-size RequireFrame idiom the fixed
+    # messages use. Codec and layouts only - no cast is executed here.
+    SkillProtocol.h
+    SkillProtocol.cpp
     # NETWORK-001: the real Winsock TCP layer. This is the only part of the modern
     # tree that includes <winsock2.h>, and it is why ws2_32 is linked below.
     #

@@ -5,6 +5,7 @@
 #include "LoginProtocol.h"
 #include "LoginResponseProtocol.h"
 #include "NetworkCodec.h"
+#include "SkillProtocol.h"
 #include "UpdateStateProtocol.h"
 
 namespace Modern::Client
@@ -642,6 +643,39 @@ namespace Modern::Client
 
 			m_updateStateBrd = received;
 			++m_updateStateBrdCount;
+			continue;
+		}
+
+		// ---- 3304: the cast refusal (SKILL feedback) ------------------
+		//
+		// Checked BEFORE the spawn test, for the same reason as 3033/3035: all
+		// of these arrive on ONE long-lived Field connection, interleaved.
+		//
+		// Only the refusal is modelled. 3304's success code would mean "your cast
+		// happened", and no code path in this tree produces one - so anything that
+		// arrives here is a refusal, whatever the value says.
+		if (Skill::SkillCodec::IsSkillFeedback(message.header.type))
+		{
+			Skill::SkillFeedback feedback;
+			if (const Status status =
+			        Skill::SkillCodec::DecodeSkillFeedback(frame, feedback);
+			    status.IsError())
+			{
+				m_fieldFailed = true;
+				return status;
+			}
+
+			WorldSkillFeedbackState received;
+			received.received   = true;
+			received.skillCheck = feedback.skillCheck;
+			// BYTES, not a string: the field is char[33] on the wire with no
+			// guaranteed terminator, and a std::string built from it would either
+			// truncate at a NUL or run past the end.
+			received.name.assign(feedback.name.begin(), feedback.name.end());
+			received.frame = frame;
+
+			m_skillFeedback = received;
+			++m_skillFeedbackCount;
 			continue;
 		}
 

@@ -108,10 +108,12 @@ namespace Modern::Server::World
 	public:
 		FieldSession(ICharacterRepository& repository,
 		             FieldEntryRegistry& registry,
-		             Network::WireU64 sessionId = 0) noexcept
+		             Network::WireU64 sessionId = 0,
+		             const SkillDefinitionProvider* skillDefinitions = nullptr) noexcept
 			: m_repository(repository)
 			, m_registry(registry)
 			, m_sessionId(sessionId)
+			, m_skills(skillDefinitions)
 		{
 		}
 
@@ -269,7 +271,8 @@ namespace Modern::Server::World
 		// starts clean rather than inheriting a previous appearance's skills
 		// or cooldowns. It owns no position, no resource pools and no derived
 		// statistics; those stay with their own authoritative owners.
-		SkillRuntime m_skills{ nullptr };
+		// SKILL-021: the definition provider is BORROWED, not owned.
+		SkillRuntime m_skills;
 
 		FieldState m_state = FieldState::Connected;
 	};

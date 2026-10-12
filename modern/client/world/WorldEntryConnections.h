@@ -279,6 +279,43 @@ namespace Modern::Client
 
 		// WORLD-ENTRY-002k: reads until `wantedCount` 3044s have arrived - damage
 		// someone ELSE'S attacks dealt. Same COUNT rationale.
+	// SKILL-021: one target the client is asking to cast at.
+	//
+	// A STARID is TWO 16-bit halves, not a 32-bit id - legacy truncates when it
+	// builds one (GLContrlSkillMsg.h:213) - so this type is deliberately two
+	// narrow fields rather than a WireU32 the caller would expect to round-trip.
+	struct SkillTargetRef
+	{
+		WireU16 crow = 0;
+		WireU16 id   = 0;
+	};
+
+	// SKILL-021: sends a 3303 asking the server to cast a skill.
+	//
+	// Raw, like every other client->server message here: the client states a
+	// REQUEST and the server decides whether it happens. Nothing in this tree
+	// executes the cast, so the honest expected answer for a skill the character
+	// has not learned is a 3304 - and for one it HAS learned, silence.
+	Status SendSkillRequest(WireU16 main, WireU16 sub, const Vector3& targetPosition,
+	                        const std::vector<SkillTargetRef>& targets = {});
+
+	// SKILL-021: reads until `wantedCount` 3304s have arrived in total.
+	//
+	// A COUNT for the same reason every other pump here takes one: a cast this
+	// server cannot execute produces NOTHING, so a client that waited for "the
+	// next 3304" would block forever on the case that matters most.
+	Status PumpUntilSkillFeedbackCount(std::size_t wantedCount, int timeoutMilliseconds,
+	                                   std::size_t maxChunkBytes = 0);
+
+	// SKILL-021: the most recent 3304 and how many have arrived.
+	const WorldSkillFeedbackState& SkillFeedback() const noexcept
+	{
+		return m_protocol.SkillFeedback();
+	}
+	std::size_t SkillFeedbackCount() const noexcept
+	{
+		return m_protocol.SkillFeedbackCount();
+	}
 		Status PumpUntilAttackDamageBrdCount(std::size_t wantedCount, int timeoutMilliseconds,
 		                                     std::size_t maxChunkBytes = 0);
 

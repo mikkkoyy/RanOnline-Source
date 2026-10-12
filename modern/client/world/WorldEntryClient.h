@@ -293,6 +293,31 @@ using Network::WireI32;
 		std::vector<WireU8> frame;
 	};
 
+	// SKILL-021: the cast REFUSAL (3304) - this client's own answer about its own
+	// cast request.
+	//
+	// Only the refusal half is modelled. 3304's success code means "your cast
+	// happened", and no code path in this tree produces one, so there is nothing
+	// here that could be mistaken for a successful cast.
+	struct WorldSkillFeedbackState
+	{
+		bool received = false;
+
+		// EMSKILLCHECK. Read, never interpreted: which code this is, and what a
+		// client should DO about it, is a gameplay decision this transport layer
+		// does not make.
+		WireI32 skillCheck = 0;
+
+		// The 33-byte name field, carried VERBATIM and by length. It is not a C
+		// string on the wire - GLContrlSkillMsg.h declares char[33] for an id
+		// length of 33 and nothing writes a terminator - so it is exposed as the
+		// exact bytes that arrived rather than as a string that might have been
+		// truncated at a NUL.
+		std::vector<WireU8> name;
+
+		std::vector<WireU8> frame;
+	};
+
 	// WORLD-ENTRY-002h: the authoritative resource state (3046).
 	//
 	// Carries ALL pools (HP/MP/SP/CP) with both current and maximum, plus
@@ -475,6 +500,13 @@ using Network::WireI32;
 		}
 		std::size_t AttackDamageBrdCount() const noexcept { return m_attackDamageBrdCount; }
 
+		// SKILL-021: the most recent 3304 and its count.
+		const WorldSkillFeedbackState& SkillFeedback() const noexcept
+		{
+			return m_skillFeedback;
+		}
+		std::size_t SkillFeedbackCount() const noexcept { return m_skillFeedbackCount; }
+
 		const WorldUpdateStateState& UpdateState() const noexcept { return m_updateState; }
 		std::size_t                 UpdateStateCount() const noexcept { return m_updateStateCount; }
 
@@ -546,6 +578,11 @@ using Network::WireI32;
 		std::size_t                m_attackDamageCount = 0;
 		WorldAttackDamageBrdState  m_attackDamageBrd;
 		std::size_t                m_attackDamageBrdCount = 0;
+
+		// SKILL-021: 3304 receptions. The success code is never produced by
+		// any code path in this tree, so a counted 3304 is always a REFUSAL.
+		WorldSkillFeedbackState m_skillFeedback{};
+		std::size_t             m_skillFeedbackCount = 0;
 
 		WorldUpdateStateState     m_updateState{};
 		std::size_t               m_updateStateCount = 0;

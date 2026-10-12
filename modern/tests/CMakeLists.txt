@@ -77,6 +77,14 @@ add_executable(ModernNetworkTests
     # WORLD-ENTRY-002h: the UPDATE_STATE (3046) and UPDATE_STATE_BRD (3053)
     # codec pair.
     UpdateStateProtocolTests.cpp
+    # SKILL-021: the SKILL-CAST codec trio - 3303/3304/3305.
+    #
+    # Layout and bounds only. 3303 is the first variable-length message in the
+    # tree, so most cases build deterministic byte arrays and read them back
+    # with a hand-rolled reader rather than round-tripping through the codec -
+    # an encoder and a decoder that agreed on a wrong layout would otherwise
+    # pass every round trip.
+    SkillProtocolTests.cpp
 )
 
 target_link_libraries(ModernNetworkTests PRIVATE ModernNetwork)

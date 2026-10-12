@@ -150,6 +150,11 @@ add_executable(ModernServerTests
     ResourceSyncServiceTests.cpp
     # SKILL-018: the world skill runtime - deterministic, no sockets.
     SkillRuntimeTests.cpp
+    # SKILL-021: the 3303 dispatch decision table and skill provider injection.
+    # Headless by design - what is checked is a borrowed pointer reaching a
+    # SkillRuntime and a decode-only handler's decision table, and neither needs
+    # a socket. There is deliberately no "a cast succeeded" case here.
+    SkillDispatchTests.cpp
 )
 
 target_include_directories(ModernServerTests PRIVATE

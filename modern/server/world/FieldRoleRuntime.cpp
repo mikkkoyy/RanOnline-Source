@@ -50,6 +50,8 @@ const char* ToString(FieldEvent event) noexcept
 	case FieldEvent::AttackAvoidSent:       return "AttackAvoidSent";
 	case FieldEvent::AttackDamageSent:      return "AttackDamageSent";
 	case FieldEvent::AttackRejected:        return "AttackRejected";
+	case FieldEvent::SkillRefused:        return "SkillRefused";
+	case FieldEvent::SkillDeferred:       return "SkillDeferred";
 		case FieldEvent::ClientRejected:      return "ClientRejected";
 		case FieldEvent::ClientDisconnected:  return "ClientDisconnected";
 		}
@@ -71,6 +73,7 @@ const char* ToString(FieldEvent event) noexcept
 		case FieldRefusal::NotSpawned:       return "NotSpawned";
 		case FieldRefusal::AttackBeforeSpawn: return "AttackBeforeSpawn";
 	case FieldRefusal::GotoBeforeSpawn:  return "GotoBeforeSpawn";
+	case FieldRefusal::SkillBeforeSpawn: return "SkillBeforeSpawn";
 		}
 		return "Unrecognised";
 	}
@@ -265,7 +268,8 @@ const char* ToString(FieldEvent event) noexcept
 				continue;
 			}
 
-			PeerPtr peer = std::make_shared<Peer>(m_repository, m_registry, m_peerCounter++);
+			PeerPtr peer = std::make_shared<Peer>(m_repository, m_registry, m_peerCounter++,
+			                            m_skillDefinitions);
 			peer->transport = std::move(adopted.GetValue());
 			peer->session.SetMovementStateService(m_movement);
 // WORLD-ENTRY-002f: the session's WINDOW onto the movement world.
@@ -384,6 +388,25 @@ if (MovementState::MovementStateCodec::IsMoveState(message.header.type))
 			if (Network::Attack::AttackCodec::IsAttack(message.header.type))
 			{
 				if (!HandleAttack(peer, batcher, message))
+				{
+					refused = true;
+					break;
+				}
+				continue;
+			}
+
+			// ---- 3303 -------------------------------------------------------
+			// Dispatched with 3032, 3034 and 3036, and BEFORE 2359, for the same
+			// reason: a gameplay message is what this connection exists for once it
+			// has spawned, and recognising it first keeps the "not spawned yet"
+			// refusal from being reported as an unexpected id.
+			//
+			// Only a MALFORMED 3303 refuses the connection. A well-formed one never
+			// does, whatever the rule decides - including when the rule has no way
+			// to execute the cast, which is every learned skill at this milestone.
+			if (Skill::SkillCodec::IsSkill(message.header.type))
+			{
+				if (!HandleSkillCast(peer, batcher, message))
 				{
 					refused = true;
 					break;
@@ -695,6 +718,174 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 	}
 
 // ---------------------------------------------------------------------------
+	// SKILL-021: the 3303 path
+	// ---------------------------------------------------------------------------
+	//
+	// DECODE-ONLY BY DESIGN, and the boundary this function draws is worth
+	// stating before the code: nothing below executes a skill.
+	//
+	// What a 3303 IS, in legacy, is the first message in a sequence that ends
+	// in damage. `GLChar::MsgReqSkill` runs thirteen validation stages
+	// (GLCharSkillMsg.cpp:222-941) and only then spends resources (ACCOUNTSKILL
+	// at :997), starts the reuse timer (:997, same call), broadcasts (BRD at
+	// :1006) and acknowledges (FB at :1018). Each of those last four steps is a
+	// statement that THE CAST HAPPENED.
+	//
+	// This server cannot make that statement honestly yet, so it makes none of
+	// them. The two refusals below are the two that legacy itself announces on
+	// a wire message (GLCharSkillMsg.cpp:361-363), and everything else is
+	// silent - which is how legacy answers its own silent branches.
+	//
+	// The prerequisites a real cast needs are listed at HandleSkillCast's
+	// declaration in the header. None of them is "wire up the handler".
+
+	bool FieldRoleRuntime::HandleSkillCast(PeerPtr peer, ServerBatchEncoder& batcher,
+	                                       const Message& message)
+	{
+		const std::vector<WireU8> frame = Skill::SkillCodec::ReconstructFrame(message);
+
+		Skill::SkillRequest request;
+		if (const Status status = Skill::SkillCodec::DecodeSkillRequest(frame, request);
+		    status.IsError())
+		{
+			// An impossible length - not 63 + 4n - is a protocol fault and the
+			// connection is dropped, exactly as a malformed 3032, 3034 or 3036 is.
+			// There is no resynchronisation point in the stream after a peer that
+			// cannot count its own bytes, so this is the one case that costs the
+			// client its connection.
+			//
+			// The codec has already refused a non-finite coordinate or speed, which
+			// is worth naming: legacy compares all five against its own getters
+			// with `!=`, and every comparison involving a NaN is FALSE, so a NaN
+			// would make the anti-speed-hack echo check DISAGREE where the client
+			// meant to agree - a cast refused for a reason nobody can see.
+			m_refusal.store(FieldRefusal::BadMessageSize, std::memory_order_release);
+			m_refusalDetail = "3303 malformed (dwSize " + std::to_string(frame.size()) +
+			                  ", expected " + std::to_string(Skill::kRequestHeaderSize) +
+			                  " + 4n)";
+			return false;
+		}
+
+		if (!peer->spawned.load(std::memory_order_acquire))
+		{
+			// Same rule as GotoBeforeSpawn and AttackBeforeSpawn: a gameplay
+			// message before the spawn is a wiring fault, and the learned-skill
+			// check below has no character to ask about.
+			m_refusal.store(FieldRefusal::SkillBeforeSpawn, std::memory_order_release);
+			m_refusalDetail = "3303 before the 2359 was accepted";
+			return false;
+		}
+
+		// A 3303 carries no character id - like 3034, the CONNECTION says whose
+		// character it is - so there is nothing here to forge. The skill id is a
+		// claim about WHICH skill to cast, and everything below checks that claim.
+		const SkillId skillId{ request.skillId.value & 0xFFFFu,
+		                       (request.skillId.value >> 16) & 0xFFFFu };
+
+		return EvaluateSkillCast(peer, batcher, request, skillId);
+	}
+
+	bool FieldRoleRuntime::EvaluateSkillCast(PeerPtr peer, ServerBatchEncoder& batcher,
+	                                         const Skill::SkillRequest& request,
+	                                         const SkillId& skillId)
+	{
+		// Unknown skill -> EMSKILL_UNKNOWN.
+		//
+		// The honest code, not a generic failure: legacy returns it from exactly
+		// this condition, `if (!pSkill)` at GLogixExPC.cpp:4092, meaning "this
+		// server has no data for that skill". A null provider gives the same
+		// answer, because a deployment with no skill table genuinely does not
+		// know any skill - and answering it that way keeps the seam honest
+		// instead of inventing a definition to make the branch unreachable.
+		if (m_skillDefinitions == nullptr || m_skillDefinitions->Find(skillId) == nullptr)
+		{
+			m_skillRefused.fetch_add(1, std::memory_order_relaxed);
+			Emit(FieldEvent::SkillRefused,
+			     "3303 unknown skill " + std::to_string(skillId.classIndex) + "/" +
+			         std::to_string(skillId.skillIndex),
+			     peer->session.GaeaId());
+			return SendSkillFeedback(peer, batcher, Skill::SkillCheck::kUnknown);
+		}
+
+		// Unlearned -> EMSKILL_NOTLEARN, which legacy also announces and from the
+		// same condition (`learniter == m_ExpSkills.end()`, GLogixExPC.cpp:4087).
+		// Read from the session's OWN SkillRuntime, the authoritative record of
+		// what this character learned - not from the packet.
+		if (!peer->session.Skills().HasSkill(skillId))
+		{
+			m_skillRefused.fetch_add(1, std::memory_order_relaxed);
+			Emit(FieldEvent::SkillRefused,
+			     "3303 unlearned skill " + std::to_string(skillId.classIndex) + "/" +
+			         std::to_string(skillId.skillIndex),
+			     peer->session.GaeaId());
+			return SendSkillFeedback(peer, batcher, Skill::SkillCheck::kNotLearned);
+		}
+
+		// Everything this milestone can honestly decide is decided. The skill is
+		// known and learned, so the cast is not REFUSED - but it cannot be RUN,
+		// and the difference matters. A refusal tells the client "no"; a deferred
+		// cast tells it "not yet"; and legacy has no message for "not yet" that a
+		// client would also understand.
+		//
+		// So: SILENCE, exactly as legacy answers its silent branches. No
+		// EMSKILL_OK, because nothing was cast. No 3305, because a broadcast IS
+		// the announcement that the cast happened. No resource spend, no
+		// cooldown, no position change, no learned-skill change.
+		//
+		// The target list is deliberately neither resolved nor range-checked, so
+		// the log reports what the peer declared rather than acting on it. An
+		// operator learns a cast was attempted without this milestone having
+		// quietly validated something it has no authoritative source for.
+		m_skillDeferred.fetch_add(1, std::memory_order_relaxed);
+		Emit(FieldEvent::SkillDeferred,
+		     "3303 skill " + std::to_string(skillId.classIndex) + "/" +
+		         std::to_string(skillId.skillIndex) + " learned at level " +
+		         std::to_string(peer->session.Skills().GetSkillLevel(skillId)) +
+		         " but not executable; " + std::to_string(request.targets.size()) +
+		         " target(s), " + std::to_string(request.declaredTargetCount) +
+		         " declared, " + std::to_string(request.targetCapacity) +
+		         " supported by bytes",
+		     peer->session.GaeaId());
+
+		// The connection stays exactly as usable as it was. A client that tried a
+		// skill this server cannot run has not misbehaved.
+		return true;
+	}
+
+	bool FieldRoleRuntime::SendSkillFeedback(PeerPtr peer, ServerBatchEncoder& batcher,
+	                                         Network::WireI32 check)
+	{
+		// The name is EXACTLY Skill::kNameBytes. Legacy's constructor zeroes it
+		// and nothing ever writes a terminator (GLContrlSkillMsg.h:236), so an
+		// encoder that padded or cut one would be saying something the struct
+		// cannot say.
+		//
+		// Carried zeroed. The field exists for answers about SOMEONE ELSE -
+		// EMSKILL_NOTREBIRTH, which legacy fills with the TARGET's name
+		// (GLCharSkillMsg.cpp:698) - and neither code sent here reads it.
+		Skill::SkillFeedback feedback;
+		feedback.skillCheck = check;
+		feedback.name       = std::string(Skill::kNameBytes, '\0');
+
+		std::vector<WireU8> packet;
+		if (const Status status = Skill::SkillCodec::AppendSkillFeedback(packet, feedback);
+		    status.IsError())
+		{
+			m_refusal.store(FieldRefusal::SendFailed, std::memory_order_release);
+			m_refusalDetail = "could not encode 3304";
+			return false;
+		}
+
+		if (const Status sent = SendEnveloped(batcher, peer, packet); sent.IsError())
+		{
+			m_refusal.store(FieldRefusal::SendFailed, std::memory_order_release);
+			m_refusalDetail = "could not send 3304";
+			return false;
+		}
+
+		return true;
+	}
+
 	// WORLD-ENTRY-002f: the 3034 path
 	// ---------------------------------------------------------------------------
 

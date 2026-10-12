@@ -2,6 +2,7 @@
 
 #include "AttackProtocol.h"
 #include "NetworkCodec.h"
+#include "SkillProtocol.h"
 
 namespace Modern::Client
 {
@@ -301,6 +302,120 @@ Status FieldConnection::SendGoto(WireU32 requestedActState, Vector3 claimedCurre
 		// read, and the resulting failure would look like a framing bug rather than like
 		// a wrong choice here.
 		return m_transport.Send(request.data(), request.size());
+	}
+
+	Status FieldConnection::SendSkillRequest(WireU16 main, WireU16 sub,
+	                                         const Vector3& targetPosition,
+	                                         const std::vector<SkillTargetRef>& targets)
+	{
+		if (!m_transport.IsConnected())
+		{
+			return Status(ErrorCode::InvalidState);
+		}
+
+		Network::Skill::SkillRequest request;
+		request.skillId.value    = (static_cast<WireU32>(sub) << 16) | main;
+		request.targetPosition   = { targetPosition.x, targetPosition.y, targetPosition.z };
+
+		// The echoed values legacy compares against its own getters. Left at
+		// their defaults here because the server does not execute the cast and
+		// therefore never reaches that comparison - sent verbatim rather than
+		// invented, so the bytes are what this client actually means to say.
+		request.targets.reserve(targets.size());
+		for (const SkillTargetRef& target : targets)
+		{
+			request.targets.push_back(
+			    Network::Skill::SkillTarget{ target.crow, target.id });
+		}
+
+		std::vector<WireU8> frame;
+		if (const Status status =
+		        Network::Skill::SkillCodec::AppendSkillRequest(frame, request);
+		    status.IsError())
+		{
+			return status;
+		}
+
+		return m_transport.Send(frame.data(), frame.size());
+	}
+
+	Status FieldConnection::PumpUntilSkillFeedbackCount(std::size_t wantedCount,
+	                                                    int timeoutMilliseconds,
+	                                                    std::size_t maxChunkBytes)
+	{
+		if (!m_transport.IsConnected())
+		{
+			return Status(ErrorCode::InvalidState);
+		}
+
+		// Already satisfied before a byte is read - the same reason as
+		// PumpUntilMoveCount: a caller asking for a count it has already reached must be
+		// told "yes" immediately, or a refused cast and an already-satisfied one are
+		// indistinguishable.
+		if (m_protocol.SkillFeedbackCount() >= wantedCount)
+		{
+			return Ok();
+		}
+
+		const std::size_t chunk =
+		    (maxChunkBytes == 0 || maxChunkBytes > kReadBufferSize) ? kReadBufferSize
+		                                                             : maxChunkBytes;
+
+		const auto deadline = std::chrono::steady_clock::now() +
+		                     std::chrono::milliseconds(timeoutMilliseconds > 0
+		                                                  ? timeoutMilliseconds
+		                                                  : 1);
+
+		for (;;)
+		{
+			if (m_protocol.SkillFeedbackCount() >= wantedCount)
+			{
+				return Ok();
+			}
+
+			const auto now = std::chrono::steady_clock::now();
+			if (now >= deadline)
+			{
+				return Status(ErrorCode::NotFound);
+			}
+
+			const auto left =
+			    std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+			if (left <= 0)
+			{
+				return Status(ErrorCode::NotFound);
+			}
+
+			const int slice = left < 250 ? static_cast<int>(left) : 250;
+
+			std::vector<Network::WireU8> buffer(chunk);
+			std::size_t                  received = 0;
+
+			const Status status =
+			    m_transport.Receive(buffer.data(), buffer.size(), received, slice);
+
+			// A peer that closed before delivering the 3304 is NotFound here, not
+			// a fault: "the answer never arrived" is the fact the caller needs, and it is
+			// the same fact a timeout reports.
+			if (status.IsError())
+			{
+				return status;
+			}
+
+			if (received == 0)
+			{
+				continue;
+			}
+
+			std::size_t handled = 0;
+			if (const Status fed = m_protocol.FeedField(buffer.data(), received, handled);
+			    fed.IsError())
+			{
+				m_handled += handled;
+				return fed;
+			}
+			m_handled += handled;
+		}
 	}
 
 	Status FieldConnection::SendAttack(WireU32 targetCrow, WireU32 targetId, WireU32 aniSel,

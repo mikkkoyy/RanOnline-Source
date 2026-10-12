@@ -2769,6 +2769,230 @@ MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
 		CHECK_EQ(server.Runtime().Field().CombatContextUnavailableCount(),
 		         static_cast<std::size_t>(0));
 	}
+// =========================================================================
+	// SKILL-021: the 3303 dispatch boundary, over a real socket
+	// =========================================================================
+	//
+	// These are the cases that make the decode-only handler VERIFIED rather than
+	// asserted. Everything above proves the codec; this proves a 3303 actually
+	// reaches HandleSkillCast, is routed to the two refusals legacy announces,
+	// and is SILENT for a cast this server cannot execute.
+	//
+	// There is deliberately no case named "a skill cast". Nothing here casts
+	// anything, and the absence of such a case is the assertion.
+
+	// The unknown-skill refusal, end to end.
+	//
+	// No skill table is bound in this deployment - SKILL-021 installs a seam and
+	// deliberately no data - so every 3303 names a skill the server does not
+	// know, and the handler answers EMSKILL_UNKNOWN (999), which is exactly what
+	// legacy returns from `if (!pSkill)` (GLogixExPC.cpp:4092).
+	//
+	// The connection STAYS OPEN, because a well-formed request that the rule
+	// refuses is not a misbehaving client.
+	MODERN_TEST(Skill_AnUnknownSkillIsRefusedWithEmskillUnknownAndTheConnectionSurvives)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		SpawnedClient client;
+		REQUIRE(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+		REQUIRE(WaitFor(kDeadline, [&] {
+			return server.Runtime().Field().AuthorizedSessionCount() == 1;
+		}));
+
+		REQUIRE(client.connection.IsConnected());
+
+		// One target, so the request is 67 bytes - a legal length that is NOT the
+		// zero-target 63 or the full 159, and therefore exercises the variable
+		// path rather than an endpoint.
+		const std::vector<FieldConnection::SkillTargetRef> targets = {
+		    { 2u, static_cast<WireU16>(0x1234u) }
+		};
+		REQUIRE(client.connection
+		            .SendSkillRequest(0x0014u, 0x0007u, Vector3{ 100.0f, 0.0f, 200.0f },
+		                              targets)
+		            .IsOk());
+
+		REQUIRE(client.connection.PumpUntilSkillFeedbackCount(1, kDeadline).IsOk());
+
+		CHECK(client.connection.SkillFeedback().received);
+		CHECK_EQ(client.connection.SkillFeedback().skillCheck,
+		         Network::Skill::SkillCheck::kUnknown);
+		CHECK_EQ(client.connection.SkillFeedback().skillCheck, static_cast<WireI32>(999));
+
+		// 45 bytes, id 3304. NOT 3305 - a broadcast would announce a cast that
+		// did not happen.
+		CHECK_EQ(client.connection.SkillFeedback().frame.size(), static_cast<std::size_t>(45));
+
+		// The name is 33 raw bytes and is NOT NUL-terminated on the wire, so it
+		// is asserted by length rather than compared as a string.
+		CHECK_EQ(client.connection.SkillFeedback().name.size(),
+		         Network::Skill::kNameBytes);
+
+		// The connection survived a refused cast.
+		CHECK(client.connection.IsConnected());
+
+		// And the refusal was the ANNOUNCED kind.
+		CHECK_EQ(server.Runtime().Field().SkillRefusedCount(),
+		         static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().SkillDeferredCount(),
+		         static_cast<std::size_t>(0));
+	}
+
+	// A second request on the SAME connection after a refusal.
+	//
+	// This is the property that matters most for the claim "the connection stays
+	// usable": a refusal must not poison the stream or the session, and the only
+	// way to know that is to send another message and get another answer.
+	MODERN_TEST(Skill_ARefusedCastLeavesTheConnectionAbleToSendAgain)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		SpawnedClient client;
+		REQUIRE(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+		REQUIRE(WaitFor(kDeadline, [&] {
+			return server.Runtime().Field().AuthorizedSessionCount() == 1;
+		}));
+
+		// Three requests: zero targets, one target, and the full 24. All legal
+		// lengths, all refused the same way, one connection.
+		const std::vector<FieldConnection::SkillTargetRef> one = { { 2u, 1u } };
+		std::vector<FieldConnection::SkillTargetRef>        many;
+		for (std::size_t i = 0; i < Network::Skill::kMaxTargets; ++i)
+		{
+			many.push_back({ 2u, static_cast<WireU16>(i) });
+		}
+
+		REQUIRE(client.connection
+		            .SendSkillRequest(1u, 1u, Vector3{}, {})
+		            .IsOk());
+		REQUIRE(client.connection.PumpUntilSkillFeedbackCount(1, kDeadline).IsOk());
+
+		REQUIRE(client.connection
+		            .SendSkillRequest(2u, 2u, Vector3{}, one)
+		            .IsOk());
+		REQUIRE(client.connection.PumpUntilSkillFeedbackCount(2, kDeadline).IsOk());
+
+		REQUIRE(client.connection
+		            .SendSkillRequest(3u, 3u, Vector3{}, many)
+		            .IsOk());
+		REQUIRE(client.connection.PumpUntilSkillFeedbackCount(3, kDeadline).IsOk());
+
+		CHECK_EQ(client.connection.SkillFeedbackCount(), static_cast<std::size_t>(3));
+		CHECK(client.connection.IsConnected());
+
+		CHECK_EQ(server.Runtime().Field().SkillRefusedCount(),
+		         static_cast<std::size_t>(3));
+	}
+
+	// The current reachable ceiling, pinned deliberately.
+	//
+	// The handler's SILENT branch - a well-formed 3303 for a KNOWN, LEARNED skill
+	// that is then not executed and not answered - is the branch that matters most,
+	// and it CANNOT be reached over a socket yet. Not because the handler is
+	// missing, but because nothing in this tree can put a character in that state:
+	//
+	//   * `WorldCharacter` carries no learned-skill field, so the 2333 spawn has
+	//     nothing to populate a SkillRuntime from;
+	//   * `FieldSession` never calls `LearnSkill`;
+	//   * SKILL-021 adds the provider SEAM and deliberately no data, and
+	//     `SkillRuntime::LearnSkill` still refuses without a provider.
+	//
+	// Adding a "teach this character a skill" call to the production runtime purely
+	// so a test could reach the branch would be inventing a subsystem this
+	// milestone explicitly forbids, and it would be a test-only method on the
+	// hot path. So this case asserts the HONEST current state instead: with no
+	// skill table bound, every 3303 is an unknown-skill refusal, and the deferred
+	// counter stays at zero.
+	//
+	// When a real learned-skill path lands, THIS test is expected to fail - which
+	// is the point. It is a tripwire on the ceiling, not a description of it.
+	MODERN_TEST(Skill_WithNoSkillTableEveryCastIsAnUnknownSkillRefusalAndNoneIsDeferred)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		// Explicitly null, which is the production state: no skill table is
+		// bound, so no skill is known.
+		server.Runtime().Field().SetSkillDefinitions(nullptr);
+
+		SpawnedClient client;
+		REQUIRE(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+		REQUIRE(WaitFor(kDeadline, [&] {
+			return server.Runtime().Field().AuthorizedSessionCount() == 1;
+		}));
+
+		REQUIRE(client.connection
+		            .SendSkillRequest(0x0014u, 0x0007u, Vector3{}, {})
+		            .IsOk());
+		REQUIRE(client.connection.PumpUntilSkillFeedbackCount(1, kDeadline).IsOk());
+
+		CHECK_EQ(client.connection.SkillFeedback().skillCheck,
+		         Network::Skill::SkillCheck::kUnknown);
+
+		// Nothing was deferred, because nothing could be known enough to defer.
+		CHECK_EQ(server.Runtime().Field().SkillRefusedCount(),
+		         static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().SkillDeferredCount(),
+		         static_cast<std::size_t>(0));
+
+		// And the connection is intact.
+		CHECK(client.connection.IsConnected());
+	}
+	// A 3303 is never routed through the movement or attack handlers.
+	//
+	// Structural rather than behavioural: the ids are disjoint, so a cast request
+	// cannot arrive as a GOTO (3034), an ATTACK_AVOID (3041) or a MOVESTATE
+	// (3032). Asserted on the wire - a 3303 that produced a 3035 or a 3041 would
+	// be the failure this is looking for.
+	MODERN_TEST(Skill_ASkillRequestIsNeverRoutedThroughMovementOrAttack)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		SpawnedClient caster;
+		REQUIRE(caster.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+
+		SpawnedClient watcher;
+		REQUIRE(watcher.Spawn(server, kUserB, kPassB, kCharB1.value, kDeadline).IsOk());
+
+		REQUIRE(WaitFor(kDeadline, [&] {
+			return server.Runtime().Field().AuthorizedSessionCount() == 2;
+		}));
+
+		// The watcher is at a different save position from the caster, so an
+		// ACCEPTED attack between them would be visible as a 3037. A 3303 must
+		// produce neither that nor a 3041/3042 avoidance.
+		REQUIRE(WaitFor(kDeadline, [&] {
+			return caster.spawn.gaeaId != 0 && watcher.spawn.gaeaId != 0;
+		}));
+
+		REQUIRE(caster.connection
+		            .SendSkillRequest(9u, 9u, Vector3{}, {})
+		            .IsOk());
+		REQUIRE(caster.connection.PumpUntilSkillFeedbackCount(1, kDeadline).IsOk());
+
+		// Neither client saw an attack, an avoidance or a GOTO broadcast.
+		CHECK_EQ(watcher.connection.AttackCount(), static_cast<std::size_t>(0));
+		CHECK_EQ(watcher.connection.AttackAvoidBrdCount(), static_cast<std::size_t>(0));
+		CHECK_EQ(watcher.connection.GotoCount(), static_cast<std::size_t>(0));
+		CHECK_EQ(caster.connection.GotoCount(), static_cast<std::size_t>(0));
+
+		// And the ATTACK counters are untouched, which is the server-side half of
+		// the same claim.
+		CHECK_EQ(server.Runtime().Field().AttackAcceptedCount(),
+		         static_cast<std::size_t>(0));
+		CHECK_EQ(server.Runtime().Field().AttackRefusedCount(),
+		         static_cast<std::size_t>(0));
+		CHECK_EQ(server.Runtime().Field().GotoSentCount(), static_cast<std::size_t>(0));
+
+		// The cast was still processed as a cast - refused as an unknown skill.
+		CHECK_EQ(server.Runtime().Field().SkillRefusedCount(),
+		         static_cast<std::size_t>(1));
+	}
+
 } // namespace ModernTests
 
 int main()
