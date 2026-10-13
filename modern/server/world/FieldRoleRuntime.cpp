@@ -1,5 +1,6 @@
 #include "world/FieldRoleRuntime.h"
 
+#include "FieldFrameNormalization.h"
 #include "NetworkCodec.h"
 
 #include <utility>
@@ -304,11 +305,11 @@ const char* ToString(FieldEvent event) noexcept
 
 		for (;;)
 		{
-			Message message;
-			const ReadResult read =
-			    ReadMessage(peer, framer, message, kMessageTimeoutMilliseconds);
+		Message message;
+		const ReadResult read =
+		    ReadMessage(peer, framer, message, kMessageTimeoutMilliseconds);
 
-			if (!read.IsOk())
+		if (!read.IsOk())
 			{
 				// Two of the read outcomes are NOT refusals, and conflating them with
 				// the rest would be a behaviour change rather than a refactor.
@@ -341,6 +342,34 @@ const char* ToString(FieldEvent event) noexcept
 					m_refusalDetail = read.detail;
 					break;
 				}
+				refused = true;
+				break;
+			}
+
+			// ---- SKILL-023: legacy garbage token -----------------------
+			//
+			// The ASURA client splices one of five garbage tokens into
+			// EVERY non-login client->server message, after the 8-byte
+			// header, and inflates dwSize by its length. Normalization is
+			// ONE boundary, here: after a WHOLE frame has arrived (a
+			// partial frame never reaches this point - the framer owns
+			// that) and before any message-specific decoding, so every
+			// codec below sees the same bytes a modern client sends.
+			// FieldFrameNormalization.h documents how a real
+			// token-prefixed frame is told apart from an ordinary frame
+			// whose payload merely starts with token-like bytes, and why
+			// that distinction is structural rather than a guess.
+			if (const Status normalized =
+			        FieldFrame::NormalizeInbound(message);
+			    normalized.IsError())
+			{
+				// Defensive only: a framer-delivered message always
+				// satisfies the invariants NormalizeInbound checks. A
+				// failure here means the frame was internally
+				// inconsistent, which is a size fault.
+				m_refusal.store(FieldRefusal::BadMessageSize, std::memory_order_release);
+				m_refusalDetail = "field frame normalization failed: ";
+				m_refusalDetail += normalized.GetMessage();
 				refused = true;
 				break;
 			}

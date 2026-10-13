@@ -97,6 +97,17 @@ set(MODERN_NETWORK_SOURCES
     # messages use. Codec and layouts only - no cast is executed here.
     SkillProtocol.h
     SkillProtocol.cpp
+    # SKILL-023: the ONE inbound field-frame normalization boundary.
+    #
+    # The ASURA client splices one of five garbage tokens into every
+    # non-login client->server message and inflates dwSize by its length.
+    # This owns the single place that recognizes the token, checks the
+    # frame's size structure, strips the token and corrects dwSize -
+    # after a whole frame has arrived and before any message-specific
+    # codec sees the payload. The token table itself is LoginProtocol's
+    # (LoginProtocol::GarbageTokens), not a second copy of it.
+    FieldFrameNormalization.h
+    FieldFrameNormalization.cpp
     # NETWORK-001: the real Winsock TCP layer. This is the only part of the modern
     # tree that includes <winsock2.h>, and it is why ws2_32 is linked below.
     #

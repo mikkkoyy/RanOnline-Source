@@ -85,6 +85,8 @@ add_executable(ModernNetworkTests
     # an encoder and a decoder that agreed on a wrong layout would otherwise
     # pass every round trip.
     SkillProtocolTests.cpp
+    # SKILL-023: legacy garbage token normalization for field frames.
+    FieldNormalizeTests.cpp
 )
 
 target_link_libraries(ModernNetworkTests PRIVATE ModernNetwork)

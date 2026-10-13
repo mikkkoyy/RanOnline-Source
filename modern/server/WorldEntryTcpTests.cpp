@@ -48,6 +48,8 @@
 #include "CompressionCodec.h"
 #include "NetworkCodec.h"
 #include "AttackProtocol.h"
+#include "MovementStateProtocol.h"
+#include "SkillProtocol.h"
 #include "TcpListener.h"
 #include "TcpTransport.h"
 #include "WorldEntryProtocol.h"
@@ -2988,8 +2990,386 @@ MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
 		         static_cast<std::size_t>(0));
 		CHECK_EQ(server.Runtime().Field().GotoSentCount(), static_cast<std::size_t>(0));
 
-		// The cast was still processed as a cast - refused as an unknown skill.
+	// The cast was still processed as a cast - refused as an unknown skill.
+	CHECK_EQ(server.Runtime().Field().SkillRefusedCount(),
+	         static_cast<std::size_t>(1));
+	}
+
+	// =========================================================================
+	// SKILL-023: legacy garbage tokens on a REAL Field connection
+	// =========================================================================
+	//
+	// The codec-level proofs live in FieldNormalizeTests. These prove the
+	// same normalization on a real socket: a frame with the garbage token
+	// the ASURA client splices into EVERY non-login client->server message
+	// crosses TCP, is normalized ONCE at the receive boundary, and reaches
+	// the same handler its token-free twin reaches - with the same
+	// answers, and with malformed frames still refused.
+
+	// Splices a garbage token into a clean frame exactly where the ASURA
+	// client puts it: immediately after the 8-byte header, with dwSize
+	// inflated by the token's length (s_NetClient.cpp:893-922,
+	// SendMsgAddGarbageValue).
+	std::vector<WireU8> SpliceGarbageToken(
+	    const std::vector<WireU8>& cleanFrame, const char* token)
+	{
+		const std::size_t tokenLength = std::strlen(token);
+		std::vector<WireU8> frame;
+		frame.reserve(cleanFrame.size() + tokenLength);
+
+		const WireU32 declaredSize =
+		    static_cast<WireU32>(cleanFrame.size() + tokenLength);
+		const WireU32 type = Codec::ReadU32(cleanFrame.data() + 4);
+		for (int byte = 0; byte < 4; ++byte)
+		{
+			frame.push_back(
+			    static_cast<WireU8>((declaredSize >> (8 * byte)) & 0xFFu));
+		}
+		for (int byte = 0; byte < 4; ++byte)
+		{
+			frame.push_back(
+			    static_cast<WireU8>((type >> (8 * byte)) & 0xFFu));
+		}
+		frame.insert(frame.end(), token, token + tokenLength);
+		frame.insert(frame.end(),
+		             cleanFrame.begin() + 8, cleanFrame.end());
+		return frame;
+	}
+
+	// The 2359 identity, token-prefixed, over a real socket: the Field
+	// role normalizes it, decodes it, validates the authorization and
+	// answers with the 2333 spawn - the whole first field conversation
+	// with a garbage token in it, which is what an ASURA client's
+	// FIRST field frame actually looks like.
+	MODERN_TEST(Field_TokenPrefixedIdentityIsNormalizedAndTheClientSpawns)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+	// A real 2358 from a real Agent conversation.
+	const AgentOnlyResult agent =
+		RunAgentConversation(server, kUserA, kPassA, kCharA1.value);
+	REQUIRE(agent.ok);
+
+	// The client is scoped to end BEFORE server.Stop(): a
+	// client that logs off while the server still runs is a
+	// graceful close the Field role reports as PeerClosed,
+	// whereas a socket closed underneath the role's own Stop
+	// is a receive fault, which is a refusal. Every
+	// connection-counting test above holds its client open
+	// only inside a scope that ends before the stop for
+	// exactly this reason.
+	{
+		MinLzo1xCodec codec;
+		WorldEntryClient protocol(codec);
+		FieldConnection connection(protocol);
+		REQUIRE(connection.Connect(agent.redirect, kDeadline).IsOk());
+
+		// The 2359, with the token on it. 2359 is a LOBBY-range id,
+		// which is exactly why the normalization boundary is keyed on
+		// the dispatched ids and not on "id >= kGCtrlBase".
+		std::vector<WireU8> identity;
+		REQUIRE(WorldEntryClient::BuildFieldIdentity(
+		    IdentityFrom(agent.redirect), identity).IsOk());
+		REQUIRE(connection.SendRaw(
+		    SpliceGarbageToken(identity, "K9IHANA")).IsOk());
+
+		REQUIRE(connection.PumpUntilSpawn(kDeadline).IsOk());
+		const auto& spawn = connection.Spawn();
+		CHECK(spawn.received);
+		CHECK_EQ(spawn.characterId, kCharA1.value);
+		CHECK_EQ(spawn.characterName, std::string("Alpha"));
+		CHECK_EQ(spawn.gaeaId, agent.gaeaId);
+
+		CHECK(connection.IsConnected());
+	}
+
+	server.Stop();
+	CHECK_EQ(server.FieldSpawnedCount(), static_cast<std::size_t>(1));
+	CHECK_EQ(server.Runtime().Field().RefusedClientCount(),
+	         static_cast<std::size_t>(0));
+}
+
+	// A token-prefixed 3032 after the spawn: normalized, decoded, and
+	// answered with the authoritative 3033 exactly as its token-free
+	// twin is.
+	MODERN_TEST(Field_TokenPrefixedMoveStateIsNormalizedAfterSpawn)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		// Scoped to end before server.Stop(), so the client
+		// logs off while the server still runs: the Field role
+		// then observes a graceful close, not a socket shut down
+		// underneath its own stop.
+		{
+			SpawnedClient client;
+			REQUIRE(client.Spawn(server, kUserA, kPassA, kCharA1.value,
+			                     kDeadline).IsOk());
+			REQUIRE(WaitFor(kDeadline, [&] {
+				return server.Runtime().Field().AuthorizedSessionCount() == 1;
+			}));
+
+			// A 3032 with the token spliced in, sent raw.
+			std::vector<WireU8> moveState;
+			REQUIRE(client.protocol.BuildMoveState(
+			    Network::MovementState::kActRun, moveState).IsOk());
+			REQUIRE(client.connection.SendRaw(
+			    SpliceGarbageToken(moveState, "L8IDUL")).IsOk());
+
+			REQUIRE(client.connection.PumpUntilMoveCount(1, kDeadline).IsOk());
+
+			// The authoritative 3033, with the id from the session and the
+			// word the rule derived - not the bytes that crossed the wire.
+			CHECK_EQ(client.connection.MoveStateCount(),
+			         static_cast<std::size_t>(1));
+			CHECK(client.connection.MoveState().received);
+			CHECK_EQ(client.connection.MoveState().gaeaId, client.spawn.gaeaId);
+			CHECK_EQ(client.connection.MoveState().actState,
+			         static_cast<WireU32>(
+			             Network::MovementState::kActRun));
+
+			CHECK(client.connection.IsConnected());
+		}
+
+		server.Stop();
+		CHECK_EQ(server.Runtime().Field().MoveStateSentCount(),
+		         static_cast<std::size_t>(1));
+	}
+
+	// A token-prefixed 3034 after the spawn: normalized, decoded, run
+	// through the real GOTO rule against a real navmesh, and answered
+	// with the 3035 carrying the SERVER's position and the RAW target.
+	MODERN_TEST(Field_TokenPrefixedGotoIsNormalizedAndComesBackAsA3035)
+	{
+		SpawnPad pad;
+		REQUIRE(pad.Ready());
+
+		TestWorldServer server;
+		server.Runtime().SetNavigationMapSource(&pad.Source());
+		REQUIRE(server.Start().IsOk());
+
+		// Scoped to end before server.Stop(): a client that logs off
+		// while the server still runs is a graceful close, not a
+		// socket shut down underneath the role's own stop.
+		{
+			SpawnedClient client;
+			REQUIRE(client.Spawn(server, kUserA, kPassA, kCharA1.value,
+			                     kDeadline).IsOk());
+
+			// A claim INSIDE the 60-unit tolerance that is nevertheless NOT
+			// where the character is - the answer must be the server's.
+			const Vector3 lying = kSpawnPoint + Vector3{ 30.0f, 0.0f, 0.0f };
+			const Vector3 target = kSpawnPoint + Vector3{ 4.0f, 0.0f, 0.0f };
+
+			// A 3034 with the token spliced in, sent raw.
+			std::vector<WireU8> gotoFrame;
+			REQUIRE(client.protocol.BuildGoto(
+			    Network::MovementState::kActRun, lying, target,
+			    gotoFrame).IsOk());
+			REQUIRE(client.connection.SendRaw(
+			    SpliceGarbageToken(gotoFrame, "M7HSET")).IsOk());
+
+			REQUIRE(client.connection.PumpUntilGotoCount(1, kDeadline).IsOk());
+
+			CHECK_EQ(client.connection.GotoCount(), static_cast<std::size_t>(1));
+			CHECK(client.connection.Goto().received);
+			CHECK_EQ(client.connection.Goto().gaeaId, client.spawn.gaeaId);
+			CHECK_EQ(client.connection.Goto().actState,
+			         static_cast<WireU32>(
+			             Network::MovementState::kActRun));
+
+			// The RAW requested target, which is what legacy stores.
+			const Vector3 echoedTarget{
+				client.connection.Goto().targetPositionX,
+				client.connection.Goto().targetPositionY,
+				client.connection.Goto().targetPositionZ };
+			CHECK(echoedTarget.Distance(target) < 0.01f);
+
+			CHECK(WaitFor(kDeadline, [&] {
+				return server.Runtime().Field().GotoSentCount() == 1 &&
+				       server.Runtime().Field().GotoRefusedCount() == 0;
+			}));
+
+			CHECK(client.connection.IsConnected());
+		}
+
+		server.Stop();
+		CHECK_EQ(server.Runtime().Field().GotoRefusedCount(),
+		         static_cast<std::size_t>(0));
+	}
+
+	// A token-prefixed 3303 through the SKILL-021 decoder, over a real
+	// socket: normalized, decoded, and refused with EMSKILL_UNKNOWN
+	// (999) exactly as its token-free twin is - because no skill table
+	// is bound in this deployment. The handler must NOT answer
+	// EMSKILL_OK and must NOT broadcast a cast that did not happen.
+	MODERN_TEST(Field_TokenPrefixedSkillRequestIsNormalizedAndRefusedAsUnknown)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		// Scoped to end before server.Stop(): a client that logs off
+		// while the server still runs is a graceful close, not a
+		// socket shut down underneath the role's own stop.
+		{
+			SpawnedClient client;
+			REQUIRE(client.Spawn(server, kUserA, kPassA, kCharA1.value,
+			                     kDeadline).IsOk());
+			REQUIRE(WaitFor(kDeadline, [&] {
+				return server.Runtime().Field().AuthorizedSessionCount() == 1;
+			}));
+
+			// A 3303 with one target, built exactly as the client's own
+			// send path builds it, with the token spliced in.
+			Network::Skill::SkillRequest request;
+			request.skillId.value =
+				(static_cast<WireU32>(0x0007u) << 16) | 0x0014u;
+			request.targetPosition = { 100.0f, 0.0f, 200.0f };
+			request.targets.push_back(Network::Skill::SkillTarget{ 2u, 0x1234u });
+
+			std::vector<WireU8> frame;
+			REQUIRE(Network::Skill::SkillCodec::AppendSkillRequest(
+				frame, request).IsOk());
+			REQUIRE(client.connection.SendRaw(
+				SpliceGarbageToken(frame, "N6GNET")).IsOk());
+
+			REQUIRE(client.connection.PumpUntilSkillFeedbackCount(1,
+			                                                    kDeadline)
+			            .IsOk());
+
+			CHECK(client.connection.SkillFeedback().received);
+			CHECK_EQ(client.connection.SkillFeedback().skillCheck,
+			         Network::Skill::SkillCheck::kUnknown);
+			CHECK_EQ(client.connection.SkillFeedback().skillCheck,
+			         static_cast<WireI32>(999));
+
+			// 45 bytes, id 3304. NOT 3305 - a broadcast would announce a
+			// cast that did not happen.
+			CHECK_EQ(client.connection.SkillFeedback().frame.size(),
+			         static_cast<std::size_t>(45));
+
+			// The connection survived a refused cast.
+			CHECK(client.connection.IsConnected());
+		}
+
+		server.Stop();
 		CHECK_EQ(server.Runtime().Field().SkillRefusedCount(),
+		         static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().SkillDeferredCount(),
+		         static_cast<std::size_t>(0));
+	}
+
+	// A token-prefixed frame and an ordinary frame on ONE connection:
+	// normalization of the first must not consume, desynchronise or
+	// otherwise disturb the second.
+	MODERN_TEST(Field_TokenPrefixedThenCleanFramesShareOneConnection)
+	{
+		TestWorldServer server;
+		REQUIRE(server.Start().IsOk());
+
+		// Scoped to end before server.Stop(): a client that logs off
+		// while the server still runs is a graceful close, not a
+		// socket shut down underneath the role's own stop.
+		{
+			SpawnedClient client;
+			REQUIRE(client.Spawn(server, kUserA, kPassA, kCharA1.value,
+			                     kDeadline).IsOk());
+			REQUIRE(WaitFor(kDeadline, [&] {
+				return server.Runtime().Field().AuthorizedSessionCount() == 1;
+			}));
+
+			// First: a token-prefixed 3032, raw on the socket.
+			std::vector<WireU8> first;
+			REQUIRE(client.protocol.BuildMoveState(
+			    Network::MovementState::kActRun, first).IsOk());
+			REQUIRE(client.connection.SendRaw(
+			    SpliceGarbageToken(first, "O5FDASEOT")).IsOk());
+			REQUIRE(client.connection.PumpUntilMoveCount(1, kDeadline).IsOk());
+
+			// Then: an ordinary token-free 3032 through the client's own
+			// path, with a state that CHANGES so legacy's "send nothing
+			// when the word did not change" rule cannot make the second
+			// answer silent.
+			REQUIRE(client.connection.SendMoveState(
+				Network::MovementState::kActRun |
+				Network::MovementState::kActPeaceMode).IsOk());
+			REQUIRE(client.connection.PumpUntilMoveCount(2, kDeadline).IsOk());
+
+			// Both frames were answered, on one connection.
+			CHECK_EQ(client.connection.MoveStateCount(),
+			         static_cast<std::size_t>(2));
+			CHECK(client.connection.MoveState().received);
+			CHECK_EQ(client.connection.MoveState().actState,
+			         static_cast<WireU32>(
+			             Network::MovementState::kActRun |
+			             Network::MovementState::kActPeaceMode));
+
+			CHECK(client.connection.IsConnected());
+		}
+
+		server.Stop();
+		CHECK_EQ(server.Runtime().Field().MoveStateSentCount(),
+		         static_cast<std::size_t>(2));
+	}
+
+	// Scope C: a token-prefixed frame that is MALFORMED is still
+	// rejected. The extra byte makes the frame clean + token + 1, a
+	// legal size for nothing, so normalization must NOT strip the
+	// token, and the GOTO decoder must refuse the frame and the
+	// connection with it.
+	MODERN_TEST(Field_TokenPrefixedMalformedGotoIsStillRejected)
+	{
+		SpawnPad pad;
+		REQUIRE(pad.Ready());
+
+		TestWorldServer server;
+		server.Runtime().SetNavigationMapSource(&pad.Source());
+		REQUIRE(server.Start().IsOk());
+
+		SpawnedClient client;
+		REQUIRE(client.Spawn(server, kUserA, kPassA, kCharA1.value,
+		                     kDeadline).IsOk());
+
+		const Vector3 target = kSpawnPoint + Vector3{ 4.0f, 0.0f, 0.0f };
+
+		// A 3034 with the token AND one byte too many. The
+		// declared size must claim the extra byte as well: a
+		// dwSize that still describes the pre-extra-byte frame
+		// makes the framer deliver a perfectly ordinary
+		// token-prefixed 3034 and park the stray byte as the
+		// start of the NEXT frame, which is a different (and
+		// legal) shape from the malformed one under test.
+		std::vector<WireU8> gotoFrame;
+		REQUIRE(client.protocol.BuildGoto(
+			Network::MovementState::kActRun, ServerSpawnPoint(client),
+			target, gotoFrame).IsOk());
+		std::vector<WireU8> malformed =
+			SpliceGarbageToken(gotoFrame, "K9IHANA");
+		malformed.push_back(0x00);
+		const WireU32 inflated = static_cast<WireU32>(malformed.size());
+		for (int byte = 0; byte < 4; ++byte)
+		{
+			malformed[static_cast<std::size_t>(byte)] =
+				static_cast<WireU8>((inflated >> (8 * byte)) & 0xFFu);
+		}
+
+		REQUIRE(client.connection.SendRaw(malformed).IsOk());
+
+		// No 3035 ever arrives - neither a normalized guess nor a
+		// broadcast.
+		CHECK(client.connection.PumpUntilGotoCount(1, kSilenceBudget)
+		          .IsError());
+		CHECK_EQ(client.connection.GotoCount(), static_cast<std::size_t>(0));
+
+		server.Stop();
+		CHECK_EQ(server.Runtime().Field().GotoSentCount(),
+		         static_cast<std::size_t>(0));
+		CHECK_EQ(server.Runtime().Field().GotoRefusedCount(),
+		         static_cast<std::size_t>(0));
+		// The malformed frame refused the CLIENT, which is the
+		// connection-level fault a wrong-length 3034 is.
+		CHECK_EQ(server.Runtime().Field().RefusedClientCount(),
 		         static_cast<std::size_t>(1));
 	}
 
