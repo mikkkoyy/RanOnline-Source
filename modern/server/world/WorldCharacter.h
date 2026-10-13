@@ -150,6 +150,19 @@ namespace Modern::Server::World
 		Network::RanWire::DwPair mp;
 		Network::RanWire::DwPair sp;
 
+		// SKILL-027: the combat-point pool, `m_sCombatPoint`
+		// (GLCharData.h:641) - a fourth GLDWDATA beside HP/MP/SP, checked
+		// and deducted by the skill path (GLogixExPC.cpp:4261, :4353).
+		//
+		// Server-owned like the other three: populated by whoever builds
+		// the character (the repository today, a database layer later -
+		// legacy persists it as ChaInfo.ChaCP), never by the client. Empty
+		// by default, which is the honest "no combat points" state: CP-cost
+		// skills refuse against it and zero-CP skills pass it. No income,
+		// regeneration, death-reset or reward path exists - this milestone
+		// adds the pool the transaction needs, not the economy around it.
+		Network::RanWire::DwPair cp;
+
 		// Where this character last was. §4.5 of the investigation: the spawn point
 		// is the DB save position, and the school start point is only a fallback for
 		// an unresolvable save map, a bRestart map, a dead character or a PVP-event

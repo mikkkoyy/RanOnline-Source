@@ -22,10 +22,26 @@ namespace Modern::Server::World
         using HpFrameSink = std::function<void(const std::vector<Network::WireU8>&)>;
         using WriteBackSink = std::function<void(const Network::RanWire::DwPair&,
                                                   const Network::RanWire::DwPair&,
+                                                  const Network::RanWire::DwPair&,
                                                   const Network::RanWire::DwPair&)>;
 
+        // One atomic skill-cost request: explicit HP, MP, SP and CP amounts.
+        //
+        // Plain data, not a policy: which numbers go in here is the caller's
+        // decision (a future cast path fills them from the skill definition),
+        // and this service never derives a cost from anything. Unsigned, so a
+        // negative cost is unrepresentable rather than refused; zero means
+        // "this pool is not part of the transaction".
+        struct ResourceCost
+        {
+            Network::WireU32 hp = 0;
+            Network::WireU32 mp = 0;
+            Network::WireU32 sp = 0;
+            Network::WireU32 cp = 0;
+        };
+
         // Registers a new authoritative session for a character. The
-        // character's hp/mp/sp DwPairs are the source of truth for both
+        // character's hp/mp/sp/cp DwPairs are the source of truth for both
         // current and maximum values. The sinks are invoked *outside* the
         // service mutex when a frame is ready to send or write-back.
         //
@@ -56,8 +72,37 @@ namespace Modern::Server::World
         // Restores a pool up to its maximum. Emits 3046 if changed; HP
         // restore also emits 3053. A non-positive `amount` is a no-op.
         Status Restore(Network::WireU32 gaeaId,
-                        Resources::ResourceKind kind,
-                        Network::WireU32 amount);
+                       Resources::ResourceKind kind,
+                       Network::WireU32 amount);
+
+        // Spends an explicit multi-resource cost atomically, or refuses the
+        // whole request without touching anything.
+        //
+        // The strict skill-cost gate, and the deliberate opposite of Spend:
+        // Spend saturates (a short pool pays what it has), while TrySpend
+        // compares FIRST and deducts only when every nonzero cost is covered.
+        // One lock acquisition holds the session lookup, all four comparisons
+        // and all four deductions, so no interleaving operation can invalidate
+        // the verdict between the check and the mutation - there is no
+        // separate "check then spend" for a caller to get wrong.
+        //
+        // Legacy comparisons, reproduced exactly (GLogixExPC.cpp:4240-4261):
+        // HP refuses when current <= cost; MP, SP and CP refuse when current
+        // < cost. So a cost equal to current HP is refused, while equal MP,
+        // SP or CP costs succeed and empty their pools. Zero-cost pools are
+        // skipped outright: a zero cost on an empty pool is not a shortage.
+        //
+        // Returns Ok() with all costs deducted on success; NotFound when the
+        // session is missing (nothing touched); NotAllowed when any nonzero
+        // cost is uncovered (nothing touched, nothing emitted, no write-back).
+        // An all-zero request is an Ok() no-op, like Spend's zero amount.
+        //
+        // On success exactly one 3046 goes out, plus one 3053 if and only if
+        // HP was actually deducted, and one repository write-back carrying
+        // all four pools. On refusal there are no frames and no write-back:
+        // a refused transaction is side-effect-free by construction, not by
+        // rollback - nothing mutates before the verdict.
+        Status TrySpend(Network::WireU32 gaeaId, const ResourceCost& cost);
 
         // Applies damage to HP (saturating at 0). Returns the amount
         // actually applied. Emits 3046 and 3053 if HP changed.
@@ -124,6 +169,7 @@ namespace Modern::Server::World
             Network::RanWire::DwPair hp{};
             Network::RanWire::DwPair mp{};
             Network::RanWire::DwPair sp{};
+            Network::RanWire::DwPair cp{};
 
             bool                hasHp = false;
             HpFrameSink         hpSink;

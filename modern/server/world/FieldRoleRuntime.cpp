@@ -632,8 +632,9 @@ if (MovementState::MovementStateCodec::IsMoveState(message.header.type))
 		        },
 		        [this, characterId](const Network::RanWire::DwPair& hp,
 			                    const Network::RanWire::DwPair& mp,
-			                    const Network::RanWire::DwPair& sp) {
-			        WriteBackPools(characterId, hp, mp, sp);
+			                    const Network::RanWire::DwPair& sp,
+			                    const Network::RanWire::DwPair& cp) {
+			        WriteBackPools(characterId, hp, mp, sp, cp);
 		        });
 		    registered.IsError())
 		{
@@ -1991,7 +1992,8 @@ void FieldRoleRuntime::BroadcastResourceState(const PeerPtr& exclude,
 	void FieldRoleRuntime::WriteBackPools(WorldCharacterId characterId,
 	                                        const Network::RanWire::DwPair& hp,
 	                                        const Network::RanWire::DwPair& mp,
-	                                        const Network::RanWire::DwPair& sp)
+	                                        const Network::RanWire::DwPair& sp,
+	                                        const Network::RanWire::DwPair& cp)
 	{
 		auto found = m_repository.Find(characterId);
 		if (found.IsError())
@@ -2002,6 +2004,7 @@ void FieldRoleRuntime::BroadcastResourceState(const PeerPtr& exclude,
 		record.hp = hp;
 		record.mp = mp;
 		record.sp = sp;
+		record.cp = cp;
 		(void)m_repository.Replace(record);
 	}
 

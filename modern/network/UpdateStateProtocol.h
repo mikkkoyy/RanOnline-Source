@@ -192,8 +192,10 @@ namespace Modern::Network
 		// 3046's payload: the server's full authoritative resource state.
 		//
 		// `hp`, `mp`, `sp` are GLDWDATA pairs - `{dwNow, dwMax}` in
-		// RanWire::DwPair's order. `cp` is the dead combat-point pool:
-		// carried, always zero, never produced. `name`, `gaeaId` and
+		// RanWire::DwPair's order. `cp` is the combat-point pool
+		// (`m_sCombatPoint`, GLCharData.h:641): carried live since
+		// SKILL-027, sourced from the character record like the other
+		// three. `name`, `gaeaId` and
 		// `charId` are the mismatch check GLCharacterMsg.cpp:57 performs on
 		// receipt, so a client that receives a state for somebody else can
 		// detect it rather than apply it. `safeTime` is the safe-zone flag.

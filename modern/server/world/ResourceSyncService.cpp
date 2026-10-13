@@ -42,6 +42,12 @@ namespace Modern::Server::World
         record.mp.current = character.mp.now;
         record.sp.maximum = character.sp.max;
         record.sp.current = character.sp.now;
+        // SKILL-027: CP seeds from the character record like every other
+        // pool - no invented values. Characters built before the field
+        // existed carry {0,0}, which is the honest "no combat points"
+        // state: CP-cost skills refuse against it, zero-CP skills pass it.
+        record.cp.maximum = character.cp.max;
+        record.cp.current = character.cp.now;
 
         // Legacy globals - no items, passives or facts in the world model
         // yet. StatCalculator mirrors these:
@@ -55,6 +61,11 @@ namespace Modern::Server::World
                               Stats::RecoveryFlatConstant::kMp, 0.0f };
         record.spRecovery = { Stats::RecoveryRateConstant::kSp,
                               Stats::RecoveryFlatConstant::kSp, 0.0f };
+        // SKILL-027: CP has no recovery terms - no UPDATE_POINT, no income,
+        // no reward path. Zeros here are what Adopt then forces anyway; the
+        // belt-and-suspenders reading is deliberate, because a nonzero term
+        // smuggled in at registration would be CP income by another name.
+        record.cpRecovery = { 0.0f, 0.0f, 0.0f };
 
         const auto adoptResult = Modern::Resources::ResourceState::Adopt(record);
         if (adoptResult.IsError())
@@ -105,7 +116,7 @@ namespace Modern::Server::World
             SelfFrameSink sink;
             std::vector<WireU8> frame;
             WriteBackSink writeBack;
-            WireU32 hpNow, hpMax, mpNow, mpMax, spNow, spMax;
+            WireU32 hpNow, hpMax, mpNow, mpMax, spNow, spMax, cpNow, cpMax;
         };
         struct PendingHp
         {
@@ -144,13 +155,18 @@ namespace Modern::Server::World
                     const WireU32 mpMax = session.state.GetMaximum(Resources::ResourceKind::Mp);
                     const WireU32 spNow = session.state.GetCurrent(Resources::ResourceKind::Sp);
                     const WireU32 spMax = session.state.GetMaximum(Resources::ResourceKind::Sp);
+                    // SKILL-027: the timer snapshot carries the real CP pool.
+                    // CP never regenerates (zero terms at registration), so this
+                    // is a true snapshot rather than a second income path.
+                    const WireU32 cpNow = session.state.GetCurrent(Resources::ResourceKind::Cp);
+                    const WireU32 cpMax = session.state.GetMaximum(Resources::ResourceKind::Cp);
 
                     if (const Status st = Network::UpdateState::UpdateStateCodec::AppendStateUpdate(frame,
                         {
                             { hpNow, hpMax },
                             { mpNow, mpMax },
                             { spNow, spMax },
-                            { 0, 0 },
+                            { cpNow, cpMax },
                             session.name,
                             session.gaeaId,
                             session.characterId,
@@ -161,7 +177,8 @@ namespace Modern::Server::World
                         selfQueue.push_back({ session.selfSink,
                                               std::move(frame),
                                               session.writeBackSink,
-                                              hpNow, hpMax, mpNow, mpMax, spNow, spMax });
+                                              hpNow, hpMax, mpNow, mpMax, spNow, spMax,
+                                              cpNow, cpMax });
                     }
                 }
             }
@@ -174,7 +191,8 @@ namespace Modern::Server::World
             p.writeBack(
                 { p.hpNow, p.hpMax },
                 { p.mpNow, p.mpMax },
-                { p.spNow, p.spMax });
+                { p.spNow, p.spMax },
+                { p.cpNow, p.cpMax });
         }
 
         // hpQueue is unused in Advance (no broadcast on timer).
@@ -200,7 +218,8 @@ namespace Modern::Server::World
                   session.state.GetMaximum(Resources::ResourceKind::Mp) },
                 { session.state.GetCurrent(Resources::ResourceKind::Sp),
                   session.state.GetMaximum(Resources::ResourceKind::Sp) },
-                { 0, 0 },
+                { session.state.GetCurrent(Resources::ResourceKind::Cp),
+                  session.state.GetMaximum(Resources::ResourceKind::Cp) },
                 session.name,
                 session.gaeaId,
                 session.characterId,
@@ -221,6 +240,8 @@ namespace Modern::Server::World
                           session.state.GetMaximum(Resources::ResourceKind::Mp) };
         out.sp        = { session.state.GetCurrent(Resources::ResourceKind::Sp),
                           session.state.GetMaximum(Resources::ResourceKind::Sp) };
+        out.cp        = { session.state.GetCurrent(Resources::ResourceKind::Cp),
+                          session.state.GetMaximum(Resources::ResourceKind::Cp) };
     }
 
     void ResourceSyncService::BuildHpFrame(const Session& session, Outgoing& out)
@@ -253,7 +274,7 @@ namespace Modern::Server::World
         if (out.hasSelf)
         {
             out.self(out.selfFrame);
-            out.writeBack(out.hp, out.mp, out.sp);
+            out.writeBack(out.hp, out.mp, out.sp, out.cp);
         }
         if (out.hasHp)
         {
@@ -313,9 +334,100 @@ namespace Modern::Server::World
         return Ok();
     }
 
+    Status ResourceSyncService::TrySpend(WireU32 gaeaId, const ResourceCost& cost)
+    {
+        // All-zero is an Ok() no-op: no pool is named, so there is nothing to
+        // check, nothing to deduct, and - critically - nothing to emit. A
+        // zero cost on an empty pool must not refuse (the legacy comparisons
+        // below would, for HP: 0 <= 0), so zero-cost pools never reach them.
+        if (cost.hp == 0 && cost.mp == 0 && cost.sp == 0 && cost.cp == 0)
+        {
+            return Ok();
+        }
+
+        // ONE lock acquisition, held across the session lookup, ALL FOUR
+        // comparisons and ALL FOUR deductions - the same shape Spend uses,
+        // extended to the whole request. A second worker spending against the
+        // same session either runs entirely before this verdict or entirely
+        // after it; there is no instant at which a half-deducted transaction
+        // is visible.
+        Outgoing out;
+        bool     hpDeducted = false;
+        {
+            const std::lock_guard lock(m_mutex);
+
+            const auto it = m_sessions.find(gaeaId);
+            if (it == m_sessions.end())
+            {
+                return Status(ErrorCode::NotFound);
+            }
+            Session& session = it->second;
+
+            // The verdict first, the mutation second. Every refusal below
+            // returns before the first pool changes, so a refused transaction
+            // is side-effect-free by construction - no rollback exists
+            // because there is nothing to roll back.
+            //
+            // Legacy operators, exactly (GLogixExPC.cpp:4240-4261): HP
+            // refuses at equality, MP/SP/CP pass through it.
+            const WireU32 hpNow = session.state.GetCurrent(Resources::ResourceKind::Hp);
+            const WireU32 mpNow = session.state.GetCurrent(Resources::ResourceKind::Mp);
+            const WireU32 spNow = session.state.GetCurrent(Resources::ResourceKind::Sp);
+            const WireU32 cpNow = session.state.GetCurrent(Resources::ResourceKind::Cp);
+
+            if ((cost.hp > 0 && hpNow <= cost.hp) ||
+                (cost.mp > 0 && mpNow < cost.mp) ||
+                (cost.sp > 0 && spNow < cost.sp) ||
+                (cost.cp > 0 && cpNow < cost.cp))
+            {
+                return Status(ErrorCode::NotAllowed);
+            }
+
+            // All covered: deduct. Each subtraction is exact - the checks
+            // above guarantee current >= cost for every nonzero cost (and
+            // HP's strictness guarantees current > cost) - and every result
+            // is therefore within its maximum, so SetCurrent cannot refuse.
+            // The (void) marks that impossibility the way the codebase marks
+            // the same shape elsewhere: a failure here would mean the verdict
+            // above lied, which is a programming error, not a data condition.
+            // Splitting these across four saturating Spend calls would
+            // reintroduce the interleaving this exists to remove.
+            if (cost.hp > 0)
+            {
+                (void)session.state.SetCurrent(Resources::ResourceKind::Hp,
+                                               hpNow - cost.hp);
+                hpDeducted = true;
+            }
+            if (cost.mp > 0)
+            {
+                (void)session.state.SetCurrent(Resources::ResourceKind::Mp,
+                                               mpNow - cost.mp);
+            }
+            if (cost.sp > 0)
+            {
+                (void)session.state.SetCurrent(Resources::ResourceKind::Sp,
+                                               spNow - cost.sp);
+            }
+            if (cost.cp > 0)
+            {
+                (void)session.state.SetCurrent(Resources::ResourceKind::Cp,
+                                               cpNow - cost.cp);
+            }
+
+            BuildSelfFrame(session, out);
+            if (hpDeducted)
+            {
+                BuildHpFrame(session, out);
+            }
+        }
+
+        Deliver(out);
+        return Ok();
+    }
+
     Status ResourceSyncService::Restore(WireU32 gaeaId,
-                                         Resources::ResourceKind kind,
-                                         WireU32 amount)
+                                        Resources::ResourceKind kind,
+                                        WireU32 amount)
     {
         if (amount == 0)
         {

@@ -2295,7 +2295,7 @@ MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
 			// A write-back sink that does nothing: this case is about the
 			// service's own bookkeeping, and the repository is not in play.
 			const Modern::Server::World::ResourceSyncService::WriteBackSink noWriteBack =
-			    [](const auto&, const auto&, const auto&) {};
+			    [](const auto&, const auto&, const auto&, const auto&) {};
 
 			std::atomic<int> framesDelivered{0};
 

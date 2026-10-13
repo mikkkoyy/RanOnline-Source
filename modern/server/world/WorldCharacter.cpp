@@ -58,7 +58,8 @@ namespace Modern::Server::World
 		{
 			return Status(ErrorCode::InvalidArgument);
 		}
-		if (hp.now > hp.max || mp.now > mp.max || sp.now > sp.max)
+		if (hp.now > hp.max || mp.now > mp.max || sp.now > sp.max ||
+		    cp.now > cp.max)
 		{
 			return Status(ErrorCode::InvalidArgument);
 		}
@@ -74,6 +75,7 @@ namespace Modern::Server::World
 		       a.level == b.level && a.hp.now == b.hp.now &&
 		       a.hp.max == b.hp.max && a.mp.now == b.mp.now && a.mp.max == b.mp.max &&
 		       a.sp.now == b.sp.now && a.sp.max == b.sp.max &&
+		       a.cp.now == b.cp.now && a.cp.max == b.cp.max &&
 		       a.saveMapId.value == b.saveMapId.value && a.gaeaId == b.gaeaId &&
 		       a.actState == b.actState && a.accountLevel == b.accountLevel &&
 	       a.savePosition.x == b.savePosition.x &&

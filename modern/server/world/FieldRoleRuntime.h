@@ -759,10 +759,15 @@ private:
 
 		// WORLD-ENTRY-002h: writes the authoritative pools back to the repository.
 		// Invoked from the resource sync service's write-back sink.
+		//
+		// SKILL-027: carries all four pools. Only these four fields are
+		// written: the record is re-read first, so concurrent changes to
+		// unrelated fields (name, skills, equipment) survive the Replace.
 		void WriteBackPools(WorldCharacterId characterId,
 		                    const Network::RanWire::DwPair& hp,
 		                    const Network::RanWire::DwPair& mp,
-		                    const Network::RanWire::DwPair& sp);
+		                    const Network::RanWire::DwPair& sp,
+		                    const Network::RanWire::DwPair& cp);
 
 		Status SendEnveloped(Network::ServerBatchEncoder& batcher, PeerPtr peer,
 		                     const std::vector<Network::WireU8>& inner);

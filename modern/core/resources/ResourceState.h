@@ -54,14 +54,23 @@ namespace Modern::Resources
 		Hp,
 		Mp,
 		Sp,
+		// SKILL-027: the combat-point pool. Appended last so Hp/Mp/Sp keep
+		// their values: the kind doubles as the pool-array index, and
+		// renumbering the existing three would silently remap every stored
+		// index. Legacy holds it as a fourth GLDWDATA, `m_sCombatPoint`
+		// (GLCharData.h:641), checked and deducted by the skill path
+		// (GLogixExPC.cpp:4261, :4353) but never regenerated, full-restored,
+		// or respawn-restored there - see Recover/FullRestore/RespawnRestore
+		// for how each operation scopes itself.
+		Cp,
 	};
 
-	inline constexpr size_t kResourceKindCount = 3;
+	inline constexpr size_t kResourceKindCount = 4;
 
 	constexpr bool IsValid(ResourceKind kind) noexcept
 	{
 		return kind == ResourceKind::Hp || kind == ResourceKind::Mp ||
-		       kind == ResourceKind::Sp;
+		       kind == ResourceKind::Sp || kind == ResourceKind::Cp;
 	}
 
 	// The floor each pool's *regeneration* will not leave the character below.
@@ -90,6 +99,11 @@ namespace Modern::Resources
 		inline constexpr uint32_t kHp = 1;
 		inline constexpr uint32_t kMp = 0;
 		inline constexpr uint32_t kSp = 0;
+		// SKILL-027: CP never regenerates - legacy has no CP recovery path
+		// (no UPDATE_POINT call, no TO_FULL, no INIT_RECOVER line for
+		// `m_sCombatPoint`), so its floor is 0 and its recovery terms are
+		// always zero; see Adopt, which enforces that.
+		inline constexpr uint32_t kCp = 0;
 	}
 
 	// One resource: a maximum and a current value.
@@ -148,7 +162,7 @@ namespace Modern::Resources
 		}
 	};
 
-	// The whole of a character's resources: three pools, three recovery
+	// The whole of a character's resources: four pools, four recovery
 	// configurations, and the timing divisor.
 	//
 	// Default-constructed it is the *empty* resource set - every maximum zero -
@@ -176,16 +190,22 @@ namespace Modern::Resources
 	// supplies the legacy globals - with no items, passives or facts
 	// in the world model, those are the only terms the legacy formula
 	// has left (GLogixExPC.cpp:3021-3023).
-	struct ResourceRecord
-	{
-		Pool         hp;
-		Pool         mp;
-		Pool         sp;
+		struct ResourceRecord
+		{
+			Pool         hp;
+			Pool         mp;
+			Pool         sp;
+			Pool         cp;
 
-		PoolRecovery hpRecovery;
-		PoolRecovery mpRecovery;
-		PoolRecovery spRecovery;
-	};
+			PoolRecovery hpRecovery;
+			PoolRecovery mpRecovery;
+			PoolRecovery spRecovery;
+			// SKILL-027: carried for structural symmetry with the other
+			// three, but Adopt forces it to zero - there is no CP income,
+			// regeneration, or reward system, so a record claiming CP
+			// recovery terms claims something no producer can have made.
+			PoolRecovery cpRecovery;
+		};
 
 	// Adopts a record verbatim - both halves of every pool, and the
 	// recovery configuration.
@@ -331,8 +351,10 @@ namespace Modern::Resources
 
 		// ---- Regeneration ----
 		//
-		// `GLOGICEX::UPDATE_POINT` applied to all three pools, in one call, as
+		// `GLOGICEX::UPDATE_POINT` applied to all pools, in one call, as
 		// `GLCHARLOGIC::UpdateCharacter` does at GLogixExPC.cpp:3024-3026.
+		// CP accrues nothing: its recovery terms are forced to zero at Adopt
+		// and preserved by SyncFrom, so the generic loop is a no-op for it.
 		//
 		// For each pool:
 		//
@@ -386,8 +408,8 @@ namespace Modern::Resources
 
 		// ---- Validity ----
 		//
-		// `0 <= current <= maximum` for all three, and a finite rate, flat and
-		// remainder for all three. The second half is the part that catches a
+		// `0 <= current <= maximum` for all four pools, and a finite rate, flat
+		// and remainder for all four. The second half is the part that catches a
 		// state built by a caller rather than by `SyncFrom`.
 		//
 		// A remainder of any magnitude passes: the carry is not a resource

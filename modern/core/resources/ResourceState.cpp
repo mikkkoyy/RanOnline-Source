@@ -59,6 +59,7 @@ namespace Modern::Resources
 			case ResourceKind::Hp: floor = RecoveryFloor::kHp; break;
 			case ResourceKind::Mp: floor = RecoveryFloor::kMp; break;
 			case ResourceKind::Sp: floor = RecoveryFloor::kSp; break;
+			case ResourceKind::Cp: floor = RecoveryFloor::kCp; break;
 			}
 
 			return floor > maximum ? maximum : floor;
@@ -85,10 +86,11 @@ if (state.SyncFrom(derived).IsError())
 		return Result<ResourceState>(std::move(state));
 	}
 
-	Result<ResourceState> ResourceState::Adopt(const ResourceRecord& record)
+		Result<ResourceState> ResourceState::Adopt(const ResourceRecord& record)
 	{
 		const PoolRecovery candidates[kResourceKindCount] = {
 			record.hpRecovery, record.mpRecovery, record.spRecovery,
+			record.cpRecovery,
 		};
 
 		for (size_t index = 0; index < kResourceKindCount; ++index)
@@ -102,7 +104,7 @@ if (state.SyncFrom(derived).IsError())
 		ResourceState state;
 
 		const Pool* sources[kResourceKindCount] = {
-			&record.hp, &record.mp, &record.sp,
+			&record.hp, &record.mp, &record.sp, &record.cp,
 		};
 
 		for (size_t index = 0; index < kResourceKindCount; ++index)
@@ -121,6 +123,14 @@ if (state.SyncFrom(derived).IsError())
 			state.m_recovery[index] = candidates[index];
 		}
 
+		// SKILL-027: CP never regenerates - legacy runs no UPDATE_POINT,
+		// TO_FULL or INIT_RECOVER line for `m_sCombatPoint`, and there is
+		// no income, reward or regeneration system that could have produced
+		// CP recovery terms. Forcing them to zero here, at the single choke
+		// point where external data enters the state, closes the accidental
+		// income path that copying the record verbatim would open.
+		state.m_recovery[IndexOf(ResourceKind::Cp)] = PoolRecovery{};
+
 		// A maximum of zero with a non-zero current is clamped to
 		// zero above; zero maxima are otherwise accepted - an empty
 		// pool is a valid state, and `GetFraction` reports 0 for
@@ -138,6 +148,15 @@ if (state.SyncFrom(derived).IsError())
 			{ derived.hpRecoveryRate, derived.hpRecoveryFlat, m_recovery[0].remainder },
 			{ derived.mpRecoveryRate, derived.mpRecoveryFlat, m_recovery[1].remainder },
 			{ derived.spRecoveryRate, derived.spRecoveryFlat, m_recovery[2].remainder },
+			// SKILL-027: CP has no stat-derived recovery terms - DerivedStats
+			// carries none - so a retune preserves whatever CP recovery the
+			// state already holds, exactly as it preserves every remainder.
+			// Adopt forces those terms to zero, so in practice this preserves
+			// zeros; the preservation itself is what keeps a stat change from
+			// ever becoming a CP income event.
+			{ m_recovery[IndexOf(ResourceKind::Cp)].rate,
+			  m_recovery[IndexOf(ResourceKind::Cp)].flat,
+			  m_recovery[IndexOf(ResourceKind::Cp)].remainder },
 		};
 
 		for (size_t index = 0; index < kResourceKindCount; ++index)
@@ -262,9 +281,16 @@ if (state.SyncFrom(derived).IsError())
 
 	void ResourceState::FullRestore()
 	{
-		// GLDWDATA::TO_FULL (GLDefine.h:441).
+		// GLDWDATA::TO_FULL (GLDefine.h:441), on HP/MP/SP only:
+		// GLogixExPC.cpp:1261-1263 and :3562-3564 call it three times and
+		// never on `m_sCombatPoint`. A CP pool filled here would be income
+		// without a source, so Cp is skipped rather than restored.
 		for (size_t index = 0; index < kResourceKindCount; ++index)
 		{
+			if (static_cast<ResourceKind>(index) == ResourceKind::Cp)
+			{
+				continue;
+			}
 			m_pools[index].current = m_pools[index].maximum;
 		}
 	}
@@ -442,8 +468,15 @@ if (state.SyncFrom(derived).IsError())
 		// only difference worth having.
 		const uint32_t bounded = percent > 100 ? 100 : percent;
 
+		// INIT_RECOVER (GLogixExPC.cpp:1156-1160) raises HP/MP/SP only -
+		// there is no `m_sCombatPoint` line. Skipping Cp is what keeps a
+		// respawn from minting combat points.
 		for (size_t index = 0; index < kResourceKindCount; ++index)
 		{
+			if (static_cast<ResourceKind>(index) == ResourceKind::Cp)
+			{
+				continue;
+			}
 			const uint32_t threshold = static_cast<uint32_t>(
 				(static_cast<uint64_t>(m_pools[index].maximum) * bounded) / 100) + 1u;
 
