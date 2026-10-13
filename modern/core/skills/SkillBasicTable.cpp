@@ -182,7 +182,7 @@ namespace Modern::Skill
 			std::size_t stateBlow = 0;
 
 			// sDATA_LVL <n> <field>, for n in 1..9.
-			std::size_t step[kMaxSkillLevel + 1][7] = {};
+			std::size_t step[kMaxSkillLevel + 1][8] = {};
 
 			// sSTATE_BLOW <n> <field>, for n in 1..9.
 			std::size_t blow[kMaxSkillLevel + 1][3] = {};
