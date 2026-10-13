@@ -23,6 +23,8 @@
 
 #include "TestHarness.h"
 
+#include "skills/SkillDefinition.h"
+#include "skills/SkillDefinitionProvider.h"
 #include "world/AgentSession.h"
 #include "world/CharacterRepository.h"
 #include "world/CharacterSelectService.h"
@@ -1079,6 +1081,219 @@ namespace
 		// The character still holds its gaeaId: Discard does not un-place it.
 		CHECK_EQ(repository.ReadGaeaId(kCharA1).GetValueOr(0),
 		         ok.GetValue().gaeaId);
+	}
+
+	// =========================================================================
+	// SKILL-025: learned-skill records on the character, and spawn-time restore
+	// =========================================================================
+	//
+	// The record is `LearnedSkill{id, level}` on `WorldCharacter` - the modern
+	// shape of legacy SCHARSKILL - carried through the repository by value like
+	// every other character field, and restored into the session SkillRuntime
+	// from the validated record. None of it crosses the wire: 2333 has no skill
+	// fields, and 3303 carries no levels.
+
+	// A castable definition with a real max level, so SetSkillLevel has
+	// something to validate against. The twin of SkillDispatchTests::MakeDef;
+	// kept local rather than shared because the two files must not agree by
+	// construction - each states what a valid definition needs.
+	SkillDefinition MakeSkillDef(uint16_t main, uint16_t sub)
+	{
+		SkillDefinition def;
+		def.id          = SkillId{ main, sub };
+		def.name        = "Skill_" + std::to_string(main) + "_" + std::to_string(sub);
+		def.maxLevel    = 9;
+		def.role        = SkillRole::Normal;
+		def.targetRange = 30;
+		def.levelData[1].basicVar   = 100.0f;
+		def.levelData[1].applyRange = 50;
+		def.levelData[1].useHp      = 10;
+		def.levelData[1].useMp      = 20;
+		def.levelData[1].useSp      = 30;
+		return def;
+	}
+
+	MODERN_TEST(Skill_LearnedSkillsDefaultToEmptyForExistingCharacters)
+	{
+		// Every character built before the field existed - which is every
+		// fixture in this file - carries no records. That must stay a working
+		// state, not a validation failure.
+		const WorldCharacter fresh = MakeCharacter(kCharA1, kAccountA, "Aone", 10);
+		CHECK(fresh.learnedSkills.empty());
+
+		InMemoryCharacterRepository repository;
+		REQUIRE(repository.Add(fresh).IsOk());
+
+		const auto found = repository.Find(kCharA1);
+		REQUIRE(found.IsOk());
+		CHECK(found.GetValue().learnedSkills.empty());
+	}
+
+	MODERN_TEST(Skill_RepositoryRoundTripsLearnedSkillsAndLevels)
+	{
+		WorldCharacter character = MakeCharacter(kCharA1, kAccountA, "Aone", 10);
+		character.learnedSkills = {
+			LearnedSkill{ SkillId{ 20, 30 }, 3 },
+			LearnedSkill{ SkillId{ 21, 31 }, 1 },
+			LearnedSkill{ SkillId{ 22, 32 }, 9 },
+		};
+
+		InMemoryCharacterRepository repository;
+		REQUIRE(repository.Add(character).IsOk());
+
+		// FindOwned - the entry path - returns the records whole: same ids in
+		// the same order at the same levels, which is what operator== proves.
+		const auto owned = repository.FindOwned(kAccountA, kCharA1);
+		REQUIRE(owned.IsOk());
+		CHECK(owned.GetValue() == character);
+		REQUIRE(owned.GetValue().learnedSkills.size() == static_cast<std::size_t>(3));
+		CHECK((owned.GetValue().learnedSkills[0] == LearnedSkill{ SkillId{ 20, 30 }, 3 }));
+		CHECK((owned.GetValue().learnedSkills[1] == LearnedSkill{ SkillId{ 21, 31 }, 1 }));
+		CHECK((owned.GetValue().learnedSkills[2] == LearnedSkill{ SkillId{ 22, 32 }, 9 }));
+
+		// Find and ListByAccount carry them too - the record is one value, not
+		// a per-method projection.
+		const auto found = repository.Find(kCharA1);
+		REQUIRE(found.IsOk());
+		CHECK(found.GetValue() == character);
+
+		std::vector<WorldCharacter> owned_list;
+		REQUIRE(repository.ListByAccount(kAccountA, owned_list).IsOk());
+		REQUIRE(owned_list.size() == static_cast<std::size_t>(1));
+		CHECK(owned_list[0] == character);
+
+		// Replace writes them back whole: changed levels, a dropped record and
+		// an added one all survive the round trip.
+		WorldCharacter updated = character;
+		updated.learnedSkills = {
+			LearnedSkill{ SkillId{ 20, 30 }, 5 },
+			LearnedSkill{ SkillId{ 23, 33 }, 2 },
+		};
+		REQUIRE(repository.Replace(updated).IsOk());
+		const auto reread = repository.Find(kCharA1);
+		REQUIRE(reread.IsOk());
+		CHECK(reread.GetValue() == updated);
+		REQUIRE(reread.GetValue().learnedSkills.size() == static_cast<std::size_t>(2));
+		CHECK_EQ(reread.GetValue().learnedSkills[0].level, static_cast<uint8_t>(5));
+	}
+
+	MODERN_TEST(Skill_SpawnTimeRestoreLearnsPersistedSkillsAtTheirLevels)
+	{
+		InMemorySkillDefinitions definitions;
+		REQUIRE(definitions.Add(MakeSkillDef(20, 30)).IsOk());
+		REQUIRE(definitions.Add(MakeSkillDef(21, 31)).IsOk());
+
+		InMemoryCharacterRepository repository;
+		WorldCharacter character = MakeCharacter(kCharA1, kAccountA, "Aone", 10);
+		character.learnedSkills = {
+			LearnedSkill{ SkillId{ 20, 30 }, 3 },
+			LearnedSkill{ SkillId{ 21, 31 }, 1 },
+		};
+		REQUIRE(repository.Add(character).IsOk());
+
+		FieldEntryRegistry       registry;
+		CharacterSelectService   select(repository);
+		WorldEntryService        entry(repository, registry);
+		entry.SetFieldEndpoint(MakeEndpoint());
+
+		AgentSession agent = MakeSessionReadyToSelect(kAccountA, "user_a");
+		const AuthorizedFlow flow = AuthorizeFlow(agent, select, entry, kCharA1);
+		REQUIRE(flow.ok);
+
+		FieldSession field(repository, registry, 900, &definitions);
+		REQUIRE(field.ValidateIdentity(IdentityFor(flow.authorization), 0).IsOk());
+
+		// Nothing learned before the restore: validation alone teaches nothing.
+		CHECK(!field.Skills().HasSkill(SkillId{ 20, 30 }));
+
+		REQUIRE(field.RestoreLearnedSkills().IsOk());
+
+		// The persisted levels, exactly - not level 1 for both, which is what
+		// a restore that forgot SetSkillLevel would produce.
+		CHECK(field.Skills().HasSkill(SkillId{ 20, 30 }));
+		CHECK_EQ(field.Skills().GetSkillLevel(SkillId{ 20, 30 }), static_cast<uint8_t>(3));
+		CHECK(field.Skills().HasSkill(SkillId{ 21, 31 }));
+		CHECK_EQ(field.Skills().GetSkillLevel(SkillId{ 21, 31 }), static_cast<uint8_t>(1));
+	}
+
+	MODERN_TEST(Skill_SpawnTimeRestoreSkipsInvalidEntriesAndKeepsTheValidOnes)
+	{
+		InMemorySkillDefinitions definitions;
+		REQUIRE(definitions.Add(MakeSkillDef(20, 30)).IsOk());
+		REQUIRE(definitions.Add(MakeSkillDef(21, 31)).IsOk());
+
+		InMemoryCharacterRepository repository;
+		WorldCharacter character = MakeCharacter(kCharA1, kAccountA, "Aone", 10);
+		character.learnedSkills = {
+			LearnedSkill{ SkillId{ 99, 99 }, 1 },  // unknown definition
+			LearnedSkill{ SkillId{ 20, 30 }, 3 },  // valid
+			LearnedSkill{ SkillId{ 20, 30 }, 2 },  // duplicate record
+			LearnedSkill{ SkillId{ 21, 31 }, 10 }, // above maxLevel 9
+			LearnedSkill{ SkillId{ 22, 32 }, 0 },  // level 0 asserts nothing
+		};
+		REQUIRE(repository.Add(character).IsOk());
+
+		FieldEntryRegistry       registry;
+		CharacterSelectService   select(repository);
+		WorldEntryService        entry(repository, registry);
+		entry.SetFieldEndpoint(MakeEndpoint());
+
+		AgentSession agent = MakeSessionReadyToSelect(kAccountA, "user_a");
+		const AuthorizedFlow flow = AuthorizeFlow(agent, select, entry, kCharA1);
+		REQUIRE(flow.ok);
+
+		FieldSession field(repository, registry, 901, &definitions);
+		REQUIRE(field.ValidateIdentity(IdentityFor(flow.authorization), 0).IsOk());
+
+		// Reported - the first failure wins the return - but nothing else
+		// stops restoring.
+		CHECK(field.RestoreLearnedSkills().IsError());
+
+		// The valid entry restored at its persisted level; the duplicate did
+		// not move it back to 2.
+		CHECK(field.Skills().HasSkill(SkillId{ 20, 30 }));
+		CHECK_EQ(field.Skills().GetSkillLevel(SkillId{ 20, 30 }), static_cast<uint8_t>(3));
+
+		// The unknown id, the over-max level and the level-0 entry hold
+		// nothing. The over-max case specifically proves the rollback: without
+		// it the skill would linger at the level LearnSkill assigns.
+		CHECK(!field.Skills().HasSkill(SkillId{ 99, 99 }));
+		CHECK(!field.Skills().HasSkill(SkillId{ 21, 31 }));
+		CHECK(!field.Skills().HasSkill(SkillId{ 22, 32 }));
+		CHECK_EQ(field.Skills().GetSkillState().GetLearnedCount(),
+		         static_cast<std::size_t>(1));
+	}
+
+	MODERN_TEST(Skill_SpawnTimeRestoreWithoutProviderReportsConfigurationError)
+	{
+		// A null provider with persisted records is a deployment that names
+		// skill data it cannot validate - a configuration error, not proof
+		// that the character knows nothing. The restore says so and the
+		// session stays empty, which is what keeps the 3303 handler answering
+		// UNKNOWN rather than inventing NOTLEARN.
+		InMemoryCharacterRepository repository;
+		WorldCharacter character = MakeCharacter(kCharA1, kAccountA, "Aone", 10);
+		character.learnedSkills = {
+			LearnedSkill{ SkillId{ 20, 30 }, 2 },
+		};
+		REQUIRE(repository.Add(character).IsOk());
+
+		FieldEntryRegistry       registry;
+		CharacterSelectService   select(repository);
+		WorldEntryService        entry(repository, registry);
+		entry.SetFieldEndpoint(MakeEndpoint());
+
+		AgentSession agent = MakeSessionReadyToSelect(kAccountA, "user_a");
+		const AuthorizedFlow flow = AuthorizeFlow(agent, select, entry, kCharA1);
+		REQUIRE(flow.ok);
+
+		FieldSession field(repository, registry, 902, nullptr);
+		REQUIRE(field.ValidateIdentity(IdentityFor(flow.authorization), 0).IsOk());
+
+		const Status restored = field.RestoreLearnedSkills();
+		CHECK(restored.IsError());
+		CHECK_EQ(restored.GetCode(), ErrorCode::InvalidState);
+		CHECK(!field.Skills().HasSkill(SkillId{ 20, 30 }));
 	}
 
 	// =========================================================================

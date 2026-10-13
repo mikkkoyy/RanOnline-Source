@@ -52,6 +52,7 @@
 #include "login/LoginReceiver.h"
 #include "equipment/ItemDefinitionProvider.h"
 #include "item/ItemDefinitionTable.h"
+#include "skills/SkillDefinitionProvider.h"
 #include "types/Result.h"
 #include "world/AgentRoleRuntime.h"
 #include "world/CharacterClassMovementSpeed.h"
@@ -119,6 +120,17 @@ namespace Modern::Server::World
 
 		AgentRoleRuntime& Agent() noexcept { return m_agent; }
 		FieldRoleRuntime& Field() noexcept { return m_field; }
+
+		// SKILL-025: how many skill definitions the configured CSV produced.
+		// 0 for "no skill data configured" and for "the path was unreadable"
+		// only until Start() is reached - unlike the item counter, a configured
+		// path that failed to load refuses Start(), so a 0 here on a running
+		// server always means "no skill data configured". Exists so a caller
+		// does not have to reach into the provider to read it.
+		std::size_t SkillRowsLoaded() const noexcept
+		{
+			return m_skillRowsLoaded.load(std::memory_order_acquire);
+		}
 
 		const WorldServerConfig& Config() const noexcept { return m_config; }
 
@@ -261,6 +273,35 @@ MovementStateService& Movement() noexcept { return m_movement; }
 		// `m_itemTable.GetCount()` is the same number and this one exists so a
 		// caller does not have to reach into the provider to read it.
 		std::atomic<std::size_t> m_itemRowsLoaded{0};
+
+		// SKILL-025: the skill-definition provider the Field role borrows,
+		// and the definitions it holds when skill data was configured.
+		//
+		// Owned here for the same reason `m_itemTable` is: the runtime is the
+		// only thing with a lifetime that outlives the worker threads, so it
+		// is where a process-wide table of skill definitions belongs.
+		// Declared AFTER `m_field` because the field borrows it by pointer:
+		// the setter runs in the constructor body, after every member is
+		// built and before anything can use either.
+		//
+		// Always bound, even when empty: an empty `skillDataPath` leaves the
+		// table empty and the pointer still bound, which is the documented
+		// "no skill definitions are known" state - never a silent null.
+		InMemorySkillDefinitions m_skillTable;
+
+		// SKILL-025: how many skill definitions the configured CSV produced.
+		// See SkillRowsLoaded(): unlike the item counter, a configured path
+		// that failed to load never reaches a running server - Start() refuses
+		// first - so 0 on a running server always means "not configured".
+		std::atomic<std::size_t> m_skillRowsLoaded{0};
+
+		// SKILL-025: the skill-CSV load failure, if the configured path could
+		// not be loaded. Ok when no path was configured or the load succeeded.
+		// Recorded in the constructor (which cannot fail) and enforced in
+		// Start() (which can): a deployment that names skill data it cannot
+		// read is refused before either role binds a port, never served
+		// half-loaded.
+		Status m_skillLoadStatus;
 
 		Network::Endpoint m_fieldEndpoint;
 

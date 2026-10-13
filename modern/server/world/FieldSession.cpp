@@ -138,6 +138,57 @@ namespace Modern::Server::World
 	}
 
 	// ---------------------------------------------------------------------------
+	// SKILL-025: spawn-time learned-skill restore
+	// ---------------------------------------------------------------------------
+
+	Status FieldSession::RestoreLearnedSkills()
+	{
+		Status firstFailure;
+
+		for (const Modern::LearnedSkill& record : m_character.learnedSkills)
+		{
+			// A level-0 entry asserts nothing: 0 means "not learned" in the
+			// modern record (unlike legacy's 0-based storage, where LEARN
+			// inserts wLevel 0). Skipping it is not a failure and not a
+			// diagnosis - there is nothing to restore and nothing wrong.
+			if (record.level == 0)
+			{
+				continue;
+			}
+
+			if (const Status learned = m_skills.LearnSkill(record.id);
+			    learned.IsError())
+			{
+				// Unknown definition, duplicate record, or no provider: the
+				// session keeps whatever validated before this entry, and the
+				// first failure is what the caller reports.
+				if (firstFailure.IsOk())
+				{
+					firstFailure = learned;
+				}
+				continue;
+			}
+
+			if (const Status leveled = m_skills.SetSkillLevel(record.id, record.level);
+			    leveled.IsError())
+			{
+				// Roll back the learn: a skill left at level 1 when the
+				// record asked for an impossible level would be a level
+				// this session silently changed. UnlearnSkill cannot fail
+				// here - the skill was just learned above.
+				(void)m_skills.UnlearnSkill(record.id);
+				if (firstFailure.IsOk())
+				{
+					firstFailure = leveled;
+				}
+				continue;
+			}
+		}
+
+		return firstFailure;
+	}
+
+	// ---------------------------------------------------------------------------
 	// WORLD-ENTRY-002a: movement state
 	// ---------------------------------------------------------------------------
 

@@ -184,6 +184,17 @@ enum class FieldEvent : std::uint8_t
 	// no cooldown and no 3305. See HandleSkillCast.
 	SkillDeferred,
 
+	// SKILL-025: a spawn restored skills but skipped at least one persisted
+	// record - unknown definition, duplicate record, out-of-range level, or
+	// no provider to validate against. Carries the gaeaId whose spawn it was.
+	//
+	// Its own event rather than silence: a character entering the world
+	// without the skills its record claims is a data or configuration fault,
+	// and the Emit text names the reason class. The spawn itself is unaffected
+	// - skipped entries simply stay unlearned, which degrades to the existing
+	// NOTLEARN behaviour for those skills.
+	SkillRestoreSkipped,
+
 	ClientRejected,
 	ClientDisconnected,
 };
@@ -426,6 +437,17 @@ public:
 	// answer both. Monotonic; written by worker threads, read after Stop().
 	std::size_t SkillRefusedCount() const noexcept { return m_skillRefused.load(); }
 	std::size_t SkillDeferredCount() const noexcept { return m_skillDeferred.load(); }
+
+	// SKILL-025: spawns whose skill restore skipped at least one persisted
+	// record. Monotonic; written by worker threads, read after Stop(). Counts
+	// SPAWNS, not entries - RestoreLearnedSkills reports the first failure and
+	// the Emit text names its reason, so one counter increment means "this
+	// spawn's record needs attention" and the entry itself is found in the
+	// character's persisted records in record order.
+	std::size_t SkillRestoreSkippedCount() const noexcept
+	{
+		return m_skillRestoreSkipped.load();
+	}
 
 	// How many 3036s were resolved with verified derived stats, and how many
 	// fell back to the prototype constants because no provider resolved them.
@@ -844,6 +866,10 @@ std::atomic<std::size_t> m_attackDamageRefused{0};
 	// threads.
 	std::atomic<std::size_t> m_skillRefused{0};
 	std::atomic<std::size_t> m_skillDeferred{0};
+
+	// SKILL-025: spawns whose skill restore skipped records. See
+	// SkillRestoreSkippedCount().
+	std::atomic<std::size_t> m_skillRestoreSkipped{0};
 
 	// WORLD-ENTRY-002L-C: 3036s refused because the runtime context was
 	// unavailable. Monotonic; written by worker threads.

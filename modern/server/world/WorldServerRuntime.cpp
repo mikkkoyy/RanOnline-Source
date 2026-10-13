@@ -1,6 +1,7 @@
 		#include "world/WorldServerRuntime.h"
 
 #include "item/ItemDefinitionTable.h"
+#include "skills/SkillBasicTable.h"
 
 #include <utility>
 
@@ -47,6 +48,38 @@ namespace Modern::Server::World
 		// and the combat provider learn that.
 		m_combatStats.SetItemDefinitions(&m_itemTable);
 		m_field.SetItemDefinitions(&m_itemTable);
+
+		// SKILL-025: the skill table, loaded from the configured path.
+		//
+		// An empty path loads nothing and is VALID - the table stays empty, the
+		// provider below is still bound, and every cast is answered from that
+		// honest "no skill definitions are known" state. That is what every
+		// existing test runs.
+		//
+		// A path that is set but unreadable is NOT valid: the failure is
+		// recorded here (the constructor cannot fail) and enforced in Start(),
+		// which refuses before either role binds a port. Serving casts against
+		// definitions the deployment named but the server does not have would
+		// be the silent half-load this milestone exists to prevent.
+		if (!m_config.skillDataPath.empty())
+		{
+			const auto loaded =
+			    Modern::Skill::LoadSkillCsv(m_config.skillDataPath, m_skillTable);
+			if (loaded.IsOk())
+			{
+				m_skillRowsLoaded = static_cast<std::size_t>(loaded.GetValue().loaded);
+			}
+			else
+			{
+				m_skillRowsLoaded  = 0;
+				m_skillLoadStatus = loaded.GetStatus();
+			}
+		}
+
+		// Bound whether or not anything loaded, exactly as the item table is:
+		// the field role borrows this pointer for every session it creates, so
+		// the provider is never silently null - only ever empty.
+		m_field.SetSkillDefinitions(&m_skillTable);
 	}
 
 	WorldServerRuntime::~WorldServerRuntime()
@@ -61,6 +94,17 @@ namespace Modern::Server::World
 			// Reported rather than silently ignored: a caller that believes it started a
 			// second server and did not would then have two objects claiming one port.
 			return Status(ErrorCode::InvalidState);
+		}
+
+		// SKILL-025: a configured skill path that failed to load refuses the
+		// whole start, before either role binds a port. The constructor recorded
+		// the failure; this is where it is enforced, because Start() is the
+		// operation that can fail and the constructor is not. An operator who
+		// named skill data gets "the server would not start and said why",
+		// never "the server runs and knows no skills".
+		if (m_skillLoadStatus.IsError())
+		{
+			return m_skillLoadStatus;
 		}
 
 		// The FIELD role binds first, and that ordering is load-bearing.

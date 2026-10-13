@@ -9,12 +9,13 @@
 // The HANDLER ITSELF is exercised end to end in WorldEntryTcpTests.cpp, which
 // spawns a real client over a real socket and asserts the 3304 that comes back,
 // that the connection survives, and that a 3303 is never routed through the
-// movement or attack handlers. What is deliberately NOT reachable over a socket
-// yet is the handler's silent branch: nothing in this tree can put a character
-// in a "knows the skill and has learned it" state, because WorldCharacter
-// carries no learned-skill field and FieldSession never calls LearnSkill. That
-// test there is written as a tripwire on that ceiling, and is expected to fail
-// when a real learned-skill path lands.
+// movement or attack handlers.
+//
+// SKILL-025 lifted the old ceiling: WorldCharacter now carries persisted
+// learned-skill records and FieldSession::RestoreLearnedSkills restores them,
+// so the handler's silent branch IS reachable - over a socket in
+// WorldEntryTcpTests.cpp, and at the API level in
+// WorldEntryServiceTests.cpp, which drives validate-then-restore headlessly.
 //
 // ---------------------------------------------------------------------------
 // WHAT IS DELIBERATELY NOT TESTED HERE

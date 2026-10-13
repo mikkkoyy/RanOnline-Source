@@ -161,6 +161,31 @@ namespace Modern::Server::World
 		SkillRuntime& Skills() noexcept { return m_skills; }
 		const SkillRuntime& Skills() const noexcept { return m_skills; }
 
+		// SKILL-025: restores the validated character's persisted learned
+		// skills into this session's SkillRuntime, using LearnSkill and
+		// SetSkillLevel - the same APIs any later learning path uses, so the
+		// restored state is indistinguishable from learned-live state.
+		//
+		// Reads ONLY `m_character.learnedSkills`, the authoritative repository
+		// record this session was validated against. Never the network: 3303
+		// carries no levels, and restoring from a client claim would let a
+		// client grant itself skills.
+		//
+		// Best-effort per entry, first failure wins the return: a level-0
+		// entry asserts nothing ("not learned") and is skipped; an unknown
+		// id, a duplicate id, an out-of-range level, or a null provider
+		// stops nothing else from restoring but is reported. Entries are
+		// processed in record order, so the reported failure is always the
+		// first invalid entry in the record - which is what makes the
+		// diagnostic reproducible rather than order-dependent.
+		//
+		// A failed SetSkillLevel is rolled back with UnlearnSkill, so the
+		// session never holds a skill at a level the caller did not ask for:
+		// the state after a skip is exactly "as if that entry were absent".
+		// Transport-free, like everything else on SkillRuntime: diagnosis is
+		// the return value, and emitting it is the caller's job.
+		Status RestoreLearnedSkills();
+
 		// ---- authorisation --------------------------------------------------
 
 		bool MaySpawn() const noexcept

@@ -73,10 +73,12 @@
 #include "WorldEntryProtocol.h"
 #include "equipment/EquipmentState.h"
 #include "item/ItemIdentity.h"
+#include "skills/SkillState.h"
 #include "types/Result.h"
 
 #include <cmath>
 #include <string>
+#include <vector>
 
 namespace Modern::Server::World
 {
@@ -186,6 +188,34 @@ namespace Modern::Server::World
 		// counts), no persistence (this is runtime state), and no stat cache (the
 		// aggregation runs on demand so it can never go stale).
 		Modern::EquipmentState equipment;
+
+		// SKILL-025: what this character has learned, as persisted records.
+		//
+		// SERVER-OWNED, like `equipment` above and for the same reason. Nothing on
+		// the wire carries a learned skill - the 3303 that asks to cast names a
+		// skill id, and the 2359 that joins carries an identity - so a client
+		// cannot nominate learned skills. The record is populated by whoever
+		// builds the character: the character repository today (from stored
+		// character data), and a database layer later.
+		//
+		// Each entry mirrors legacy SCHARSKILL (GLCharData.h:233): a skill native
+		// id and a level. Levels are 1-based here - `LearnedSkill::level` documents
+		// "1..kMaxSkillLevel, 0 = not learned" - not legacy's 0-based storage, in
+		// which LEARN inserts wLevel 0. A level-0 entry asserts nothing and is
+		// skipped when the session restores its skills.
+		//
+		// Empty means "no persisted skill records", which is the state of every
+		// character built before this field existed and the correct default: the
+		// session then learns nothing, and the cast handler answers NOTLEARN.
+		// That is distinct from a null skill-definition provider, which remains
+		// the "no skill table is configured" state - an empty record is a fact
+		// about the character, a null provider is a fact about the deployment.
+		//
+		// Not inspected by Validate(): like equipment, this is server-side data,
+		// never wire bytes, so there is no encoding for it to fail. Invalid
+		// entries (unknown ids, out-of-range levels) are diagnosed and skipped
+		// at restore time, where the definitions needed to judge them exist.
+		std::vector<Modern::LearnedSkill> learnedSkills;
 
 		// m_dwUserLvl: the ACCOUNT privilege level, carried by the Agent->Field join
 		// (NET_GAME_JOIN_FIELDSVR::dwUserLvl, s_NetGlobal.h:4174) and by the client's

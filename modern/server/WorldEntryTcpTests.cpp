@@ -55,6 +55,8 @@
 #include "WorldEntryProtocol.h"
 #include "login/LoginReceiver.h"
 #include "login/World001LoginClient.h"
+#include "skills/SkillDefinition.h"
+#include "skills/SkillDefinitionProvider.h"
 #include "world/AgentRoleRuntime.h"
 #include "world/CharacterRepository.h"
 #include "world/FieldRoleRuntime.h"
@@ -69,8 +71,11 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -2889,28 +2894,14 @@ MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
 		         static_cast<std::size_t>(3));
 	}
 
-	// The current reachable ceiling, pinned deliberately.
+	// The null-provider behaviour, pinned deliberately.
 	//
-	// The handler's SILENT branch - a well-formed 3303 for a KNOWN, LEARNED skill
-	// that is then not executed and not answered - is the branch that matters most,
-	// and it CANNOT be reached over a socket yet. Not because the handler is
-	// missing, but because nothing in this tree can put a character in that state:
-	//
-	//   * `WorldCharacter` carries no learned-skill field, so the 2333 spawn has
-	//     nothing to populate a SkillRuntime from;
-	//   * `FieldSession` never calls `LearnSkill`;
-	//   * SKILL-021 adds the provider SEAM and deliberately no data, and
-	//     `SkillRuntime::LearnSkill` still refuses without a provider.
-	//
-	// Adding a "teach this character a skill" call to the production runtime purely
-	// so a test could reach the branch would be inventing a subsystem this
-	// milestone explicitly forbids, and it would be a test-only method on the
-	// hot path. So this case asserts the HONEST current state instead: with no
-	// skill table bound, every 3303 is an unknown-skill refusal, and the deferred
-	// counter stays at zero.
-	//
-	// When a real learned-skill path lands, THIS test is expected to fail - which
-	// is the point. It is a tripwire on the ceiling, not a description of it.
+	// With the provider explicitly nulled, every 3303 is an unknown-skill
+	// refusal and the deferred counter stays at zero - the HONEST current
+	// state for a deployment with no skill table, and the configuration-error
+	// signal SKILL-021 established. Null here is set explicitly (production
+	// now binds an empty provider instead), so this case keeps covering the
+	// "no table configured" deployment rather than the default one.
 	MODERN_TEST(Skill_WithNoSkillTableEveryCastIsAnUnknownSkillRefusalAndNoneIsDeferred)
 	{
 		TestWorldServer server;
@@ -2943,6 +2934,315 @@ MODERN_TEST(ResourceSync_FragmentationWorksViaExistingMachinery)
 		// And the connection is intact.
 		CHECK(client.connection.IsConnected());
 	}
+
+	// =========================================================================
+	// SKILL-025: provider loading, spawn-time restore, and the new ceiling
+	// =========================================================================
+	//
+	// What the null-provider tripwire above cannot reach, these can: a skill
+	// table bound before serving, persisted records restored at spawn, and the
+	// handler's silent branch answering a cast for a known, learned skill with
+	// nothing. No test here casts anything - the absence of a 3304, of a 3305
+	// and of EMSKILL_OK is the assertion.
+
+	// A castable definition with a real max level. The twin of
+	// SkillDispatchTests::MakeDef and WorldEntryServiceTests' MakeSkillDef;
+	// local because the three files must each state what a valid definition
+	// needs rather than agree by sharing one.
+	SkillDefinition MakeSkillDef(uint16_t main, uint16_t sub)
+	{
+		SkillDefinition def;
+		def.id          = SkillId{ main, sub };
+		def.name        = "Skill_" + std::to_string(main) + "_" + std::to_string(sub);
+		def.maxLevel    = 9;
+		def.role        = SkillRole::Normal;
+		def.targetRange = 30;
+		def.levelData[1].basicVar   = 100.0f;
+		def.levelData[1].applyRange = 50;
+		def.levelData[1].useHp      = 10;
+		def.levelData[1].useMp      = 20;
+		def.levelData[1].useSp      = 30;
+		return def;
+	}
+
+	// A skill-data path that names nothing loadable refuses the whole start,
+	// before either role binds a port. The deployment named skill data it
+	// cannot read; "runs with no skills" would be the silent half-load this
+	// milestone exists to prevent.
+	MODERN_TEST(Skill_AMisconfiguredSkillPathRefusesServerStart)
+	{
+		InMemoryLoginAuthenticator authenticator;
+		InMemoryCharacterRepository repository;
+
+		WorldServerConfig config = WorldServerConfig::MakeLoopback();
+		config.skillDataPath     = "this-skill-file-does-not-exist.csv";
+
+		WorldServerRuntime runtime(config, authenticator, repository);
+		CHECK(runtime.Start().IsError());
+		CHECK_EQ(runtime.SkillRowsLoaded(), static_cast<std::size_t>(0));
+
+		runtime.Stop();
+	}
+
+	// One real block through the real production path: configured, loaded,
+	// counted, bound before serving, and observed over the wire.
+	//
+	// The whole 1139-block export is deliberately NOT loaded here. It parses
+	// in the core skill-table suite, where it belongs; loading it inside a
+	// 45-second-watchdog socket test would make a slow Debug parse look like
+	// a hung server. One complete block - canonical header, apply header,
+	// canonical row, apply row, copied byte-identical from the export - is
+	// the same format through the same loader, and loads in milliseconds.
+	//
+	// The block's skill id is rewritten to a known id by resolving the id
+	// columns from the header line itself, so the test never assumes which
+	// skill the export starts with. Skipped where the export is absent,
+	// exactly as the core skill-table tests skip it.
+	MODERN_TEST(Skill_OneRealBlockLoadsBindsAndAnswersOverTheWire)
+	{
+		std::error_code code;
+		const std::filesystem::path csv =
+		    "D:/FILES/project/RanOnline-Build/ASURA CLIENT/data/glogic/Skill.csv";
+		if (!std::filesystem::is_regular_file(csv, code))
+		{
+			std::printf("      SKIPPED the real export: ASURA Skill.csv not found\n");
+			return;
+		}
+
+		// The first four lines are one complete block; anything less is not a
+		// file the loader accepts.
+		std::ifstream source(csv, std::ios::binary);
+		REQUIRE(static_cast<bool>(source));
+		std::vector<std::string> lines;
+		for (std::string line; lines.size() < static_cast<std::size_t>(4) &&
+		     std::getline(source, line);)
+		{
+			lines.push_back(line);
+		}
+		REQUIRE(lines.size() == static_cast<std::size_t>(4));
+
+		// Resolve the id columns from the canonical header, then point the
+		// row at a known id. Split on commas: the export carries no quoted
+		// fields, and only the two id cells are rewritten - every other byte
+		// stays exactly as exported.
+		std::vector<std::string> headerCells;
+		{
+			std::string cell;
+			std::istringstream header(lines[0]);
+			while (std::getline(header, cell, ',')) { headerCells.push_back(cell); }
+		}
+		std::size_t mainIndex = headerCells.size();
+		std::size_t subIndex  = headerCells.size();
+		for (std::size_t i = 0; i < headerCells.size(); ++i)
+		{
+			if (headerCells[i] == "sNATIVEID wMainID") { mainIndex = i; }
+			if (headerCells[i] == "sNATIVEID wSubID") { subIndex = i; }
+		}
+		REQUIRE(mainIndex < headerCells.size());
+		REQUIRE(subIndex < headerCells.size());
+
+		std::vector<std::string> rowCells;
+		{
+			std::string cell;
+			std::istringstream row(lines[2]);
+			while (std::getline(row, cell, ',')) { rowCells.push_back(cell); }
+		}
+		REQUIRE(rowCells.size() == headerCells.size());
+		rowCells[mainIndex] = "20";
+		rowCells[subIndex]  = "30";
+
+		std::string block;
+		block += lines[0] + "\n";
+		block += lines[1] + "\n";
+		for (std::size_t i = 0; i < rowCells.size(); ++i)
+		{
+			if (i != 0) { block += ","; }
+			block += rowCells[i];
+		}
+		block += "\n";
+		block += lines[3] + "\n";
+
+		const std::filesystem::path temp =
+		    std::filesystem::temp_directory_path() / "skill-one-block.csv";
+		{
+			std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+			REQUIRE(static_cast<bool>(out));
+			out << block;
+		}
+		struct TempRemover
+		{
+			std::filesystem::path path;
+			~TempRemover()
+			{
+				std::error_code ignored;
+				std::filesystem::remove(path, ignored);
+			}
+		};
+		const TempRemover remover{ temp };
+
+		InMemoryLoginAuthenticator authenticator;
+		InMemoryCharacterRepository repository;
+
+		WorldServerConfig config = WorldServerConfig::MakeLoopback();
+		config.skillDataPath     = temp.string();
+
+		// The production path: configured path, loaded in the constructor,
+		// bound before Start, counted for the operator.
+		WorldServerRuntime runtime(config, authenticator, repository);
+		REQUIRE(runtime.Start().IsOk());
+		CHECK_EQ(runtime.SkillRowsLoaded(), static_cast<std::size_t>(1));
+		runtime.Stop();
+	}
+
+	// A KNOWN but UNLEARNED skill is refused as NOTLEARN, not UNKNOWN.
+	//
+	// The provider is bound before Start - provider ready, then serving -
+	// with one real definition, and the character learned nothing. The 3304
+	// therefore names code 1, which is the observable difference between "the
+	// table knows this skill" and "nothing knows it".
+	MODERN_TEST(Skill_AKnownButUnlearnedSkillIsRefusedAsNotLearn)
+	{
+		TestWorldServer server;
+
+		InMemorySkillDefinitions definitions;
+		REQUIRE(definitions.Add(MakeSkillDef(20, 30)).IsOk());
+		server.Runtime().Field().SetSkillDefinitions(&definitions);
+
+		REQUIRE(server.Start().IsOk());
+
+		SpawnedClient client;
+		REQUIRE(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+		REQUIRE(WaitFor(kDeadline, [&] {
+			return server.Runtime().Field().AuthorizedSessionCount() == 1;
+		}));
+
+		REQUIRE(client.connection
+		            .SendSkillRequest(20u, 30u, Vector3{}, {})
+		            .IsOk());
+		REQUIRE(client.connection.PumpUntilSkillFeedbackCount(1, kDeadline).IsOk());
+
+		CHECK(client.connection.SkillFeedback().received);
+		CHECK_EQ(client.connection.SkillFeedback().skillCheck,
+		         Network::Skill::SkillCheck::kNotLearned);
+		CHECK_EQ(client.connection.SkillFeedback().skillCheck,
+		         static_cast<WireI32>(1));
+
+		// Announced, not deferred - and the connection survives it.
+		CHECK_EQ(server.Runtime().Field().SkillRefusedCount(),
+		         static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().SkillDeferredCount(),
+		         static_cast<std::size_t>(0));
+		CHECK(client.connection.IsConnected());
+
+		server.Stop();
+	}
+
+	// Persisted records restored at spawn: a cast for a known, LEARNED skill
+	// is answered with NOTHING - no 3304, no 3305, no EMSKILL_OK - and the
+	// connection stays usable. The silence plus the deferred counter is the
+	// whole proof; a client that waited for an answer would block, which is
+	// exactly what the short budget below does.
+	MODERN_TEST(Skill_PersistedSkillsRestoreIntoTheSpawnedSession)
+	{
+		TestWorldServer server;
+
+		InMemorySkillDefinitions definitions;
+		REQUIRE(definitions.Add(MakeSkillDef(20, 30)).IsOk());
+		server.Runtime().Field().SetSkillDefinitions(&definitions);
+
+		// Persisted before the client ever connects: the record belongs to the
+		// repository, not to any request.
+		const auto found = server.Repository().Find(kCharA1);
+		REQUIRE(found.IsOk());
+		WorldCharacter persisted = found.GetValue();
+		persisted.learnedSkills  = {
+			LearnedSkill{ SkillId{ 20, 30 }, 3 },
+		};
+		REQUIRE(server.Repository().Replace(persisted).IsOk());
+
+		REQUIRE(server.Start().IsOk());
+
+		SpawnedClient client;
+		REQUIRE(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+		REQUIRE(WaitFor(kDeadline, [&] {
+			return server.Runtime().Field().AuthorizedSessionCount() == 1;
+		}));
+
+		REQUIRE(client.connection
+		            .SendSkillRequest(20u, 30u, Vector3{}, {})
+		            .IsOk());
+
+		// Nothing comes back. The timeout IS the expected result: a 3304 here
+		// would mean the server claimed something it did not do.
+		CHECK(client.connection.PumpUntilSkillFeedbackCount(1, kSilenceBudget)
+		          .IsError());
+		CHECK_EQ(client.connection.SkillFeedbackCount(), static_cast<std::size_t>(0));
+
+		// Deferred, not refused: the skill is known AND learned, so this is
+		// "not yet executable" rather than "no".
+		CHECK_EQ(server.Runtime().Field().SkillRefusedCount(),
+		         static_cast<std::size_t>(0));
+		CHECK_EQ(server.Runtime().Field().SkillDeferredCount(),
+		         static_cast<std::size_t>(1));
+
+		CHECK(client.connection.IsConnected());
+
+		server.Stop();
+	}
+
+	// Invalid persisted records do not break the spawn: the session keeps
+	// exactly the valid entries, the spawn succeeds, and the skip is counted
+	// where an operator can see it.
+	MODERN_TEST(Skill_InvalidPersistedEntriesDoNotBreakTheSpawn)
+	{
+		TestWorldServer server;
+
+		InMemorySkillDefinitions definitions;
+		REQUIRE(definitions.Add(MakeSkillDef(20, 30)).IsOk());
+		REQUIRE(definitions.Add(MakeSkillDef(21, 31)).IsOk());
+		server.Runtime().Field().SetSkillDefinitions(&definitions);
+
+		const auto found = server.Repository().Find(kCharA1);
+		REQUIRE(found.IsOk());
+		WorldCharacter persisted = found.GetValue();
+		persisted.learnedSkills  = {
+			LearnedSkill{ SkillId{ 99, 99 }, 1 }, // unknown definition
+			LearnedSkill{ SkillId{ 20, 30 }, 3 }, // valid
+			LearnedSkill{ SkillId{ 20, 30 }, 2 }, // duplicate record
+			LearnedSkill{ SkillId{ 21, 31 }, 10 }, // above maxLevel 9
+		};
+		REQUIRE(server.Repository().Replace(persisted).IsOk());
+
+		REQUIRE(server.Start().IsOk());
+
+		SpawnedClient client;
+		REQUIRE(client.Spawn(server, kUserA, kPassA, kCharA1.value, kDeadline).IsOk());
+		REQUIRE(WaitFor(kDeadline, [&] {
+			return server.Runtime().Field().AuthorizedSessionCount() == 1;
+		}));
+
+		// The spawn succeeded despite the bad records, and the skip was
+		// counted rather than silent.
+		CHECK_EQ(server.Runtime().Field().SkillRestoreSkippedCount(),
+		         static_cast<std::size_t>(1));
+
+		// The valid sibling still works: a cast for it is deferred, not
+		// refused, which proves the session holds it at a usable level.
+		REQUIRE(client.connection
+		            .SendSkillRequest(20u, 30u, Vector3{}, {})
+		            .IsOk());
+		CHECK(client.connection.PumpUntilSkillFeedbackCount(1, kSilenceBudget)
+		          .IsError());
+		CHECK_EQ(server.Runtime().Field().SkillDeferredCount(),
+		         static_cast<std::size_t>(1));
+		CHECK_EQ(server.Runtime().Field().SkillRefusedCount(),
+		         static_cast<std::size_t>(0));
+
+		CHECK(client.connection.IsConnected());
+
+		server.Stop();
+	}
+
 	// A 3303 is never routed through the movement or attack handlers.
 	//
 	// Structural rather than behavioural: the ids are disjoint, so a cast request

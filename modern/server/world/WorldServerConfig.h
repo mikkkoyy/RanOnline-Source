@@ -89,6 +89,22 @@ namespace Modern::Server::World
 		// reports it through its own counter rather than starting half-loaded.
 		std::string itemDataPath;
 
+		// SKILL-025: where the legacy skill CSV lives.
+		//
+		// The same convention as `itemDataPath` above: a deployer-set path,
+		// empty by default, never assumed to exist on another machine. Empty
+		// means "no skill data", which is a VALID configuration - the skill
+		// table is then empty, its provider is still bound, and every cast is
+		// answered from that honest state. That is what every existing test
+		// runs.
+		//
+		// A path that is set but unreadable is a configuration error, not an
+		// empty table: the runtime records the load failure and refuses Start()
+		// rather than serving casts against definitions it does not have. See
+		// WorldServerRuntime - the provider is always bound, so it is never
+		// silently null, and a failed load is never silent either.
+		std::string skillDataPath;
+
 		// Refuses a configuration that cannot serve: an empty host, a duplicate login
 		// name, and two accounts sharing one account id.
 		//

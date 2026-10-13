@@ -53,6 +53,7 @@ const char* ToString(FieldEvent event) noexcept
 	case FieldEvent::AttackRejected:        return "AttackRejected";
 	case FieldEvent::SkillRefused:        return "SkillRefused";
 	case FieldEvent::SkillDeferred:       return "SkillDeferred";
+	case FieldEvent::SkillRestoreSkipped: return "SkillRestoreSkipped";
 		case FieldEvent::ClientRejected:      return "ClientRejected";
 		case FieldEvent::ClientDisconnected:  return "ClientDisconnected";
 		}
@@ -579,6 +580,29 @@ if (MovementState::MovementStateCodec::IsMoveState(message.header.type))
 			return false;
 		}
 
+		// SKILL-025: restore the character's persisted learned skills into the
+		// session SkillRuntime, from the same validated repository record the
+		// spawn was just built from - never from the network.
+		//
+		// Before the 2333 goes out, so a 3303 arriving immediately after spawn
+		// already sees the restored state; the ordering against resource
+		// registration below is irrelevant, because the two touch disjoint
+		// state. Deliberately NOT fatal: a skipped record degrades to the
+		// existing NOTLEARN behaviour for that skill, while refusing the spawn
+		// would turn bad skill data into a failed login. The Emit text names
+		// the first failure's reason; the entry itself is the first invalid
+		// one in the character's persisted records.
+		if (const Status restored = peer->session.RestoreLearnedSkills();
+		    restored.IsError())
+		{
+			m_skillRestoreSkipped.fetch_add(1, std::memory_order_relaxed);
+			Emit(FieldEvent::SkillRestoreSkipped,
+			     "spawn gaeaId " + std::to_string(peer->session.GaeaId()) +
+			         ": skipped invalid persisted skill record (" +
+			         restored.GetMessage() + "); session holds only validated skills",
+			     peer->session.GaeaId());
+		}
+
 		// WORLD-ENTRY-002h: the authoritative resource session is REGISTERED BEFORE
 		// the 2333 goes out, and a refusal here refuses the spawn.
 		//
@@ -640,7 +664,8 @@ if (MovementState::MovementStateCodec::IsMoveState(message.header.type))
 			// Both effects of this spawn are undone HERE rather than left to the
 			// peer teardown, because the teardown only runs if a worker is still
 			// alive - and the honest place to undo a step is immediately after the
-			// step whose failure made it wrong.
+			// step whose failure made it wrong. Restored skills need no undo:
+			// they live in the session's SkillRuntime, which dies with this peer.
 			peer->spawned.store(false, std::memory_order_release);
 			(void)m_resources.UnregisterSession(spawn.gaeaId);
 

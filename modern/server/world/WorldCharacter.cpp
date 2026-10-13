@@ -76,8 +76,9 @@ namespace Modern::Server::World
 		       a.sp.now == b.sp.now && a.sp.max == b.sp.max &&
 		       a.saveMapId.value == b.saveMapId.value && a.gaeaId == b.gaeaId &&
 		       a.actState == b.actState && a.accountLevel == b.accountLevel &&
-		       a.savePosition.x == b.savePosition.x &&
-		       a.savePosition.y == b.savePosition.y &&
-		       a.savePosition.z == b.savePosition.z;
+	       a.savePosition.x == b.savePosition.x &&
+	       a.savePosition.y == b.savePosition.y &&
+	       a.savePosition.z == b.savePosition.z &&
+	       a.learnedSkills == b.learnedSkills;
 	}
 }
