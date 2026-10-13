@@ -876,34 +876,121 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 			return SendSkillFeedback(peer, batcher, Skill::SkillCheck::kNotLearned);
 		}
 
-		// Everything this milestone can honestly decide is decided. The skill is
-		// known and learned, so the cast is not REFUSED - but it cannot be RUN,
-		// and the difference matters. A refusal tells the client "no"; a deferred
-		// cast tells it "not yet"; and legacy has no message for "not yet" that a
-		// client would also understand.
-		//
-		// So: SILENCE, exactly as legacy answers its silent branches. No
-		// EMSKILL_OK, because nothing was cast. No 3305, because a broadcast IS
-		// the announcement that the cast happened. No resource spend, no
-		// cooldown, no position change, no learned-skill change.
-		//
-		// The target list is deliberately neither resolved nor range-checked, so
-		// the log reports what the peer declared rather than acting on it. An
-		// operator learns a cast was attempted without this milestone having
-		// quietly validated something it has no authoritative source for.
+		// Known and learned -> authoritative resource gate.
+		// Assemble the cost and attempt atomic deduction via TrySpend.
+		const SkillDefinition* definition = m_skillDefinitions->Find(skillId);
+		const uint8_t learnedLevel = peer->session.Skills().GetSkillLevel(skillId);
+		if (learnedLevel == 0 || learnedLevel > definition->maxLevel)
+		{
+			// Corrupt or hand-edited learned set: refuse rather than proceeding
+			// with an invalid level.
+			m_skillRefused.fetch_add(1, std::memory_order_relaxed);
+			Emit(FieldEvent::SkillRefused,
+			     "3303 invalid learned level " + std::to_string(learnedLevel) +
+			         " for skill " + std::to_string(skillId.classIndex) + "/" +
+			         std::to_string(skillId.skillIndex),
+			     peer->session.GaeaId());
+			return SendSkillFeedback(peer, batcher, Skill::SkillCheck::kNotLearned);
+		}
+
+		// Aggregate equipment contributions to get the hand-slot required-SP term.
+		// VERTICAL-010 established this comes from the two hand slots only.
+		uint16_t equipmentRequiredSP = 0;
+		if (m_itemDefinitions != nullptr && peer->session.Character() != nullptr)
+		{
+			const auto aggResult = ItemContributionAggregator::Aggregate(
+				peer->session.Character()->equipment, *m_itemDefinitions);
+			if (aggResult.IsOk())
+			{
+				equipmentRequiredSP = aggResult.GetValue().contribution.requiredSP;
+			}
+			// If aggregation fails (missing definition, non-finite), treat as zero
+			// contribution rather than refusing the cast - the equipment is not
+			// a skill requirement.
+		}
+
+		// Build the authoritative resource cost from the skill definition.
+		const SkillDefinition::SkillLevelData& levelData = definition->GetLevelData(learnedLevel);
+		ResourceSyncService::ResourceCost cost;
+		cost.hp = levelData.useHp;
+		cost.mp = levelData.useMp;
+		cost.sp = static_cast<Network::WireU32>(equipmentRequiredSP + levelData.useSp);
+		cost.cp = levelData.useCp;
+
+		// Attempt atomic resource deduction.
+		const Network::WireU32 gaeaId = peer->session.GaeaId();
+		const Status spendStatus = m_resources.TrySpend(gaeaId, cost);
+
+		if (spendStatus.IsError())
+		{
+			// Map the failure to the appropriate legacy EMSKILLCHECK code.
+			Network::WireI32 checkCode = Skill::SkillCheck::kOk;
+			const ErrorCode code = spendStatus.GetCode();
+			if (code == ErrorCode::NotFound)
+			{
+				// Session not registered - should not happen for a spawned character,
+				// but treat as a resource failure rather than a protocol error.
+				checkCode = Skill::SkillCheck::kNotHp;
+			}
+			else if (code == ErrorCode::NotAllowed)
+			{
+				// One or more resource pools were insufficient. Read current values
+				// to determine which pool(s) caused the refusal, matching legacy's
+				// per-resource feedback.
+				const auto stateOpt = m_resources.Find(gaeaId);
+				if (stateOpt.has_value())
+				{
+					const auto& state = stateOpt.value();
+					if (cost.hp > 0 && state.GetCurrent(Resources::ResourceKind::Hp) <= cost.hp)
+					{
+						checkCode = Skill::SkillCheck::kNotHp;
+					}
+					else if (cost.mp > 0 && state.GetCurrent(Resources::ResourceKind::Mp) < cost.mp)
+					{
+						checkCode = Skill::SkillCheck::kNotMp;
+					}
+					else if (cost.sp > 0 && state.GetCurrent(Resources::ResourceKind::Sp) < cost.sp)
+					{
+						checkCode = Skill::SkillCheck::kNotSp;
+					}
+					else if (cost.cp > 0 && state.GetCurrent(Resources::ResourceKind::Cp) < cost.cp)
+					{
+						checkCode = Skill::SkillCheck::kNotCp;
+					}
+					else
+					{
+						// Should not reach here if TrySpend refused correctly.
+						checkCode = Skill::SkillCheck::kNotHp;
+					}
+				}
+				else
+				{
+					checkCode = Skill::SkillCheck::kNotHp;
+				}
+			}
+
+			m_skillRefused.fetch_add(1, std::memory_order_relaxed);
+			Emit(FieldEvent::SkillRefused,
+			     "3303 resource shortage for skill " + std::to_string(skillId.classIndex) + "/" +
+			         std::to_string(skillId.skillIndex) + " (check=" + std::to_string(checkCode) + ")",
+			     gaeaId);
+			return SendSkillFeedback(peer, batcher, checkCode);
+		}
+
+		// Resource deduction succeeded. Cast is authorized but execution (damage,
+		// healing, cooldown, broadcast) remains deferred per milestone scope.
 		m_skillDeferred.fetch_add(1, std::memory_order_relaxed);
 		Emit(FieldEvent::SkillDeferred,
 		     "3303 skill " + std::to_string(skillId.classIndex) + "/" +
 		         std::to_string(skillId.skillIndex) + " learned at level " +
-		         std::to_string(peer->session.Skills().GetSkillLevel(skillId)) +
-		         " but not executable; " + std::to_string(request.targets.size()) +
-		         " target(s), " + std::to_string(request.declaredTargetCount) +
-		         " declared, " + std::to_string(request.targetCapacity) +
-		         " supported by bytes",
-		     peer->session.GaeaId());
+		         std::to_string(learnedLevel) + " resources deducted; " +
+		         std::to_string(request.targets.size()) + " target(s), " +
+		         std::to_string(request.declaredTargetCount) + " declared, " +
+		         std::to_string(request.targetCapacity) + " supported by bytes",
+		     gaeaId);
 
 		// The connection stays exactly as usable as it was. A client that tried a
-		// skill this server cannot run has not misbehaved.
+		// skill this server cannot fully execute has not misbehaved.
 		return true;
 	}
 
