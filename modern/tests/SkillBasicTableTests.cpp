@@ -138,10 +138,10 @@ namespace ModernTests
 		// SKILL-010: `wAPPLYRANGE` joins the per-level fixture set. If the loader
 		// resolved offsets instead of header names, adding a name here would
 		// shift every later cell and these tests would read the wrong columns.
-		const char* const kApplyStepNames[7] = {
-			"fDELAYTIME", "fLIFE", "fBASIC_VAR", "wUSE_HP", "wUSE_MP", "wUSE_SP",
-			"wAPPLYRANGE",
-		};
+const char* const kApplyStepNames[8] = {
+		"fDELAYTIME", "fLIFE", "fBASIC_VAR", "wUSE_HP", "wUSE_MP", "wUSE_SP",
+		"wUSE_CP", "wAPPLYRANGE",
+	};
 		const char* const kApplyBlowNames[3] = { "fRATE", "fVAR1", "fVAR2" };
 
 		// The SAPPLY header. It must NAME the columns the loader resolves, or

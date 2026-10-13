@@ -293,8 +293,8 @@ namespace Modern
 		// (GLogixExPC.cpp:921-1000). One field, two readings, selected by role.
 		float basicVar = 0.0f;
 
-		// VERTICAL-011: per-level resource costs. Mirrors SKILL::CDATA_LVL
-		// (GLSkillApply.h:259-261) `wUSE_SP` / `wUSE_HP` / `wUSE_MP`.
+		// SKILL-010: per-level resource costs. Mirrors SKILL::CDATA_LVL
+		// (GLSkillApply.h:259-261) `wUSE_SP` / `wUSE_HP` / `wUSE_MP` / `wUSE_CP`.
 		//
 		// Only the cost is carried. The arrow, talisman and bullet counts
 		// (wUSE_ARROWNUM, wUSE_CHARMNUM, wUSE_BULLETNUM) need an inventory and
@@ -302,6 +302,7 @@ namespace Modern
 		uint16_t useSp = 0;
 		uint16_t useHp = 0;
 		uint16_t useMp = 0;
+		uint16_t useCp = 0;
 
 		// SKILL-010: the per-level application range. Mirrors
 		// SKILL::CDATA_LVL::wAPPLYRANGE (GLSkillApply.h:249, a `WORD`).

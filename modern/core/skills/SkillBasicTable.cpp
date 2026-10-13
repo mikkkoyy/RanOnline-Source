@@ -208,10 +208,10 @@ namespace Modern::Skill
 		// `CDATA_LVL` member legacy reads for range, and it is the one the
 		// loader previously skipped. Its position in THIS list is the position it
 		// occupies in the `step` row below - keep the two in step.
-		const char* const kApplyStepNames[7] = {
-			"fDELAYTIME", "fLIFE", "fBASIC_VAR", "wUSE_HP", "wUSE_MP", "wUSE_SP",
-			"wAPPLYRANGE",
-		};
+const char* const kApplyStepNames[8] = {
+		"fDELAYTIME", "fLIFE", "fBASIC_VAR", "wUSE_HP", "wUSE_MP", "wUSE_SP",
+		"wUSE_CP", "wAPPLYRANGE",
+	};
 		const char* const kApplyBlowNames[3] = { "fRATE", "fVAR1", "fVAR2" };
 		bool ResolveColumns(const std::string& header,
 		                    const std::vector<std::size_t>& starts,
@@ -302,17 +302,25 @@ namespace Modern::Skill
 				out.*(scalar.member) = index;
 			}
 
-			for (uint8_t level = 1; level <= kMaxSkillLevel; ++level)
+for (uint8_t level = 1; level <= kMaxSkillLevel; ++level)
 			{
 				const std::string prefix = "sDATA_LVL " + std::to_string(level) + " ";
-				for (int field = 0; field < 7; ++field)
+				for (int field = 0; field < 8; ++field)
 				{
 					std::size_t index = 0;
 					bool ambiguous = false;
+					const char* fieldName = kApplyStepNames[field];
+					bool isOptional = (field == 6); // wUSE_CP is optional
 					if (!FindColumn(header, starts,
 					                (prefix + kApplyStepNames[field]).c_str(),
 					                index, ambiguous))
 					{
+						if (isOptional)
+						{
+							// CP column is optional - use a dummy index (won't be accessed)
+							out.step[level][field] = static_cast<std::size_t>(-1);
+							continue;
+						}
 						return false;
 					}
 					out.step[level][field] = index;
@@ -525,21 +533,23 @@ namespace Modern::Skill
 			{
 				const std::size_t* at = columns.step[level];
 
-				float delayTime = 0.0f;
-				float life = 0.0f;
-				float basicVar = 0.0f;
-				long useHp = 0;
-				long useMp = 0;
-				long useSp = 0;
-				long applyRange = 0;
+float delayTime = 0.0f;
+			float life = 0.0f;
+			float basicVar = 0.0f;
+			long useHp = 0;
+			long useMp = 0;
+			long useSp = 0;
+			long useCp = 0;
+			long applyRange = 0;
 
-				if (!ParseFloat(FieldAt(line, starts, at[0]), delayTime) ||
-				    !ParseFloat(FieldAt(line, starts, at[1]), life) ||
-				    !ParseFloat(FieldAt(line, starts, at[2]), basicVar) ||
-				    !ParseLong(FieldAt(line, starts, at[3]), useHp) ||
-				    !ParseLong(FieldAt(line, starts, at[4]), useMp) ||
-				    !ParseLong(FieldAt(line, starts, at[5]), useSp) ||
-				    !ParseLong(FieldAt(line, starts, at[6]), applyRange))
+			if (!ParseFloat(FieldAt(line, starts, at[0]), delayTime) ||
+			    !ParseFloat(FieldAt(line, starts, at[1]), life) ||
+			    !ParseFloat(FieldAt(line, starts, at[2]), basicVar) ||
+			    !ParseLong(FieldAt(line, starts, at[3]), useHp) ||
+			    !ParseLong(FieldAt(line, starts, at[4]), useMp) ||
+			    !ParseLong(FieldAt(line, starts, at[5]), useSp) ||
+			    !ParseLong(FieldAt(line, starts, at[6]), useCp) ||
+				    !ParseLong(FieldAt(line, starts, at[7]), applyRange))
 				{
 					++result.rejectedSapplyFieldCount;
 					return false;
@@ -549,6 +559,7 @@ namespace Modern::Skill
 				// over-wide value is a corrupt cell rather than a discount.
 				if (useHp < 0 || useHp > 65535 || useMp < 0 || useMp > 65535 ||
 				    useSp < 0 || useSp > 65535 ||
+				    useCp < 0 || useCp > 65535 ||
 				    // SKILL-010: wAPPLYRANGE is a legacy WORD (GLSkillApply.h:249).
 				    // The check is a TYPE check only. Values such as 60000 are
 				    // carried through untouched - legacy clamps neither the
@@ -583,6 +594,7 @@ namespace Modern::Skill
 				levelData.useHp      = static_cast<std::uint16_t>(useHp);
 				levelData.useMp      = static_cast<std::uint16_t>(useMp);
 				levelData.useSp      = static_cast<std::uint16_t>(useSp);
+				levelData.useCp      = static_cast<std::uint16_t>(useCp);
 				levelData.applyRange = static_cast<std::uint16_t>(applyRange);
 				levelData.blowRate   = blowRate;
 				levelData.blowVar1   = blowVar1;

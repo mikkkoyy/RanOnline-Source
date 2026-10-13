@@ -1,4 +1,4 @@
-#include "world/FieldRoleRuntime.h"
+#include "world/FieldRoleRuntime.h"`r`n#include "SkillProtocol.h"`r`n#include "ResourceSyncService.h"`r`n#include "ActiveSkill.h"`r`n#include "ItemContributionAggregator.h"
 
 #include "FieldFrameNormalization.h"
 #include "NetworkCodec.h"
