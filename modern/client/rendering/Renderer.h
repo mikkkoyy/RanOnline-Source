@@ -15,6 +15,7 @@
 // State transitions enforce strict ErrorCode returns (e.g. InvalidState,
 // InvalidArgument, NotAllowed).
 
+#include "AssetUpload.h"
 #include "RenderingTypes.h"
 #include "types/Result.h"
 
@@ -22,6 +23,21 @@
 
 namespace Modern::Client
 {
+
+// Everything one indexed draw call needs, platform-independent: the opaque
+// handles naming the uploaded mesh and (optionally) texture, the three
+// row-major transforms, and the visible fallback color used when no texture
+// is bound. Matrices are pointers to 16 row-major floats so the struct stays
+// trivially copyable and cheap to build at the call site.
+struct MeshDrawCommand
+{
+	MeshResourceHandle mesh;             // required: names the uploaded mesh
+	ImageResourceHandle texture;         // invalid handle: use fallbackColor
+	const float*        worldMatrix;     // 16 row-major floats
+	const float*        viewMatrix;      // 16 row-major floats
+	const float*        projectionMatrix;// 16 row-major floats
+	RenderColor         fallbackColor = RenderColor::White;
+};
 
 class IRenderer
 {
@@ -65,6 +81,19 @@ public:
 
 	// Active configuration.
 	virtual const RendererConfig& GetConfig() const noexcept = 0;
+
+	// One indexed draw call: a triangle-list mesh previously uploaded through
+	// an IAssetUploader (CLIENT-009), transformed by the three row-major
+	// matrices, optionally textured by an uploaded image. When the texture
+	// handle is invalid or cannot be resolved the backend binds its default
+	// texture and the fallback color becomes the visible result, so an
+	// untextured draw is still a real draw.
+	//
+	// This is the smallest drawing contract the renderer boundary needs: it
+	// carries no GPU type, no asset byte and no backend object -- only the
+	// opaque upload handles and the platform-independent Mat4x4. It is
+	// valid only when InFrame; NullRenderer implements it as a counted no-op.
+	virtual Status DrawIndexedMesh(const MeshDrawCommand& command) = 0;
 };
 
 } // namespace Modern::Client

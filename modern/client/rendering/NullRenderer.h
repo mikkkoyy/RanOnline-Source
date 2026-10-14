@@ -25,6 +25,7 @@ public:
 	Status EndFrame() override;
 	Status Clear(const RenderColor& color) override;
 	Status Resize(uint32_t width, uint32_t height) override;
+	Status DrawIndexedMesh(const MeshDrawCommand& command) override;
 	void Shutdown() noexcept override;
 
 	RendererState GetState() const noexcept override { return m_state; }
@@ -36,6 +37,7 @@ public:
 	// Test/inspection queries
 	uint64_t GetRenderedFrameCount() const noexcept { return m_renderedFrameCount; }
 	uint64_t GetClearCount() const noexcept { return m_clearCount; }
+	uint64_t GetDrawCommandCount() const noexcept { return m_drawCommandCount; }
 	const RenderColor& GetLastClearColor() const noexcept { return m_lastClearColor; }
 
 private:
@@ -43,6 +45,7 @@ private:
 	RendererState  m_state              = RendererState::Uninitialized;
 	uint64_t       m_renderedFrameCount = 0;
 	uint64_t       m_clearCount         = 0;
+	uint64_t       m_drawCommandCount   = 0;
 	RenderColor    m_lastClearColor;
 };
 

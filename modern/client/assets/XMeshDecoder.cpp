@@ -956,6 +956,19 @@ private:
 					return false;
 				}
 			}
+			// RAN's writer emits template references with an inline GUID
+			// inside optional parts (e.g. `[Material <GUID>]`); the GUID
+			// identifies a specific instance and no semicolon follows it —
+			// the closing bracket of the optional part terminates the member.
+			if (m_reader.Peek(peek) && peek == kTokenGuid)
+			{
+				uint16_t guid = 0;
+				if (!m_reader.ReadU16(guid) || !m_reader.SkipBytes(16))
+				{
+					return false;
+				}
+				return true;
+			}
 			return m_reader.Expect(kTokenSemicolon);
 		}
 
@@ -1354,12 +1367,16 @@ Result<MeshAsset> BuildMeshAsset(const XGeometry& geometry)
 			return Status(ErrorCode::InvalidArgument);
 		}
 
-		// The position array is exactly three floats per vertex, and the normal
-		// array the same, and RAN's faceNormals list is a copy of the face list,
-		// so vertex v's normal is normals[v].
+		// The position array is exactly three floats per vertex, and the
+		// faceNormals list is a verbatim copy of the face list. The normal
+		// array may be SHORTER than the vertex count: RAN skin files omit a
+		// handful of normals on some sub-meshes (m_luffy_timeskip.mxf is
+		// short by 3, 3 and 1 on three of its six sub-meshes), so requiring
+		// equality refused the real character. More normals than vertices is
+		// still refused -- that is a genuine mismatch, not a shortfall.
 		if (mesh.floats.size() != static_cast<size_t>(vertexCount) * 3u ||
-		    normals.ints[0] != vertexCount ||
-		    normals.floats.size() != static_cast<size_t>(vertexCount) * 3u)
+		    normals.ints[0] > vertexCount ||
+		    normals.floats.size() != static_cast<size_t>(normals.ints[0]) * 3u)
 		{
 			return Status(ErrorCode::InvalidArgument);
 		}
@@ -1438,8 +1455,14 @@ Result<MeshAsset> BuildMeshAsset(const XGeometry& geometry)
 		for (uint32_t v = 0; v < vertexCount; ++v)
 		{
 			const float* p = &mesh.floats[static_cast<size_t>(v) * 3u];
-			const float* n = &normals.floats[static_cast<size_t>(v) * 3u];
-			if (!IsFiniteTriple(p) || !IsFiniteTriple(n))
+			// RAN skin files may provide fewer normals than vertices. The
+			// uncovered vertices still appear in the face list, so their
+			// normal is genuinely absent rather than unused; zero is the
+			// default D3DXLoaderX leaves for them, and it is finite, so it
+			// passes MeshAsset's validation without inventing a direction.
+			bool hasNormal = (v < normals.ints[0]);
+			const float* n = hasNormal ? &normals.floats[static_cast<size_t>(v) * 3u] : nullptr;
+			if (!IsFiniteTriple(p) || (n != nullptr && !IsFiniteTriple(n)))
 			{
 				return Status(ErrorCode::InvalidArgument);
 			}
@@ -1457,7 +1480,7 @@ Result<MeshAsset> BuildMeshAsset(const XGeometry& geometry)
 			}
 			vertices.emplace_back(
 				Vector3(p[0], p[1], p[2]),
-				Vector3(n[0], n[1], n[2]),
+				n != nullptr ? Vector3(n[0], n[1], n[2]) : Vector3::Zero,
 				u, w);
 		}
 

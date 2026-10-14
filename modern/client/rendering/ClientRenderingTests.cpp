@@ -35,8 +35,8 @@ MODERN_TEST(ClientRendering_DefaultConfigIsValid)
 {
 	RendererConfig config;
 	CHECK(config.IsValid());
-	CHECK_EQ(config.width, 1280u);
-	CHECK_EQ(config.height, 720u);
+	CHECK_EQ(config.width, 960u);
+	CHECK_EQ(config.height, 540u);
 	CHECK_EQ(config.vsync, true);
 	CHECK_EQ(config.displayMode, DisplayMode::Windowed);
 }

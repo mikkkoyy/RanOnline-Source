@@ -7,7 +7,7 @@
 // independent IPlatformEvents interface.
 
 #include "../InputEvents.h"
-#include "Application.h"  // For IPlatformEvents
+#include "application/Application.h"  // For IPlatformEvents
 
 #include <cstdint>
 #include <string>
@@ -24,8 +24,8 @@ public:
     // The window is created during Initialize().
     explicit Win32PlatformEvents(
         const char* windowTitle = "RAN Online Modern",
-        uint32_t clientWidth = 1280,
-        uint32_t clientHeight = 720);
+        uint32_t clientWidth = 960,
+        uint32_t clientHeight = 540);
 
     ~Win32PlatformEvents() override;
 

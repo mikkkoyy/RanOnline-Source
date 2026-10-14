@@ -13,13 +13,14 @@ add_library(ModernClientRendering STATIC
     Renderer.cpp
     RenderingTypes.cpp
     NullRenderer.cpp
+    D3D11Renderer.cpp
 )
 
 target_include_directories(ModernClientRendering PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
-target_link_libraries(ModernClientRendering PUBLIC Modern)
+target_link_libraries(ModernClientRendering PUBLIC Modern d3d11 dxgi d3dcompiler)
 
 target_compile_features(ModernClientRendering PUBLIC cxx_std_17)
 
@@ -65,13 +66,14 @@ add_test(NAME ModernClientRenderingTests COMMAND ModernClientRenderingTests)
 # public headers: the uploader receives already-decoded CPU assets.
 add_library(ModernClientAssetUpload STATIC
     NullAssetUploader.cpp
+    D3D11AssetUploader.cpp
 )
 
 target_include_directories(ModernClientAssetUpload PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
-target_link_libraries(ModernClientAssetUpload PUBLIC ModernClientAssets ModernClientRendering)
+target_link_libraries(ModernClientAssetUpload PUBLIC ModernClientAssets ModernClientRendering d3d11 dxgi)
 
 target_compile_features(ModernClientAssetUpload PUBLIC cxx_std_17)
 

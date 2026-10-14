@@ -29,6 +29,7 @@ Status NullRenderer::Initialize(const RendererConfig& config)
 	m_state              = RendererState::Initialized;
 	m_renderedFrameCount = 0;
 	m_clearCount         = 0;
+	m_drawCommandCount   = 0;
 
 	return Ok();
 }
@@ -103,6 +104,27 @@ Status NullRenderer::Resize(uint32_t width, uint32_t height)
 
 	m_config.width  = width;
 	m_config.height = height;
+	return Ok();
+}
+
+Status NullRenderer::DrawIndexedMesh(const MeshDrawCommand& command)
+{
+	if (m_state == RendererState::ShutdownState)
+	{
+		return Status(ErrorCode::NotAllowed);
+	}
+
+	if (m_state != RendererState::InFrame)
+	{
+		return Status(ErrorCode::InvalidState);
+	}
+
+	if (!command.mesh.IsValid())
+	{
+		return Status(ErrorCode::InvalidArgument);
+	}
+
+	++m_drawCommandCount;
 	return Ok();
 }
 

@@ -7,13 +7,15 @@
 // with Win32PlatformEvents.
 
 #include "../InputEvents.h"
-#include "Application.h"  // For IInputSource
+#include "application/Application.h"  // For IInputSource
 #include "Win32InputAdapter.h"
 
 #include <vector>
 
 namespace Modern::Client
 {
+
+class Win32PlatformEvents;
 
 class Win32InputSource final : public IInputSource
 {

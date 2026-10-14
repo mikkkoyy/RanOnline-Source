@@ -1686,6 +1686,128 @@ MODERN_TEST(ClientX_RealRanAssetsWhenAvailable)
 	CHECK(totalTriangles < 8000000u);
 }
 
+// ---------------------------------------------------------------------------
+// CLIENT-RENDER-001B regression: RAN skin files carry two shapes the decoder
+// previously refused. Both are real observations from m_luffy_timeskip.mxf.
+// ---------------------------------------------------------------------------
+
+// A template whose optional part contains a template reference followed by a
+// GUID — the exact shape of RAN's MeshMaterialList template definition:
+// `[Material <GUID>]`. The GUID identifies a specific instance and no
+// semicolon follows it; the closing bracket terminates the member.
+std::vector<uint8_t> FixtureMaterialListTemplate()
+{
+	static const uint8_t kGuidBytes[16] =
+	{
+		0x42, 0x3F, 0xF2, 0xF6, 0x86, 0x76, 0xCF, 0x11,
+		0x8F, 0x52, 0x00, 0x40, 0x33, 0x35, 0x94, 0xA3
+	};
+
+	std::vector<uint8_t> bytes;
+	PushU16(bytes, kTemplate);
+	PushName(bytes, "MeshMaterialList");
+	PushU16(bytes, kOBrace);
+	PushU16(bytes, kGuid);
+	AppendBytes(bytes, kGuidBytes, 16);
+	// DWORD nMaterials;
+	PushU16(bytes, kDword);
+	PushName(bytes, "nMaterials");
+	PushU16(bytes, kSemicolon);
+	// DWORD nFaceIndices;
+	PushU16(bytes, kDword);
+	PushName(bytes, "nFaceIndices");
+	PushU16(bytes, kSemicolon);
+	// array DWORD faceIndices[nFaceIndices];
+	PushU16(bytes, kArray);
+	PushU16(bytes, kDword);
+	PushName(bytes, "faceIndices");
+	PushU16(bytes, kOBracket);
+	PushU16(bytes, kName);
+	PushU32(bytes, 12);
+	AppendText(bytes, "nFaceIndices", 12);
+	PushU16(bytes, kCBracket);
+	PushU16(bytes, kSemicolon);
+	// [Material <GUID>] — optional part with GUID-identified reference.
+	PushU16(bytes, kOBracket);
+	PushU16(bytes, kName);
+	PushU32(bytes, 8);
+	AppendText(bytes, "Material", 8);
+	PushU16(bytes, kGuid);
+	AppendBytes(bytes, kGuidBytes, 16);
+	PushU16(bytes, kCBracket);
+	PushU16(bytes, kCBrace);
+	return bytes;
+}
+
+// A mesh with fewer normals than vertices — RAN skin files provide N-K normals
+// for N vertices on some sub-meshes. The missing normals belong to vertices
+// the face list still references; D3DX gives them a zero normal, and so does
+// the decoder now.
+std::vector<uint8_t> FixtureShortNormalsFile()
+{
+	// 4 vertices, 2 faces, but only 3 normals.
+	const std::vector<float> kPositions =
+	{
+		0.0f, 0.0f, 0.0f,  1.0f, 0.0f, 0.0f,
+		0.0f, 1.0f, 0.0f,  1.0f, 1.0f, 0.0f
+	};
+	const std::vector<float> kNormals =
+	{
+		0.0f, 0.0f, 1.0f,  0.0f, 0.0f, 1.0f,  0.0f, 0.0f, 1.0f
+	};
+	const std::vector<float> kUvs =
+	{
+		0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f
+	};
+	const std::vector<uint32_t> kMeshInts   = { 4, 2, 3, 0, 1, 2, 3, 1, 3, 2 };
+	const std::vector<uint32_t> kNormalInts = { 3, 2, 3, 0, 1, 2, 3, 1, 3, 2 };
+	const std::vector<uint32_t> kUvInts     = { 4 };
+
+	std::vector<uint8_t> bytes = MakeHeader("bin ");
+	Append(bytes, MakeObject("Mesh", kMeshInts, kPositions));
+	Append(bytes, MakeObject("MeshNormals", kNormalInts, kNormals));
+	Append(bytes, MakeObject("MeshTextureCoords", kUvInts, kUvs));
+	return bytes;
+}
+
+MODERN_TEST(ClientXMesh_MaterialListTemplateWithGuidReference)
+{
+	const std::vector<uint8_t> bytes = FixtureMaterialListTemplate();
+	XMeshDecoder decoder;
+	const Result<MeshAsset> result = decoder.DecodeMesh(ResourceData(bytes));
+	// The template is walked and discarded; no geometry follows it, so the
+	// decode succeeds with an empty geometry set (which BuildMeshAsset
+	// refuses as "no meshes" — the template itself must not be the failure).
+	CHECK(result.IsError());
+	if (result.IsError())
+	{
+		CHECK_EQ(result.GetError(), ErrorCode::InvalidArgument);
+	}
+}
+
+MODERN_TEST(ClientXMesh_MeshWithFewerNormalsThanVertices)
+{
+	const std::vector<uint8_t> bytes = FixtureShortNormalsFile();
+	XMeshDecoder decoder;
+	const Result<MeshAsset> result = decoder.DecodeMesh(ResourceData(bytes));
+	CHECK(result.IsOk());
+	if (result.IsError())
+	{
+		return;
+	}
+
+	const MeshAsset& mesh = result.GetValue();
+	CHECK_EQ(mesh.GetVertexCount(), 4u);
+	CHECK_EQ(mesh.GetIndexCount(), 6u);
+	CHECK_EQ(mesh.GetTriangleCount(), 2u);
+
+	// The first three vertices have real normals; the fourth gets zero.
+	const MeshVertex& v3 = mesh.GetVertices()[3];
+	CHECK_EQ(v3.normal.x, 0.0f);
+	CHECK_EQ(v3.normal.y, 0.0f);
+	CHECK_EQ(v3.normal.z, 0.0f);
+}
+
 int main()
 {
 	// Unbuffered so an abort still shows which case was running.

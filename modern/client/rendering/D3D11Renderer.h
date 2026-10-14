@@ -4,9 +4,18 @@
 //
 // Concrete implementation of IRenderer using Direct3D 11 and DXGI.
 // Provides real GPU rendering with swap chain presentation.
+//
+// This header is the D3D11 backend's own: it exposes the D3D11 object
+// pointers the asset uploader binds against and holds a D3D11_VIEWPORT
+// member, so it includes <d3d11.h>. The platform-independent boundary
+// (Renderer.h, RenderingTypes.h, AssetUpload.h) is where D3D11 types
+// never appear.
 
 #include "Renderer.h"
 #include "AssetUpload.h"
+
+#include <Windows.h>
+#include <d3d11.h>
 
 #include <cstdint>
 #include <memory>
@@ -14,19 +23,7 @@
 namespace Modern::Client
 {
 
-// Forward declarations for D3D11 types (avoid including d3d11.h in header)
-struct ID3D11Device;
-struct ID3D11DeviceContext;
-struct IDXGISwapChain;
-struct ID3D11RenderTargetView;
-struct ID3D11DepthStencilView;
-struct ID3D11Texture2D;
-struct ID3D11VertexShader;
-struct ID3D11PixelShader;
-struct ID3D11InputLayout;
-struct ID3D11Buffer;
-struct ID3D11SamplerState;
-struct ID3D11ShaderResourceView;
+class D3D11AssetUploader;
 
 class D3D11Renderer final : public IRenderer
 {
@@ -45,6 +42,7 @@ public:
     Status EndFrame() override;
     Status Clear(const RenderColor& color) override;
     Status Resize(uint32_t width, uint32_t height) override;
+    Status DrawIndexedMesh(const MeshDrawCommand& command) override;
     void Shutdown() noexcept override;
 
     RendererState GetState() const noexcept override { return m_state; }
@@ -72,6 +70,13 @@ public:
     // Viewport.
     const D3D11_VIEWPORT& GetViewport() const noexcept { return m_viewport; }
 
+    // Attaches the asset uploader whose handles DrawIndexedMesh resolves.
+    // Borrowed, never owned; the caller wires renderer -> uploader -> renderer
+    // and must keep the uploader alive across draws. Required before any
+    // DrawIndexedMesh call can succeed.
+    void SetAssetUploader(D3D11AssetUploader* uploader) noexcept { m_assetUploader = uploader; }
+    D3D11AssetUploader* GetAssetUploader() const noexcept { return m_assetUploader; }
+
 private:
     // Resource creation helpers.
     Status CreateDeviceAndSwapChain(void* windowHandle);
@@ -80,6 +85,7 @@ private:
     Status CreateShaders();
     Status CreateConstantBuffer();
     Status CreateSamplerState();
+    Status CreateDefaultTexture();
     Status SetupViewport();
 
     // Cleanup helpers.
@@ -105,8 +111,14 @@ private:
     ID3D11Buffer* m_constantBuffer = nullptr;
     ID3D11SamplerState* m_samplerState = nullptr;
 
+    // 1x1 white fallback texture for untextured draws.
+    ID3D11ShaderResourceView* m_defaultTextureSrv = nullptr;
+
     // Viewport.
     D3D11_VIEWPORT m_viewport = {};
+
+    // The uploader whose handles DrawIndexedMesh resolves. Borrowed.
+    D3D11AssetUploader* m_assetUploader = nullptr;
 
     // Frame state.
     bool m_inFrame = false;

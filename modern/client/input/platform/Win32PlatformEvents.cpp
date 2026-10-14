@@ -1,11 +1,14 @@
 // CLIENT-RENDER-001: Win32 platform events implementation.
 
-#include "Win32PlatformEvents.h"
-#include "Win32InputSource.h"
-
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#define UNICODE
+#define _UNICODE
 #include <Windows.h>
+#include <windowsx.h>
+
+#include "Win32PlatformEvents.h"
+#include "Win32InputSource.h"
 
 #include <cassert>
 
@@ -118,14 +121,23 @@ void Win32PlatformEvents::UnregisterWindowClass()
 
 bool Win32PlatformEvents::CreateWindowInstance()
 {
-    // Convert window title to wide string.
+    // Convert window title to wide string. The size query with cbMultiByte = -1
+    // returns the required size INCLUDING the terminating null, so the buffer
+    // must be titleLen wide characters: passing titleLen - 1 as the capacity
+    // while telling the API the buffer holds titleLen writes the null one
+    // wchar_t past the end.
     int titleLen = MultiByteToWideChar(CP_UTF8, 0, m_windowTitle.c_str(), -1, nullptr, 0);
     if (titleLen <= 0)
     {
         return false;
     }
-    std::wstring wideTitle(titleLen - 1, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, m_windowTitle.c_str(), -1, wideTitle.data(), titleLen);
+    std::wstring wideTitle(titleLen, L'\0');
+    const int converted = MultiByteToWideChar(
+        CP_UTF8, 0, m_windowTitle.c_str(), -1, wideTitle.data(), titleLen);
+    if (converted != titleLen)
+    {
+        return false;
+    }
 
     // Calculate window rect for desired client area.
     RECT windowRect = { 0, 0, static_cast<LONG>(m_clientWidth), static_cast<LONG>(m_clientHeight) };
@@ -216,8 +228,9 @@ LRESULT Win32PlatformEvents::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
     }
 
     case WM_ACTIVATE:
-        // Handle activation if needed
-        return 0;
+        // No activation handling yet: give Windows its default processing
+        // (focus, caption state) rather than claiming the message.
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     // Keyboard messages
     case WM_KEYDOWN:

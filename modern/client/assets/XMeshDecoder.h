@@ -78,11 +78,18 @@ namespace Modern::Client
 //     decoded by this milestone)
 //   - a token stream that is truncated, malformed, or describes a member,
 //     array or object the grammar does not allow
-//   - a `Mesh` with no `MeshNormals` of the same length, or one whose normal
-//     count differs from its vertex count. Normals are never invented: a zero
-//     or absent normal is a wrong normal, and MeshAsset has no "no normals"
-//     state to fall back to. (One shipped asset, `b_pet_human_ninefox.x`, is
-//     refused for exactly this reason.)
+//   - a `Mesh` with no `MeshNormals` at all, or one with MORE normals than
+//     vertices -- a genuine mismatch rather than a shortfall.
+//     A *shorter* normal array is accepted. RAN's skin meshes (the whole
+//     `data/skin/*.mxf` tree, e.g. `m_luffy_timeskip.mxf`) routinely ship a
+//     few fewer normals than vertices per sub-mesh -- by 3, 3 and 1 on three
+//     of that file's six sub-meshes -- and D3DXLoaderX renders them, leaving
+//     the uncovered vertices with a zero normal. Refusing them meant the real
+//     character could not be loaded at all. The uncovered vertices keep
+//     `Vector3::Zero`: no direction is invented, and zero is finite, so it
+//     satisfies MeshAsset's own validation. A normal array LONGER than the
+//     vertex count is still refused -- that is a genuine mismatch, not a
+//     shortfall.
 //   - a `MeshTextureCoords` set that cannot be matched to its `Mesh`. A file
 //     with no `MeshTextureCoords` at all decodes with `u = v = 0`; a file
 //     that has some but not one per `Mesh`, or whose UV count differs from the

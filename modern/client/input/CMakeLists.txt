@@ -10,6 +10,8 @@ add_library(ModernClientInput STATIC
     InputEvents.cpp
     InputSystem.cpp
     platform/Win32InputAdapter.cpp
+    platform/Win32InputSource.cpp
+    platform/Win32PlatformEvents.cpp
 )
 
 target_include_directories(ModernClientInput PUBLIC
