@@ -196,16 +196,24 @@ int main(int argc, char** argv)
 	Log("ModernClientApp: asset root '%s'", assetRoot.c_str());
 
 	// 1. Platform window. Everything else binds to this window handle.
-	Win32PlatformEvents platform("RAN Online Modern", kClientWidth, kClientHeight);
-	if (!platform.Initialize())
+	//
+	//    The platform is heap-owned and MOVED into the Application below, so
+	//    the loop that pumps messages is the same object that created the
+	//    window. Owning it on the stack instead leaves the Application running
+	//    its default NullPlatformEvents, whose PumpEvents() never touches
+	//    PeekMessageW: the window is created and drawn to, but no Windows
+	//    message is ever dispatched, so WM_CLOSE never reaches the window
+	//    procedure and the process can only be killed.
+	auto platform = std::make_unique<Win32PlatformEvents>("RAN Online Modern", kClientWidth, kClientHeight);
+	if (!platform->Initialize())
 	{
 		Log("ModernClientApp: window initialization failed");
 		return 1;
 	}
 
 	// 2. Input: Win32 samples translated to platform-independent events.
-	auto inputSource = std::make_unique<Win32InputSource>(&platform);
-	platform.SetInputSource(inputSource.get());
+	auto inputSource = std::make_unique<Win32InputSource>(platform.get());
+	platform->SetInputSource(inputSource.get());
 
 	InputSystem inputSystem;
 	const Status inputInitStatus = inputSystem.Initialize();
@@ -223,7 +231,7 @@ int main(int argc, char** argv)
 	rendererConfig.height        = kClientHeight;
 	rendererConfig.displayMode   = DisplayMode::Windowed;
 	rendererConfig.vsync         = true;
-	rendererConfig.windowHandle  = platform.GetWindowHandle();
+	rendererConfig.windowHandle  = platform->GetWindowHandle();
 
 	if (renderer.Initialize(rendererConfig).IsError())
 	{
@@ -343,7 +351,7 @@ int main(int argc, char** argv)
 
 	// 8. The application loop: platform pump, input queue, one static draw
 	//    per frame, real D3D11 present.
-	Application application;
+	Application application(std::move(platform));
 	application.SetRenderer(&renderer);
 	application.SetInputSystem(&inputSystem);
 	application.SetInputSource(std::move(inputSource));
@@ -387,11 +395,20 @@ int main(int argc, char** argv)
 
 	const Status runStatus = application.Run();
 
-	// 9. Ordered teardown: the renderer is shut down first (releasing the
-	//    device and context), then the uploader destructor releases the
-	//    character's GPU buffers. D3D11 child objects hold their own device
-	//    reference, so this order is the clean one.
-	renderer.Shutdown();
+	// 9. Explicit teardown, in real dependency order.
+	//
+	//    The Application now owns the platform, so the window is destroyed by
+	//    its destructor at scope exit -- after every object declared above it,
+	//    because destructors run in reverse declaration order. Releasing the
+	//    GPU side here instead means the real order is:
+	//
+	//        buffers -> device/swap chain/context -> window
+	//
+	//    which is the order D3D11 wants, since the swap chain is bound to the
+	//    window handle. Doing it explicitly rather than by declaration order
+	//    means the sequence does not change if a declaration is ever moved.
+	uploader.ReleaseMesh(characterMesh);  // vertex/index buffers, device still alive
+	renderer.Shutdown();                 // swap chain, device, immediate context
 
 	Log("ModernClientApp: stopped after %llu frames",
 		static_cast<unsigned long long>(application.GetFrameCount()));
