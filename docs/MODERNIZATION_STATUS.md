@@ -61,6 +61,39 @@ formula provenance.
 
 ---
 
+## CLIENT-RENDER-002 — Render ASURA character materials and textures
+
+**State: complete.** The production D3D11 client (`ModernClientApp`) renders the
+real ASURA character `data/skin/m_luffy_timeskip.mxf` with its real PNG
+textures. Verified, not assumed.
+
+- **Build:** `ModernClientApp.exe` configures and builds (Visual Studio 17 2022,
+  Win32, Debug) in a fresh `build-client-render-002` tree.
+- **Decoded mesh (from the shipped asset):** 8,868 vertices, 36,741 indices,
+  12,247 triangles, 17 referenced materials, 22 sections, 2 distinct PNG
+  textures. Section ranges cover `[0, 36741)` exactly.
+- **Textures:** `blackcatyb_luffy_timeskip.png` (1024×1024 RGB, body) and
+  `blackcatyb_luffy_timeskip_eye.png` (256×256 RGBA, eye) are resolved by name
+  over the ASURA texture tree, decoded, and uploaded once each; the eye section
+  binds the eye texture, all other sections bind the body texture.
+- **Tests:** new `ModernClientPngImageTests` (24 cases) plus the extended
+  `ModernClientXMeshTests` (76 cases). Focused client CTest suite 13/13 green
+  hermetically. Real-asset PNG decode and the 608-file `data/skeleton` sweep
+  pass with `RAN_ASSET_ROOT` set.
+- **GUI:** 960×540 window renders the textured character; clean window close
+  exits 0 (no forced termination). Evidence:
+  `docs/reference/client/CLIENT-RENDER-002-character.png`.
+- **Skeleton file, separated:** `data/skeleton/b_3boss_01.x` was reported to
+  stall by a temporary probe. Under the shipped decoder it is **not
+  reproducible** — it decodes to 2,804 vertices / 1,500 triangles inside the
+  bounded sweep. No open follow-up; the milestone does not depend on it.
+
+Full provenance, the PNG/DDS/MTF dispatch table, the CRC/Adler validation and
+the two renderer defects fixed during integration are in
+`docs/MODERN_ARCHITECTURE.md` section 24.
+
+---
+
 ## BUILD-001 — Tracked build-artifact cleanup
 
 **State: complete. Verified, not assumed.**

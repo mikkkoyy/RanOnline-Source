@@ -10,11 +10,14 @@
 //                           -> XMeshDecoder -> MeshAsset -> GPU upload
 //   Application          -> the frame loop, with a static character draw
 //
-// The character is drawn every frame from the real decoded mesh: a
-// triangle-list indexed draw of the uploaded vertex/index buffers, with a
-// visible flat fallback color (this ship's skin textures are MTF, and MTF
-// texture upload is not part of this milestone -- the fallback path is the
-// honest visible result).
+// The character is drawn every frame from the real decoded mesh, one indexed
+// draw per MeshSection, each binding its own material's PNG texture
+// (blackcatyb_luffy_timeskip.png on the body, blackcatyb_luffy_timeskip_eye.png
+// on the eye) at its own index range. The textures are resolved by name through
+// TextureLoader over the ASURA texture tree and uploaded once each; a material
+// that names no texture, or whose named texture cannot be resolved or decoded,
+// falls back to a clearly-labelled diagnostic color and is reported as such --
+// it is never counted as a textured draw.
 //
 // Usage:
 //   ModernClientApp.exe [--asset-root <path>]
@@ -38,8 +41,10 @@
 #undef GetMessage
 
 #include "application/Application.h"
+#include "assets/ImageAsset.h"
 #include "assets/MeshAsset.h"
 #include "assets/MxfMeshTransform.h"
+#include "assets/TextureLoader.h"
 #include "assets/XMeshDecoder.h"
 #include "input/InputEvents.h"
 #include "input/InputSystem.h"
@@ -57,8 +62,11 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 using Modern::Vector3;
 using Modern::Client::Application;
@@ -67,6 +75,7 @@ using Modern::Client::D3D11Renderer;
 using Modern::Client::DisplayMode;
 using Modern::Client::FileSystemResourceProvider;
 using Modern::Client::IInputSource;
+using Modern::Client::ImageAsset;
 using Modern::Client::ImageResourceHandle;
 using Modern::Client::InputEvent;
 using Modern::Client::InputEventType;
@@ -75,7 +84,9 @@ using Modern::Client::KeyEvent;
 using Modern::Client::KeyCode;
 using Modern::Client::MeshAsset;
 using Modern::Client::MeshDrawCommand;
+using Modern::Client::MeshMaterial;
 using Modern::Client::MeshResourceHandle;
+using Modern::Client::MeshSection;
 using Modern::Client::MeshVertex;
 using Modern::Client::MxfMeshTransform;
 using Modern::Client::RenderColor;
@@ -84,6 +95,7 @@ using Modern::Client::ResourceManager;
 using Modern::Client::ResourceId;
 using Modern::Client::ResourceData;
 using Modern::Status;
+using Modern::Client::TextureLoader;
 using Modern::Client::Win32InputSource;
 using Modern::Client::Win32PlatformEvents;
 using Modern::Client::XMeshDecoder;
@@ -94,7 +106,15 @@ namespace
 constexpr uint32_t kClientWidth  = 960;
 constexpr uint32_t kClientHeight = 540;
 
-constexpr const char* kSkinMeshPath = "data/skin/m_luffy_timeskip.mxf";
+constexpr const char* kSkinMeshPath  = "data/skin/m_luffy_timeskip.mxf";
+constexpr const char* kTexturesDir   = "textures";
+
+// The colour drawn for a section whose material names no texture, or whose
+// named texture could not be resolved/decoded/uploaded. It is deliberately
+// garish so a fallback is unmistakable on screen and in a screenshot, and it is
+// never presented as a textured result: every section drawn with it was logged
+// as a fallback at setup time.
+constexpr RenderColor kFallbackColor(0.85f, 0.05f, 0.55f, 1.0f);
 
 void Log(const char* format, ...)
 {
@@ -306,6 +326,147 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
+	const MeshResourceHandle characterMesh = meshHandle.GetValue();
+
+	// 6b. CLIENT-RENDER-002: the character's real materials and textures.
+	//
+	//     The decoded mesh names its materials and, per MeshSection, which
+	//     material each run of indices is drawn with. Each material names one
+	//     texture by bare filename; that filename is resolved over the ASURA
+	//     texture tree by TextureLoader (the same name/path resolution the
+	//     legacy TextureManager performed, with no D3D coupling) and decoded by
+	//     content magic -- PNG here, with DDS/MTF handled by the same dispatch.
+	//
+	//     Every *unique* texture is decoded and uploaded exactly once and the
+	//     handle is shared by every material that names it, so a mesh that
+	//     references one body texture from sixteen materials uploads it once.
+	//     A material that names no texture, or whose named texture cannot be
+	//     resolved, decoded or uploaded, is left with an invalid handle and a
+	//     clearly-labelled fallback: that is reported, never silently drawn as
+	//     a success.
+	const std::vector<MeshMaterial>& materials = mesh.GetMaterials();
+	const std::vector<MeshSection>&   sections  = mesh.GetSections();
+
+	std::vector<ImageResourceHandle> materialTextures(materials.size(),
+	                                                  ImageResourceHandle::MakeInvalid());
+	std::vector<ImageResourceHandle> uploadedTextures;  // unique handles, for teardown
+	bool namedTexturesAllLoaded = true;
+
+	Log("ModernClientApp: mesh carries %zu materials and %zu sections",
+		materials.size(), sections.size());
+
+	if (mesh.HasSections())
+	{
+		const std::filesystem::path textureRoot = std::filesystem::path(assetRoot) / kTexturesDir;
+		TextureLoader textureLoader;
+		const Status textureInit = textureLoader.Initialize(textureRoot);
+		if (textureInit.IsError())
+		{
+			Log("ModernClientApp: texture tree '%s' could not be indexed (%s)",
+				textureRoot.string().c_str(), textureInit.GetMessage());
+			namedTexturesAllLoaded = false;
+		}
+		else
+		{
+			for (size_t m = 0; m < materials.size(); ++m)
+			{
+				const MeshMaterial& material = materials[m];
+				if (material.textureFilename.empty())
+				{
+					// A material with no texture is a real, legal shape; it draws
+					// with the fallback color by design, which is not a failure.
+					continue;
+				}
+
+				// Share the handle with an earlier material that named the same
+				// file: one upload per unique image, not one per material.
+				ImageResourceHandle reused;
+				bool alreadyUploaded = false;
+				for (size_t k = 0; k < m; ++k)
+				{
+					if (materials[k].textureFilename == material.textureFilename &&
+					    materialTextures[k].IsValid())
+					{
+						reused = materialTextures[k];
+						alreadyUploaded = true;
+						break;
+					}
+				}
+				if (alreadyUploaded)
+				{
+					materialTextures[m] = reused;
+					continue;
+				}
+
+				const std::filesystem::path resolved = textureLoader.Find(material.textureFilename);
+				if (resolved.empty())
+				{
+					Log("ModernClientApp: material '%s' names texture '%s' that is not in the "
+					    "texture tree '%s'",
+					    material.name.c_str(), material.textureFilename.c_str(),
+					    textureRoot.string().c_str());
+					namedTexturesAllLoaded = false;
+					continue;
+				}
+
+				const Modern::Result<ImageAsset> image = textureLoader.Load(material.textureFilename);
+				if (image.IsError())
+				{
+					Log("ModernClientApp: material '%s' texture '%s' (%s) failed to decode (%s)",
+					    material.name.c_str(), material.textureFilename.c_str(),
+					    resolved.string().c_str(), image.GetMessage());
+					namedTexturesAllLoaded = false;
+					continue;
+				}
+
+				const Modern::Result<ImageResourceHandle> uploaded =
+				    uploader.UploadImage(image.GetValue());
+				if (uploaded.IsError())
+				{
+					Log("ModernClientApp: material '%s' texture '%s' (%s) failed to upload (%s)",
+					    material.name.c_str(), material.textureFilename.c_str(),
+					    resolved.string().c_str(), uploaded.GetMessage());
+					namedTexturesAllLoaded = false;
+					continue;
+				}
+
+				materialTextures[m] = uploaded.GetValue();
+				uploadedTextures.push_back(uploaded.GetValue());
+				Log("ModernClientApp: material '%s' texture '%s' -> '%s' uploaded as image %llu "
+				    "(%u x %u, %s)",
+				    material.name.c_str(), material.textureFilename.c_str(), resolved.string().c_str(),
+				    static_cast<unsigned long long>(uploaded.GetValue().Get()),
+				    image.GetValue().GetWidth(), image.GetValue().GetHeight(),
+				    ToString(image.GetValue().GetFormat()));
+			}
+		}
+
+		// The per-section draw plan, logged once for evidence: every section's
+		// index range, its material, and the texture handle it will bind (or the
+		// fallback marker when there is none).
+		for (size_t s = 0; s < sections.size(); ++s)
+		{
+			const MeshSection& section = sections[s];
+			const bool   textured = section.materialIndex < materialTextures.size() &&
+			                        materialTextures[section.materialIndex].IsValid();
+			const char* binding   = "none (fallback color)";
+			std::string texturedBinding;
+			if (textured)
+			{
+				texturedBinding = std::to_string(materialTextures[section.materialIndex].Get()) +
+				                  " (textured)";
+				binding = texturedBinding.c_str();
+			}
+			const bool named = section.materialIndex < materials.size();
+			Log("ModernClientApp: section %zu: indices [%u, %u) material %zu '%s' texture '%s' -> %s",
+			    s, section.indexOffset, section.indexOffset + section.indexCount,
+			    section.materialIndex,
+			    named ? materials[section.materialIndex].name.c_str() : "?",
+			    named ? materials[section.materialIndex].textureFilename.c_str() : "?",
+			    binding);
+		}
+	}
+
 	// 7. A camera that frames the model: the bounding box of the decoded
 	//    geometry decides the distance; the transforms themselves are fixed
 	//    for the life of the program.
@@ -367,24 +528,35 @@ int main(int argc, char** argv)
 		}
 	});
 
-	const MeshResourceHandle characterMesh = meshHandle.GetValue();
-	application.SetRenderCallback([&renderer, &characterMesh, &world, &view, &projection](
-		uint64_t frameIndex) {
+	// CLIENT-RENDER-002: one indexed draw per section, each binding its own
+	// material's texture at its own index range. A section whose material
+	// carries a real uploaded texture draws textured; one that does not draws
+	// with the fallback color, which is only ever supplied to those sections.
+	application.SetRenderCallback([&renderer, &characterMesh, &sections, &materialTextures,
+	                               &world, &view, &projection](uint64_t frameIndex) {
 		(void)frameIndex;
 
 		renderer.Clear(RenderColor(0.07f, 0.09f, 0.14f, 1.0f));
 
-		MeshDrawCommand command;
-		command.mesh             = characterMesh;
-		command.texture          = ImageResourceHandle::MakeInvalid();
-		command.worldMatrix      = world;
-		command.viewMatrix       = view;
-		command.projectionMatrix = projection;
-		// No texture is bound for this milestone: the shader's fallback path
-		// makes this flat color the visible result.
-		command.fallbackColor = RenderColor(0.62f, 0.76f, 0.92f, 1.0f);
+		for (const MeshSection& section : sections)
+		{
+			const bool hasTexture = section.materialIndex < materialTextures.size() &&
+			                        materialTextures[section.materialIndex].IsValid();
 
-		renderer.DrawIndexedMesh(command);
+			MeshDrawCommand command;
+			command.mesh             = characterMesh;
+			command.texture          = hasTexture
+			                               ? materialTextures[section.materialIndex]
+			                               : ImageResourceHandle::MakeInvalid();
+			command.worldMatrix      = world;
+			command.viewMatrix       = view;
+			command.projectionMatrix = projection;
+			command.indexOffset      = section.indexOffset;
+			command.indexCount       = section.indexCount;
+			command.fallbackColor    = hasTexture ? RenderColor::White : kFallbackColor;
+
+			renderer.DrawIndexedMesh(command);
+		}
 	});
 
 	if (application.Initialize().IsError())
@@ -402,15 +574,29 @@ int main(int argc, char** argv)
 	//    because destructors run in reverse declaration order. Releasing the
 	//    GPU side here instead means the real order is:
 	//
-	//        buffers -> device/swap chain/context -> window
+	//        textures -> mesh buffers -> device/swap chain/context -> window
 	//
 	//    which is the order D3D11 wants, since the swap chain is bound to the
 	//    window handle. Doing it explicitly rather than by declaration order
 	//    means the sequence does not change if a declaration is ever moved.
+	for (const ImageResourceHandle texture : uploadedTextures)
+	{
+		uploader.ReleaseImage(texture);  // texture + SRV, device still alive
+	}
 	uploader.ReleaseMesh(characterMesh);  // vertex/index buffers, device still alive
 	renderer.Shutdown();                 // swap chain, device, immediate context
 
 	Log("ModernClientApp: stopped after %llu frames",
 		static_cast<unsigned long long>(application.GetFrameCount()));
-	return runStatus.IsOk() ? 0 : 1;
+
+	if (!namedTexturesAllLoaded)
+	{
+		Log("ModernClientApp: WARNING -- one or more named textures failed to load; the sections "
+		    "that used them drew with the fallback color and are NOT a textured result");
+	}
+	// A clean window stop AND complete textured loading: a run whose named
+	// textures did not all load is reported as a failure, so a fallback draw is
+	// never mistaken for the textured character the milestone asked for.
+	const bool success = runStatus.IsOk() && namedTexturesAllLoaded;
+	return success ? 0 : 1;
 }

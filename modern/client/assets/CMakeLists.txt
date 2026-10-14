@@ -15,12 +15,14 @@ add_library(ModernClientAssets STATIC
     ImageAsset.cpp
     TestImageDecoder.cpp
     DdsImageDecoder.cpp
+    PngImageDecoder.cpp
     MeshAsset.cpp
     TestMeshDecoder.cpp
     MtfTextureTransform.cpp
     MxfMeshTransform.cpp
 
     XMeshDecoder.cpp
+    TextureLoader.cpp
 )
 
 target_include_directories(ModernClientAssets PUBLIC
@@ -176,3 +178,33 @@ if(MSVC)
 endif()
 
 add_test(NAME ModernClientXMeshTests COMMAND ModernClientXMeshTests)
+
+# CLIENT-RENDER-002: PNG decoder and texture loader tests. A seventh
+# executable, for the same reason as the others: each suite owns its own main().
+# The PNG fixtures are assembled in the test binary from the published PNG /
+# RFC 1951 / RFC 1950 / CRC-32 format descriptions -- the zlib streams are
+# stored (uncompressed) DEFLATE blocks built byte by byte, never produced by
+# calling the decoder -- so nothing proprietary is committed; the optional
+# real-asset cases read a client tree only when RAN_ASSET_ROOT names one. The
+# texture loader's fixture tree is written to a temporary directory, so the
+# bare-name resolution and .mtf-first order are exercised without any shipped
+# asset. Same linkage as the image suite -- asset layer plus resource layer,
+# no renderer, no graphics API, no legacy library.
+add_executable(ModernClientPngImageTests
+    ClientPngTests.cpp
+)
+
+target_include_directories(ModernClientPngImageTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_SOURCE_DIR}/modern/tests
+)
+
+target_link_libraries(ModernClientPngImageTests PRIVATE ModernClientAssets ModernClientResources)
+
+target_compile_features(ModernClientPngImageTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernClientPngImageTests PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+add_test(NAME ModernClientPngImageTests COMMAND ModernClientPngImageTests)

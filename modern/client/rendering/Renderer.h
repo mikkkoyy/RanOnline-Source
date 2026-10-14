@@ -29,6 +29,14 @@ namespace Modern::Client
 // row-major transforms, and the visible fallback color used when no texture
 // is bound. Matrices are pointers to 16 row-major floats so the struct stays
 // trivially copyable and cheap to build at the call site.
+//
+// CLIENT-RENDER-002: the optional index range draws one MeshSection of an
+// uploaded mesh, so a character with several materials becomes several draws
+// that each bind their own texture. Both fields default to the whole-mesh
+// draw that existed before them: indexCount == 0 means "every index in the
+// mesh", which keeps every existing construction site working unchanged.
+// A non-zero range must be a whole number of triangles and must lie inside
+// the mesh; both are validated where the mesh is known, in the backend.
 struct MeshDrawCommand
 {
 	MeshResourceHandle mesh;             // required: names the uploaded mesh
@@ -37,6 +45,12 @@ struct MeshDrawCommand
 	const float*        viewMatrix;      // 16 row-major floats
 	const float*        projectionMatrix;// 16 row-major floats
 	RenderColor         fallbackColor = RenderColor::White;
+
+	// CLIENT-RENDER-002: first index and count of the run to draw. Count 0
+	// draws every index from offset 0 (the pre-section behaviour). Count
+	// non-zero requires count % 3 == 0 and offset + count <= index count.
+	uint32_t indexOffset = 0;
+	uint32_t indexCount  = 0;
 };
 
 class IRenderer

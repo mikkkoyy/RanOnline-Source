@@ -1808,6 +1808,404 @@ MODERN_TEST(ClientXMesh_MeshWithFewerNormalsThanVertices)
 	CHECK_EQ(v3.normal.z, 0.0f);
 }
 
+// ---------------------------------------------------------------------------
+// CLIENT-RENDER-002: materials, texture filenames and material sections
+// ---------------------------------------------------------------------------
+//
+// The shapes below are copied from the real ASURA character
+// `data/skin/m_luffy_timeskip.mxf`: a `Material` object holding a nested
+// `TextureFilename` object, and a `MeshMaterialList` whose nMaterials,
+// nFaceIndexes and face indexes arrive as ONE integer list followed by a
+// `{ Material <name>; }` reference block. Two of its six sub-meshes write
+// `Mesh`, `MeshNormals`, `MeshMaterialList` in that order, and the static
+// meshes under `data/skeleton` write `MeshNormals`, `MeshMaterialList`,
+// `Mesh` — which is why the pairing is by position and not by adjacency.
+
+// One `Material` object with a nested `TextureFilename`, exactly as RAN writes
+// it: the float list, then the texture object, then a trailing semicolon that
+// terminates the member rather than the object.
+std::vector<uint8_t> FixtureMaterialObject(
+	const char* instanceName,
+	const char* textureFilename)
+{
+	std::vector<uint8_t> bytes;
+	PushName(bytes, "Material");
+	PushName(bytes, instanceName);
+	PushU16(bytes, kOBrace);
+	// ambient / power / diffuse / specular / emissive and friends. RAN writes
+	// eleven of them; the decoder must ignore them and keep the texture.
+	PushFloatList(bytes, std::vector<float>(11, 1.0f));
+	PushName(bytes, "TextureFilename");
+	PushU16(bytes, kOBrace);
+	PushU16(bytes, kString);
+	PushU32(bytes, static_cast<uint32_t>(std::strlen(textureFilename)));
+	AppendText(bytes, textureFilename, std::strlen(textureFilename));
+	PushU16(bytes, kSemicolon);
+	PushU16(bytes, kCBrace);
+	PushU16(bytes, kSemicolon);
+	PushU16(bytes, kCBrace);
+	return bytes;
+}
+
+// One `MeshMaterialList`, in RAN's single-integer-list encoding, followed by
+// the `{ Material <name>; }` reference block naming each material slot.
+std::vector<uint8_t> FixtureMaterialListObject(
+	const std::vector<uint32_t>& faceIndices,
+	const std::vector<const char*>& references)
+{
+	std::vector<uint8_t> bytes;
+	PushName(bytes, "MeshMaterialList");
+	PushName(bytes, "");  // RAN writes an empty instance name here
+	PushU16(bytes, kOBrace);
+	std::vector<uint32_t> ints;
+	ints.push_back(static_cast<uint32_t>(references.size()));
+	ints.push_back(static_cast<uint32_t>(faceIndices.size()));
+	for (const uint32_t value : faceIndices) { ints.push_back(value); }
+	PushIntList(bytes, ints);
+	// The data reference is '{' NAME '}' -- one name token, holding the referenced
+	// object's *instance* name, with no type token and no trailing semicolon.
+	// `m_luffy_timeskip.mxf` writes `{ Material__757_Model001_Material002Sub0 }`;
+	// a material with no instance name writes just `{ Material }`.
+	for (const char* reference : references)
+	{
+		PushU16(bytes, kOBrace);
+		PushName(bytes, reference);
+		PushU16(bytes, kCBrace);
+	}
+	PushU16(bytes, kCBrace);
+	return bytes;
+}
+
+// Four vertices and four triangles, all sharing the same corner indices: what
+// matters to these tests is the face *count*, because a material list assigns
+// materials per face.
+const std::vector<float> kQuadPositions =
+{
+	0.0f, 0.0f, 0.0f,  1.0f, 0.0f, 0.0f,
+	0.0f, 1.0f, 0.0f,  1.0f, 1.0f, 0.0f
+};
+const std::vector<float> kQuadNormals =
+{
+	0.0f, 0.0f, 1.0f,  0.0f, 0.0f, 1.0f,  0.0f, 0.0f, 1.0f,  0.0f, 0.0f, 1.0f
+};
+const std::vector<float> kQuadUvs =
+{
+	0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f
+};
+const std::vector<uint32_t> kQuadMeshInts = { 4, 4, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2 };
+const std::vector<uint32_t> kQuadNormalInts = { 4, 4, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2 };
+const std::vector<uint32_t> kQuadUvInts = { 4 };
+
+// A file whose mesh carries a two-material list alternating over four faces,
+// with both materials declared in a header before the geometry — the shape the
+// real character has.
+std::vector<uint8_t> FixtureTwoMaterialCharacter()
+{
+	std::vector<uint8_t> bytes = MakeHeader("bin ");
+	Append(bytes, FixtureMaterialObject("Material__Body", "blackcatyb_body.png"));
+	Append(bytes, FixtureMaterialObject("Material__Eye", "blackcatyb_eye.png"));
+	Append(bytes, MakeObject("Mesh", kQuadMeshInts, kQuadPositions));
+	Append(bytes, MakeObject("MeshNormals", kQuadNormalInts, kQuadNormals));
+	Append(bytes, FixtureMaterialListObject({ 0, 1, 0, 1 },
+	                                        { "Material__Body", "Material__Eye" }));
+	Append(bytes, MakeObject("MeshTextureCoords", kQuadUvInts, kQuadUvs));
+	return bytes;
+}
+
+MODERN_TEST(ClientXMesh_TwoMaterialsProduceSections)
+{
+	const std::vector<uint8_t> bytes = FixtureTwoMaterialCharacter();
+	XMeshDecoder decoder;
+	const Result<MeshAsset> result = decoder.DecodeMesh(ResourceData(bytes));
+	CHECK(result.IsOk());
+	if (result.IsError()) { return; }
+
+	const MeshAsset& mesh = result.GetValue();
+
+	// Geometry is untouched by the material work: same 4 vertices, 12 indices.
+	CHECK_EQ(mesh.GetVertexCount(), 4u);
+	CHECK_EQ(mesh.GetIndexCount(), 12u);
+
+	// Both declared materials are referenced, so both are kept, in the order
+	// the material list first reaches them.
+	CHECK_EQ(mesh.GetMaterialCount(), 2u);
+	if (mesh.GetMaterialCount() != 2u) { return; }
+	CHECK_EQ(mesh.GetMaterials()[0].name, std::string("Material__Body"));
+	CHECK_EQ(mesh.GetMaterials()[0].textureFilename, std::string("blackcatyb_body.png"));
+	CHECK_EQ(mesh.GetMaterials()[1].name, std::string("Material__Eye"));
+	CHECK_EQ(mesh.GetMaterials()[1].textureFilename, std::string("blackcatyb_eye.png"));
+
+	// Faces 0,1,0,1 over two materials alternate on every face, so each face is
+	// its own section: four sections of one triangle each, covering all 12
+	// indices in order.
+	CHECK_EQ(mesh.GetSectionCount(), 4u);
+	if (mesh.GetSectionCount() != 4u) { return; }
+	const uint32_t expectedMaterials[4] = { 0, 1, 0, 1 };
+	for (uint32_t i = 0; i < 4; ++i)
+	{
+		CHECK_EQ(mesh.GetSections()[i].indexOffset, i * 3u);
+		CHECK_EQ(mesh.GetSections()[i].indexCount, 3u);
+		CHECK_EQ(mesh.GetSections()[i].materialIndex, expectedMaterials[i]);
+	}
+}
+
+MODERN_TEST(ClientXMesh_ContiguousFacesShareOneSection)
+{
+	// Faces 0,0,0,1: the first three share a material and must become ONE
+	// section, not three. This is the shape the real character has.
+	std::vector<uint8_t> bytes = MakeHeader("bin ");
+	Append(bytes, FixtureMaterialObject("Material__Body", "body.png"));
+	Append(bytes, FixtureMaterialObject("Material__Eye", "eye.png"));
+	Append(bytes, MakeObject("Mesh", kQuadMeshInts, kQuadPositions));
+	Append(bytes, MakeObject("MeshNormals", kQuadNormalInts, kQuadNormals));
+	Append(bytes, FixtureMaterialListObject({ 0, 0, 0, 1 },
+	                                        { "Material__Body", "Material__Eye" }));
+	Append(bytes, MakeObject("MeshTextureCoords", kQuadUvInts, kQuadUvs));
+
+	XMeshDecoder decoder;
+	const Result<MeshAsset> result = decoder.DecodeMesh(ResourceData(bytes));
+	CHECK(result.IsOk());
+	if (result.IsError()) { return; }
+
+	const MeshAsset& mesh = result.GetValue();
+	CHECK_EQ(mesh.GetSectionCount(), 2u);
+	if (mesh.GetSectionCount() != 2u) { return; }
+	CHECK_EQ(mesh.GetSections()[0].indexOffset, 0u);
+	CHECK_EQ(mesh.GetSections()[0].indexCount, 9u);
+	CHECK_EQ(mesh.GetSections()[0].materialIndex, 0u);
+	CHECK_EQ(mesh.GetSections()[1].indexOffset, 9u);
+	CHECK_EQ(mesh.GetSections()[1].indexCount, 3u);
+	CHECK_EQ(mesh.GetSections()[1].materialIndex, 1u);
+}
+
+MODERN_TEST(ClientXMesh_UntexturedMeshHasNoMaterialsOrSections)
+{
+	// The pre-existing triangle fixture has no MeshMaterialList at all. It must
+	// keep decoding, with an empty material table: an untextured mesh is a
+	// mesh, not a malformed one.
+	const std::vector<uint8_t> bytes = MakeTriangleFile();
+	XMeshDecoder decoder;
+	const Result<MeshAsset> result = decoder.DecodeMesh(ResourceData(bytes));
+	CHECK(result.IsOk());
+	if (result.IsError()) { return; }
+	CHECK_EQ(result.GetValue().GetMaterialCount(), 0u);
+	CHECK_EQ(result.GetValue().GetSectionCount(), 0u);
+	CHECK(!result.GetValue().HasSections());
+}
+
+MODERN_TEST(ClientXMesh_UnreferencedMaterialsAreNotKept)
+{
+	// A material declared but named by no material list describes equipment the
+	// character is not wearing. The real file has four such (M_sc_bsk_*.dds);
+	// they must not appear in the mesh's material table.
+	std::vector<uint8_t> bytes = MakeHeader("bin ");
+	Append(bytes, FixtureMaterialObject("Material__Unused", "unused.png"));
+	Append(bytes, FixtureMaterialObject("Material__Body", "body.png"));
+	Append(bytes, MakeObject("Mesh", kQuadMeshInts, kQuadPositions));
+	Append(bytes, MakeObject("MeshNormals", kQuadNormalInts, kQuadNormals));
+	Append(bytes, FixtureMaterialListObject({ 0, 0, 0, 0 },
+	                                        { "Material__Body", "Material__Body" }));
+	Append(bytes, MakeObject("MeshTextureCoords", kQuadUvInts, kQuadUvs));
+
+	XMeshDecoder decoder;
+	const Result<MeshAsset> result = decoder.DecodeMesh(ResourceData(bytes));
+	CHECK(result.IsOk());
+	if (result.IsError()) { return; }
+	CHECK_EQ(result.GetValue().GetMaterialCount(), 1u);
+	if (result.GetValue().GetMaterialCount() != 1u) { return; }
+	CHECK_EQ(result.GetValue().GetMaterials()[0].name, std::string("Material__Body"));
+}
+
+MODERN_TEST(ClientXMesh_MaterialWithoutTextureFilenameHasEmptyTexture)
+{
+	// A material with no TextureFilename is legal: it names no texture, and the
+	// texture name is empty rather than a path or a guess.
+	std::vector<uint8_t> bytes = MakeHeader("bin ");
+	Append(bytes, MakeObject("Mesh", kQuadMeshInts, kQuadPositions));
+	Append(bytes, MakeObject("MeshNormals", kQuadNormalInts, kQuadNormals));
+	{
+		std::vector<uint8_t> material;
+		PushName(material, "Material");
+		PushName(material, "Material__Plain");
+		PushU16(material, kOBrace);
+		PushFloatList(material, std::vector<float>(11, 1.0f));
+		PushU16(material, kCBrace);
+		Append(bytes, material);
+	}
+	Append(bytes, FixtureMaterialListObject({ 0, 0, 0, 0 }, { "Material__Plain" }));
+	Append(bytes, MakeObject("MeshTextureCoords", kQuadUvInts, kQuadUvs));
+
+	XMeshDecoder decoder;
+	const Result<MeshAsset> result = decoder.DecodeMesh(ResourceData(bytes));
+	CHECK(result.IsOk());
+	if (result.IsError()) { return; }
+	CHECK_EQ(result.GetValue().GetMaterialCount(), 1u);
+	if (result.GetValue().GetMaterialCount() != 1u) { return; }
+	CHECK_EQ(result.GetValue().GetMaterials()[0].name, std::string("Material__Plain"));
+	CHECK(result.GetValue().GetMaterials()[0].textureFilename.empty());
+}
+
+MODERN_TEST(ClientXMesh_FaceAssignedToMissingMaterialSlotIsRefused)
+{
+	// nMaterials is 1, so a face index of 1 names a slot that does not exist.
+	std::vector<uint8_t> bytes = MakeHeader("bin ");
+	Append(bytes, FixtureMaterialObject("Material__Body", "body.png"));
+	Append(bytes, MakeObject("Mesh", kQuadMeshInts, kQuadPositions));
+	Append(bytes, MakeObject("MeshNormals", kQuadNormalInts, kQuadNormals));
+	Append(bytes, FixtureMaterialListObject({ 0, 1, 0, 0 }, { "Material__Body" }));
+	Append(bytes, MakeObject("MeshTextureCoords", kQuadUvInts, kQuadUvs));
+
+	XMeshDecoder decoder;
+	const Result<MeshAsset> result = decoder.DecodeMesh(ResourceData(bytes));
+	CHECK(result.IsError());
+	if (result.IsError())
+	{
+		CHECK_EQ(result.GetError(), ErrorCode::InvalidArgument);
+	}
+}
+
+MODERN_TEST(ClientXMesh_ReferenceToUndeclaredMaterialIsRefused)
+{
+	// The list names a material the file never declared, so its texture is not
+	// knowable. Drawing the slot with some other material would be a guess.
+	std::vector<uint8_t> bytes = MakeHeader("bin ");
+	Append(bytes, FixtureMaterialObject("Material__Body", "body.png"));
+	Append(bytes, MakeObject("Mesh", kQuadMeshInts, kQuadPositions));
+	Append(bytes, MakeObject("MeshNormals", kQuadNormalInts, kQuadNormals));
+	Append(bytes, FixtureMaterialListObject({ 0, 0, 0, 0 }, { "Material__Missing" }));
+	Append(bytes, MakeObject("MeshTextureCoords", kQuadUvInts, kQuadUvs));
+
+	XMeshDecoder decoder;
+	const Result<MeshAsset> result = decoder.DecodeMesh(ResourceData(bytes));
+	CHECK(result.IsError());
+	if (result.IsError())
+	{
+		CHECK_EQ(result.GetError(), ErrorCode::InvalidArgument);
+	}
+}
+
+MODERN_TEST(ClientXMesh_FewerFaceIndexesThanFacesIsRefused)
+{
+	// nFaceIndexes says 4 but only 2 face indexes follow. Accepting it would
+	// produce sections that do not cover the mesh.
+	std::vector<uint8_t> bytes = MakeHeader("bin ");
+	Append(bytes, FixtureMaterialObject("Material__Body", "body.png"));
+	Append(bytes, MakeObject("Mesh", kQuadMeshInts, kQuadPositions));
+	Append(bytes, MakeObject("MeshNormals", kQuadNormalInts, kQuadNormals));
+	Append(bytes, FixtureMaterialListObject({ 0, 0 }, { "Material__Body" }));
+	Append(bytes, MakeObject("MeshTextureCoords", kQuadUvInts, kQuadUvs));
+
+	XMeshDecoder decoder;
+	const Result<MeshAsset> result = decoder.DecodeMesh(ResourceData(bytes));
+	CHECK(result.IsError());
+	if (result.IsError())
+	{
+		CHECK_EQ(result.GetError(), ErrorCode::InvalidArgument);
+	}
+}
+
+MODERN_TEST(ClientXMesh_SameMaterialInTwoSubMeshesIsOneEntry)
+{
+	// The real character reaches the same five Material__773_* materials from
+	// two different sub-meshes. They must land on one table entry, so one
+	// texture upload serves both.
+	std::vector<uint8_t> bytes = MakeHeader("bin ");
+	Append(bytes, FixtureMaterialObject("Material__Shared", "shared.png"));
+	Append(bytes, MakeObject("Mesh", kQuadMeshInts, kQuadPositions));
+	Append(bytes, MakeObject("MeshNormals", kQuadNormalInts, kQuadNormals));
+	Append(bytes, FixtureMaterialListObject({ 0, 0, 0, 0 }, { "Material__Shared" }));
+	Append(bytes, MakeObject("MeshTextureCoords", kQuadUvInts, kQuadUvs));
+	Append(bytes, MakeObject("Mesh", kQuadMeshInts, kQuadPositions));
+	Append(bytes, MakeObject("MeshNormals", kQuadNormalInts, kQuadNormals));
+	Append(bytes, FixtureMaterialListObject({ 0, 0, 0, 0 }, { "Material__Shared" }));
+	Append(bytes, MakeObject("MeshTextureCoords", kQuadUvInts, kQuadUvs));
+
+	XMeshDecoder decoder;
+	const Result<MeshAsset> result = decoder.DecodeMesh(ResourceData(bytes));
+	CHECK(result.IsOk());
+	if (result.IsError()) { return; }
+
+	const MeshAsset& mesh = result.GetValue();
+	CHECK_EQ(mesh.GetVertexCount(), 8u);
+	CHECK_EQ(mesh.GetIndexCount(), 24u);
+	CHECK_EQ(mesh.GetMaterialCount(), 1u);
+	CHECK_EQ(mesh.GetSectionCount(), 2u);
+	if (mesh.GetSectionCount() != 2u) { return; }
+	CHECK_EQ(mesh.GetSections()[0].indexOffset, 0u);
+	CHECK_EQ(mesh.GetSections()[0].indexCount, 12u);
+	CHECK_EQ(mesh.GetSections()[1].indexOffset, 12u);
+	CHECK_EQ(mesh.GetSections()[1].indexCount, 12u);
+	// Both sections name the single shared material.
+	CHECK_EQ(mesh.GetSections()[0].materialIndex, 0u);
+	CHECK_EQ(mesh.GetSections()[1].materialIndex, 0u);
+}
+
+// A `MeshMaterialList` that declares more than one material slot but names no
+// materials at all: an empty reference block. This is the exact shape of the
+// sub-meshes in `data/skeleton/b_3boss_01.x` that previously corrupted the
+// debug heap and stalled the decoder -- a list whose nMaterials is 2 but whose
+// `{ ... }` reference block is empty, so the face-to-material assignment (0,1)
+// indexes a slot table the old code built with a single entry.
+std::vector<uint8_t> FixtureUnnamedMaterialListObject(
+	const std::vector<uint32_t>& faceIndices,
+	uint32_t                     materialCount)
+{
+	std::vector<uint8_t> bytes;
+	PushName(bytes, "MeshMaterialList");
+	PushName(bytes, "");
+	PushU16(bytes, kOBrace);
+	std::vector<uint32_t> ints;
+	ints.push_back(materialCount);
+	ints.push_back(static_cast<uint32_t>(faceIndices.size()));
+	for (const uint32_t value : faceIndices) { ints.push_back(value); }
+	PushIntList(bytes, ints);
+	// No reference block at all: the list named no materials.
+	PushU16(bytes, kCBrace);
+	return bytes;
+}
+
+MODERN_TEST(ClientXMesh_UnnamedMultiMaterialListDoesNotIndexOutOfRange)
+{
+	// Regression for the b_3boss_01.x stall. nMaterials is 2 but no materials
+	// are named, so every face's material index (0 and 1 here) must still map
+	// to the single shared unnamed material instead of reading past a one-entry
+	// slot table. The decode must succeed, in bounded time, with correct
+	// section ranges -- not corrupt the heap and hang.
+	std::vector<uint8_t> bytes = MakeHeader("bin ");
+	Append(bytes, MakeObject("Mesh", kQuadMeshInts, kQuadPositions));
+	Append(bytes, MakeObject("MeshNormals", kQuadNormalInts, kQuadNormals));
+	Append(bytes, FixtureUnnamedMaterialListObject({ 0, 0, 0, 1 }, 2u));
+	Append(bytes, MakeObject("MeshTextureCoords", kQuadUvInts, kQuadUvs));
+
+	XMeshDecoder decoder;
+	const Result<MeshAsset> result = decoder.DecodeMesh(ResourceData(bytes));
+	CHECK(result.IsOk());
+	if (result.IsError()) { return; }
+
+	const MeshAsset& mesh = result.GetValue();
+	// Geometry is untouched.
+	CHECK_EQ(mesh.GetVertexCount(), 4u);
+	CHECK_EQ(mesh.GetIndexCount(), 12u);
+	// One shared unnamed, untextured material serves every declared slot.
+	CHECK_EQ(mesh.GetMaterialCount(), 1u);
+	if (mesh.GetMaterialCount() != 1u) { return; }
+	CHECK(mesh.GetMaterials()[0].name.empty());
+	CHECK(mesh.GetMaterials()[0].textureFilename.empty());
+	// Faces 0,0,0,1: three faces on slot 0 then one on slot 1, but both slots
+	// resolve to the same material, so the run-splitting still sees two
+	// distinct slot values and produces two sections -- both naming material 0.
+	CHECK_EQ(mesh.GetSectionCount(), 2u);
+	if (mesh.GetSectionCount() != 2u) { return; }
+	CHECK_EQ(mesh.GetSections()[0].indexOffset, 0u);
+	CHECK_EQ(mesh.GetSections()[0].indexCount, 9u);
+	CHECK_EQ(mesh.GetSections()[0].materialIndex, 0u);
+	CHECK_EQ(mesh.GetSections()[1].indexOffset, 9u);
+	CHECK_EQ(mesh.GetSections()[1].indexCount, 3u);
+	// The slot-1 face must resolve to the shared material, not an out-of-range
+	// index: this is the value the old code read out of bounds.
+	CHECK_EQ(mesh.GetSections()[1].materialIndex, 0u);
+}
+
 int main()
 {
 	// Unbuffered so an abort still shows which case was running.

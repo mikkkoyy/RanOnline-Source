@@ -2356,6 +2356,157 @@ it ends before it. The chain is not preserved, and nothing pretends otherwise.
 
 ---
 
+## 24. CLIENT-RENDER-002: ASURA character materials and PNG textures
+
+CLIENT-RENDER-001B drew the real ASURA character mesh from a flat colour. This
+milestone renders it textured: the production `ModernClientApp` decodes
+`data/skin/m_luffy_timeskip.mxf`, resolves each material's texture by name over
+the ASURA texture tree, decodes the two real PNGs
+(`blackcatyb_luffy_timeskip.png` on the body, `blackcatyb_luffy_timeskip_eye.png`
+on the eye), and issues one indexed draw per `MeshSection`, each binding its own
+material's texture at its own index range.
+
+### What the real asset contains (verified against the shipped file)
+
+| Fact | Value |
+| ---- | ----- |
+| Vertices | 8,868 |
+| Indices | 36,741 |
+| Triangles | 12,247 |
+| Referenced materials | 17 |
+| Sections | 22 |
+| Distinct PNG textures | 2 (body 1024×1024 RGB; eye 256×256 RGBA) |
+
+`m_luffy_timeskip.mxf` declares 21 `Material` objects and references 17; the
+other four belong to equipment the character is not wearing. The 17 map to just
+two texture files. Section index ranges are contiguous, non-overlapping and
+together cover `[0, 36741)` exactly.
+
+### PNG support — the exact feature set
+
+`PngImageDecoder` (built on the shared `Inflate.h`, RFC 1950 over RFC 1951):
+
+- signature; IHDR; colour type 2 (RGB) and 6 (RGBA); bit depth 8; no interlace
+- one or more IDAT chunks concatenated and inflated as one zlib stream
+- all five scanline filters (None, Sub, Up, Average, Paeth)
+- IHDR CRC-32 checked; zlib Adler-32 checked; FDICT refused
+- ancillary chunks (pHYs/gAMA/sRGB/tEXt/…) skipped by length
+- a **mandatory IEND** — a stream whose bytes stop after IDAT is refused
+
+Refused with `InvalidArgument`, each for a stated reason: interlaced (Adam7),
+palette, greyscale, bit depth ≠ 8, a missing/duplicated IHDR, a truncated
+chunk, an IHDR CRC mismatch, an Adler mismatch, malformed DEFLATE, a scanline
+count that disagrees with the header, and a declared chunk length above the
+16 MiB ceiling. Every size is formed in 64-bit before allocation. Output is
+always `R8G8B8A8_UNorm` (RGB gains opaque alpha; RGBA keeps its own), so
+transparent pixels survive. The two real textures are both 8-bit non-interlaced
+RGB/RGBA, so no unsupported feature is needed.
+
+### Texture lookup and format dispatch
+
+`TextureLoader` replaces the legacy `TextureManager` name resolution with no D3D
+coupling: one recursive, sorted scan of a textures root into a lowercase
+filename index, the legacy `.mtf`-first lookup order, and a decode chosen by the
+file's own magic bytes (never the extension):
+
+| Magic | Path |
+| ----- | ---- |
+| PNG signature | `PngImageDecoder` |
+| `DDS ` | `DdsImageDecoder` |
+| MTF header (version 0x100) | `MtfTextureTransform` then `DdsImageDecoder` |
+| anything else | `InvalidArgument` |
+
+Only bare filenames are addresses; a name carrying a directory separator is
+refused. The CPU asset layer stays platform-independent — no GPU, renderer,
+Windows or DirectX type reaches it.
+
+### Material / section integration
+
+`MeshMaterial` (name + texture filename) and `MeshSection` (index offset, count,
+material index) were added to `MeshAsset`, with `CreateWithSections` validating
+every rule the untextured `Create` already enforced plus: materials and sections
+present together, a material index in range, a whole-triangle count, ascending
+non-overlapping ranges, and exact coverage of the index array. `XMeshDecoder`
+extracts the `Material` / `TextureFilename` / `MeshMaterialList` records, maps
+each sub-mesh's face-material indexes into a shared, referenced-only material
+table (so a texture referenced by many materials is one entry), and emits one
+section per contiguous run of same-material faces — no index reordering.
+
+`MeshDrawCommand` gained an optional `indexOffset`/`indexCount` (`indexCount ==
+0` still draws the whole mesh, unchanged). `D3D11Renderer::DrawIndexedMesh`
+validates a non-zero range (a whole triangle run inside the uploaded index
+buffer) before drawing; `NullRenderer` performs the same shape check.
+
+### Two renderer defects found and fixed while integrating
+
+1. **The pixel shader's cbuffer was never bound.** `DrawIndexedMesh` bound the
+   `MeshConstants` constant buffer to the vertex shader only. The pixel stage
+   declared the same cbuffer (its `fallbackColor` and `useTexture`), left it
+   unbound, and therefore read `useTexture = 0` and a zeroed fallback colour —
+   every textured mesh drew black regardless of what was bound. Fixed by also
+   calling `PSSetConstantBuffers`. The symptom (a correct silhouette in pure
+   black) is why the unlit-texture path was verified visually, not only by logs.
+2. **The sampler addressed a non-existent mip.** The uploader creates
+   `MipLevels = 1` from `ImageAsset` (one 2D image), but the sampler used
+   `MIN_MAG_MIP_LINEAR` with `MaxLOD = FLOAT32_MAX`. A minified texture selects
+   an LOD above mip 0; `MaxLOD` is now clamped to 0 so only mip 0 is ever
+   sampled (a future mip-chain upload can lift it).
+
+`ModernClientApp` resolves each unique texture filename once through
+`TextureLoader`, decodes and uploads each unique image once (sharing one GPU
+handle across every material that names the same file), and binds it per
+section. A material that names no texture, or whose texture cannot be
+resolved/decoded/uploaded, draws a clearly-labelled magenta fallback and is
+logged with the material name, requested filename, resolved path and failing
+stage; the process exits non-zero if any *named* texture failed, so a fallback
+is never counted as a successful textured run. Textures, then the mesh, are
+released before renderer shutdown; a clean window close exits 0.
+
+### Tests
+
+| Suite | Cases | What it covers |
+| ------ | ----- | -------------- |
+| `ModernClientPngImageTests` (new) | 24 | pixel-exact RGB/RGBA, alpha, all five filters, multi-row, split IDAT, ancillary skip; garbage/truncation/IHDR-CRC/Adler/malformed-DEFLATE/oversized-chunk/scanline-count negatives; PNG/DDS/MTF dispatch; bare-name, case-insensitive, `.mtf`-first, separator and load-negative; both real textures decode when `RAN_ASSET_ROOT` names a tree |
+| `ModernClientXMeshTests` | 76 | fixtures for material/section extraction and every malformed shape, plus the 608-file `data/skeleton` sweep when `RAN_ASSET_ROOT` is set |
+
+The PNG fixtures are assembled by hand from the PNG / RFC 1951 /
+RFC 1950 / CRC-32 descriptions (zlib streams are stored DEFLATE blocks built
+byte by byte), so the decoder is never checked against its own output. The real
+DDS/MTF suites are unchanged. The focused client CTest suite (asset, mesh, DDS,
+MTF, MXF, X-mesh, PNG, rendering, upload, application, input, resource, platform)
+passes 13/13 hermetically.
+
+### Production build and GUI evidence
+
+`ModernClientApp.exe` builds (Visual Studio 17 2022, Win32, Debug) and, run
+against `D:\FILES\project\RanOnline-Build\ASURA CLIENT`, opens the 960×540
+window, logs both textures resolved/decoded/uploaded and the 22 per-section draw
+plan, and visibly renders the character with the body texture and the eye
+texture on the eye section. A clean window close exits 0. Evidence screenshot:
+`docs/reference/client/CLIENT-RENDER-002-character.png`.
+
+### The skeleton file, separated from this milestone
+
+The temporary probe reported a stall decoding `data/skeleton/b_3boss_01.x`. Under
+the decoder shipped here it is **not reproduced**: the 608-file skeleton sweep
+(in `ModernClientXMeshTests`, bounded by the harness's per-test watchdog)
+completes, and `b_3boss_01.x` decodes to a 2,804-vertex / 1,500-triangle mesh.
+The decoder's material-list slot mapping already covers this file's shape (a
+`MeshMaterialList` with `materialCount > 1` and no named references), which is
+the path the earlier probe was probing. No open follow-up is recorded; the
+character texture milestone does not depend on it.
+
+### Known limitations
+
+- **Unlit.** The pixel shader returns the sampled texture colour directly; there
+  is no lighting, so the character is shown in its raw albedo.
+- **Single mip level.** Images upload one level; `MaxLOD` is clamped to match.
+- **Fallback colour.** A section whose material carries no texture (or whose
+  texture failed) shows magenta; this is deliberate and never reported as
+  textured.
+
+---
+
 # CORE-002: RAN Stat System
 
 The first system that computes anything rather than describing it. It

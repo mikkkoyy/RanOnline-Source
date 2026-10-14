@@ -124,6 +124,15 @@ Status NullRenderer::DrawIndexedMesh(const MeshDrawCommand& command)
 		return Status(ErrorCode::InvalidArgument);
 	}
 
+	// CLIENT-RENDER-002: the shape half of the index-range contract. The
+	// bounds half needs a resolved mesh, which a headless renderer has none
+	// of, so only "a run of whole triangles" is checkable here -- the same
+	// check the D3D11 backend performs before its bounds check.
+	if (command.indexCount != 0 && (command.indexCount % 3u) != 0u)
+	{
+		return Status(ErrorCode::InvalidArgument);
+	}
+
 	++m_drawCommandCount;
 	return Ok();
 }

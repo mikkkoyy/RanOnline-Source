@@ -15,6 +15,12 @@
 
 #include "assets/XMeshDecoder.h"
 
+// CLIENT-RENDER-002: the DEFLATE inflater is shared with PngImageDecoder rather
+// than duplicated here. The `bzip` (MSZip) path below inflates raw RFC 1951
+// chunks with dictionary chaining, which is exactly what `detail::Inflater`
+// provides.
+#include "assets/Inflate.h"
+
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -81,6 +87,13 @@ constexpr const char* kMeshTemplate           = "Mesh";
 constexpr const char* kMeshNormalsTemplate    = "MeshNormals";
 constexpr const char* kMeshTextureCoordsTempl = "MeshTextureCoords";
 
+// CLIENT-RENDER-002: the three templates that carry material and texture
+// information. They were parsed and discarded before; the same grammar walk is
+// used, and what it sees is now kept. See XMeshDecoder.h.
+constexpr const char* kMaterialTemplate        = "Material";
+constexpr const char* kTextureFilenameTemplate = "TextureFilename";
+constexpr const char* kMaterialListTemplate    = "MeshMaterialList";
+
 // A name longer than this is refused before it is read. Template and member
 // names in the shipped tree are far below the bound; it exists so a corrupt
 // length cannot ask for an enormous string.
@@ -92,464 +105,6 @@ constexpr size_t kMaxNameBytes = 1024;
 // without a limit that is a stack exhaustion rather than a refusal. The deepest
 // real RAN file nests a Mesh inside a Frame, so this is generous.
 constexpr int kMaxNestingDepth = 64;
-
-// ---------------------------------------------------------------------------
-// Raw DEFLATE (RFC 1951), private to this translation unit
-// ---------------------------------------------------------------------------
-//
-// Written against the RFC rather than pulled in as a dependency, so the asset
-// layer keeps linking nothing beyond `Modern` and `ModernClientResources`. It
-// is deliberately strict: a length or distance that would reach outside what
-// the stream has actually produced, or an output longer than the caller allowed,
-// is a refusal rather than a truncated read.
-
-constexpr size_t kWindowSize = 32u * 1024u;
-constexpr size_t kWindowMask = kWindowSize - 1;
-
-struct CodeLength
-{
-	uint16_t count[16];
-	uint16_t symbol[288];
-};
-
-// Builds the canonical Huffman decode tables of RFC 1951 3.2.2. Returns false
-// for an over-subscribed or empty set, which is how a corrupt table is caught
-// without decoding anything.
-bool BuildHuffman(const uint8_t* lengths, size_t count, CodeLength& out)
-{
-	for (int i = 0; i < 16; ++i)
-	{
-		out.count[i] = 0;
-	}
-	for (size_t i = 0; i < count; ++i)
-	{
-		if (lengths[i] > 15)
-		{
-			return false;
-		}
-		++out.count[lengths[i]];
-	}
-	if (out.count[0] == count)
-	{
-		return false;
-	}
-
-	int left = 1;
-	for (int len = 1; len < 16; ++len)
-	{
-		left <<= 1;
-		left -= out.count[len];
-		if (left < 0)
-		{
-			return false;  // over-subscribed
-		}
-	}
-
-	uint16_t offs[16];
-	offs[0] = 0;
-	offs[1] = 0;
-	for (int len = 1; len < 15; ++len)
-	{
-		offs[len + 1] = static_cast<uint16_t>(offs[len] + out.count[len]);
-	}
-	for (size_t i = 0; i < count; ++i)
-	{
-		if (lengths[i] != 0)
-		{
-			out.symbol[offs[lengths[i]]++] = static_cast<uint16_t>(i);
-		}
-	}
-	return true;
-}
-
-class Inflater
-{
-public:
-	Inflater(const uint8_t* data, size_t size, size_t outputLimit) noexcept
-		: m_in(data)
-		, m_inSize(data == nullptr ? 0 : size)
-		, m_limit(outputLimit)
-	{
-		m_out.reserve(outputLimit);
-		m_history.assign(kWindowSize, 0);
-	}
-
-	// The largest output this inflater may produce. Set from the caller's own
-	// bound rather than from anything the stream claims.
-	void SetOutputLimit(size_t limit) noexcept { m_limit = limit; }
-
-	// Presets the window with the previous MSZip chunk. Only the last 32 KiB is
-	// reachable by a back-reference, which is all DEFLATE can address, so that
-	// is all that is kept.
-	void SetDictionary(const std::vector<uint8_t>& dictionary)
-	{
-		const size_t keep = dictionary.size() < kWindowSize ? dictionary.size() : kWindowSize;
-		const size_t from = dictionary.size() - keep;
-		for (size_t i = 0; i < keep; ++i)
-		{
-			m_history[i] = dictionary[from + i];
-		}
-		// The window is a ring, so the write position after a full-window
-		// dictionary wraps to zero. Leaving it at kWindowSize would make the
-		// first Emit write one past the end of m_history.
-		m_historyPos = keep & kWindowMask;
-		m_historyUsed = keep;
-	}
-
-	bool Run()
-	{
-		uint32_t last = 0;
-		do
-		{
-			// RFC 1951 3.2.3: every block opens with BFINAL (one bit) and then
-			// BTYPE (two bits). Reading them in that order matters: the first
-			// bit of a fixed-Huffman block is BFINAL, and treating it as the low
-			// bit of BTYPE dispatches on the wrong type and then reads the
-			// following bit as a second BFINAL.
-			if (!CanRead())
-			{
-				return false;
-			}
-			last = Bits(1);
-			if (!CanRead())
-			{
-				return false;
-			}
-			switch (Bits(2))
-			{
-			case 0: if (!Stored()) { return false; } break;
-			case 1: if (!FixedBlock()) { return false; } break;
-			case 2: if (!DynamicBlock()) { return false; } break;
-			default: return false;
-			}
-		} while (last == 0);
-		return true;
-	}
-
-	const std::vector<uint8_t>& Output() const noexcept { return m_out; }
-	size_t ConsumedInput() const noexcept { return m_inPos; }
-
-private:
-	// Whether another bit can be read at all. Deliberately not "are N bits
-	// already buffered": Bits() refills from the input, so a code longer than
-	// the bits currently in the buffer is still decodable. Testing the buffer
-	// instead refused the last code of a well-formed stream.
-	bool CanRead() const noexcept
-	{
-		return !m_short && (m_bitCount > 0 || m_inPos < m_inSize);
-	}
-
-	// Reads `need` bits LSB-first. On exhaustion the failure flag is set and
-	// zeroes are returned; callers check m_short so a truncated tail is refused
-	// rather than read as zeroes.
-	uint32_t Bits(int need) noexcept
-	{
-		uint32_t value = m_bitBuf;
-		while (m_bitCount < need)
-		{
-			if (m_inPos >= m_inSize)
-			{
-				m_short = true;
-				return 0;
-			}
-			value |= static_cast<uint32_t>(m_in[m_inPos++]) << m_bitCount;
-			m_bitCount += 8;
-		}
-		m_bitBuf = value >> need;
-		m_bitCount -= need;
-		return value & ((1u << need) - 1u);
-	}
-
-	// Walks the canonical code bit by bit, as RFC 1951 3.2.2 describes. The
-	// check is on the input, not on the buffer, so a code that ends in the last
-	// byte of the stream still decodes.
-	int Decode(const CodeLength& code) noexcept
-	{
-		int codeBits = 0;
-		int first = 0;
-		int index = 0;
-		for (int len = 1; len < 16; ++len)
-		{
-			codeBits |= static_cast<int>(Bits(1));
-			if (m_short)
-			{
-				return -1;
-			}
-			const int count = code.count[len];
-			if (codeBits - first < count)
-			{
-				return code.symbol[index + (codeBits - first)];
-			}
-			index += count;
-			first = (first + count) << 1;
-			codeBits <<= 1;
-		}
-		return -1;
-	}
-
-	bool Emit(uint8_t value) noexcept
-	{
-		if (m_out.size() >= m_limit)
-		{
-			return false;
-		}
-		m_out.push_back(value);
-		m_history[m_historyPos] = value;
-		m_historyPos = (m_historyPos + 1) & kWindowMask;
-		if (m_historyUsed < kWindowSize)
-		{
-			++m_historyUsed;
-		}
-		return true;
-	}
-
-	// Copies `length` bytes from `distance` back through the window. A distance
-	// of zero, a distance further back than anything produced, and a length
-	// that would run past the output limit are all refused.
-	bool CopyBack(uint32_t distance, uint32_t length) noexcept
-	{
-		if (distance == 0 || distance > m_historyUsed)
-		{
-			return false;
-		}
-		if (static_cast<size_t>(length) > m_limit - m_out.size())
-		{
-			return false;
-		}
-		const size_t src = (m_historyPos - distance) & kWindowMask;
-		for (uint32_t i = 0; i < length; ++i)
-		{
-			if (!Emit(m_history[(src + i) & kWindowMask]))
-			{
-				return false;
-			}
-		}
-		return true;
-	}
-
-	bool Codes(const CodeLength& lit, const CodeLength& dist) noexcept
-	{
-		for (;;)
-		{
-			const int symbol = Decode(lit);
-			if (symbol < 0)
-			{
-				return false;
-			}
-			if (symbol < 256)
-			{
-				if (!Emit(static_cast<uint8_t>(symbol)))
-				{
-					return false;
-				}
-				continue;
-			}
-			if (symbol == 256)
-			{
-				return true;
-			}
-			const int si = symbol - 257;
-			if (si >= 29)
-			{
-				return false;
-			}
-			const uint32_t length = m_lenBase[si] + Bits(m_lenExtra[si]);
-			const int dsym = Decode(dist);
-			if (dsym < 0 || dsym >= 30)
-			{
-				return false;
-			}
-			const uint32_t distance = m_distBase[dsym] + Bits(m_distExtra[dsym]);
-			if (m_short || !CopyBack(distance, length))
-			{
-				return false;
-			}
-		}
-	}
-
-	bool FixedBlock() noexcept
-	{
-		if (!m_fixedReady)
-		{
-			uint8_t lengths[288];
-			for (int i = 0; i < 144; ++i) { lengths[i] = 8; }
-			for (int i = 144; i < 256; ++i) { lengths[i] = 9; }
-			for (int i = 256; i < 280; ++i) { lengths[i] = 7; }
-			for (int i = 280; i < 288; ++i) { lengths[i] = 8; }
-			BuildHuffman(lengths, 288, m_fixedLit);
-
-			uint8_t dist[30];
-			for (int i = 0; i < 30; ++i) { dist[i] = 5; }
-			BuildHuffman(dist, 30, m_fixedDist);
-			m_fixedReady = true;
-		}
-		return Codes(m_fixedLit, m_fixedDist);
-	}
-
-	bool Stored() noexcept
-	{
-		m_bitBuf = 0;
-		m_bitCount = 0;
-		if (m_inPos + 4 > m_inSize)
-		{
-			return false;
-		}
-		const uint32_t len = static_cast<uint32_t>(m_in[m_inPos]) |
-		                     (static_cast<uint32_t>(m_in[m_inPos + 1]) << 8);
-		const uint32_t nlen = static_cast<uint32_t>(m_in[m_inPos + 2]) |
-		                     (static_cast<uint32_t>(m_in[m_inPos + 3]) << 8);
-		if ((len ^ 0xFFFFu) != nlen)
-		{
-			return false;
-		}
-		m_inPos += 4;
-		if (m_inPos + len > m_inSize)
-		{
-			return false;
-		}
-		if (len > m_limit - m_out.size())
-		{
-			return false;
-		}
-		for (uint32_t i = 0; i < len; ++i)
-		{
-			if (!Emit(m_in[m_inPos + i]))
-			{
-				return false;
-			}
-		}
-		m_inPos += len;
-		return true;
-	}
-
-	bool DynamicBlock() noexcept
-	{
-		static const uint8_t kOrder[19] =
-			{ 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 };
-
-		const uint32_t nlit  = Bits(5) + 257;
-		const uint32_t ndist = Bits(5) + 1;
-		const uint32_t ncode = Bits(4) + 4;
-		if (m_short || nlit > 286 || ndist > 30)
-		{
-			return false;
-		}
-
-		uint8_t codeLengths[19];
-		std::memset(codeLengths, 0, sizeof(codeLengths));
-		for (uint32_t i = 0; i < ncode; ++i)
-		{
-			codeLengths[kOrder[i]] = static_cast<uint8_t>(Bits(3));
-		}
-		CodeLength codeTable;
-		if (!BuildHuffman(codeLengths, 19, codeTable))
-		{
-			return false;
-		}
-
-		uint8_t lengths[288 + 30];
-		std::memset(lengths, 0, sizeof(lengths));
-		uint32_t index = 0;
-		while (index < nlit + ndist)
-		{
-			const int symbol = Decode(codeTable);
-			if (symbol < 0)
-			{
-				return false;
-			}
-			if (symbol < 16)
-			{
-				lengths[index++] = static_cast<uint8_t>(symbol);
-			}
-			else
-			{
-				uint8_t fill = 0;
-				uint32_t repeat = 0;
-				if (symbol == 16)
-				{
-					if (index == 0)
-					{
-						return false;
-					}
-					fill = lengths[index - 1];
-					repeat = 3 + Bits(2);
-				}
-				else if (symbol == 17)
-				{
-					repeat = 3 + Bits(3);
-				}
-				else
-				{
-					repeat = 11 + Bits(7);
-				}
-				if (m_short || index + repeat > nlit + ndist)
-				{
-					return false;
-				}
-				while (repeat-- > 0)
-				{
-					lengths[index++] = fill;
-				}
-			}
-		}
-		if (lengths[256] == 0)
-		{
-			return false;  // no end-of-block code
-		}
-
-		CodeLength lit;
-		CodeLength dist;
-		if (!BuildHuffman(lengths, nlit, lit) ||
-		    !BuildHuffman(lengths + nlit, ndist, dist))
-		{
-			return false;
-		}
-		return Codes(lit, dist);
-	}
-
-	static const uint16_t m_lenBase[29];
-	static const uint8_t  m_lenExtra[29];
-	static const uint16_t m_distBase[30];
-	static const uint8_t  m_distExtra[30];
-
-	const uint8_t* m_in;
-	size_t         m_inSize;
-	size_t         m_inPos    = 0;
-	uint32_t       m_bitBuf   = 0;
-	int            m_bitCount = 0;
-	bool           m_short    = false;
-	size_t         m_limit    = 0;
-
-	std::vector<uint8_t> m_out;
-	std::vector<uint8_t> m_history;
-	size_t               m_historyPos  = 0;
-	size_t               m_historyUsed = 0;
-
-	CodeLength m_fixedLit{};
-	CodeLength m_fixedDist{};
-	bool       m_fixedReady = false;
-};
-
-const uint16_t Inflater::m_lenBase[29] =
-{
-	3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31,
-	35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258
-};
-const uint8_t Inflater::m_lenExtra[29] =
-{
-	0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2,
-	3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0
-};
-const uint16_t Inflater::m_distBase[30] =
-{
-	1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193,
-	257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577
-};
-const uint8_t Inflater::m_distExtra[30] =
-{
-	0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6,
-	7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13
-};
 
 // Undoes one `bzip` payload: a run of "CK"-prefixed raw DEFLATE chunks,
 // concatenated into the token stream that belongs behind the 16-byte file
@@ -585,7 +140,7 @@ bool DecodeMsZip(const uint8_t* data, size_t size, uint32_t expectedTotal, std::
 		}
 		pos += 2;
 
-		Inflater inf(data + pos, size - pos, budget - out.size());
+		detail::Inflater inf(data + pos, size - pos, budget - out.size());
 		inf.SetOutputLimit(budget - out.size());
 		inf.SetDictionary(previous);
 		if (!inf.Run())
@@ -774,6 +329,26 @@ struct XGeometry
 	std::vector<MeshChunk> meshes;
 	std::vector<MeshChunk> normals;
 	std::vector<MeshChunk> uvs;
+
+	// CLIENT-RENDER-002: the material table as the file declares it, in
+	// declaration order and de-duplicated by instance name.
+	std::vector<MeshMaterial> materials;
+
+	// One entry per `MeshMaterialList` object, in document order. Paired with
+	// `meshes` by ordinal index -- the same rule this decoder already uses for
+	// `MeshNormals` and `MeshTextureCoords` -- and deliberately *not* by
+	// adjacency, because the real shipped files disagree on adjacency: RAN's
+	// `data/skin/m_luffy_timeskip.mxf` writes `Mesh` before its list, while the
+	// static meshes under `data/skeleton` (b_log_in_man.x and 29 others) write
+	// `MeshNormals`, then `MeshMaterialList`, then `Mesh`. Positional pairing
+	// handles both; "the list that followed this mesh" handles neither.
+	struct MaterialList
+	{
+		uint32_t                 materialCount = 0;
+		std::vector<uint32_t>    faceIndices;
+		std::vector<std::string> references;  // material names, in slot order
+	};
+	std::vector<MaterialList> lists;
 };
 
 bool IsGeometryTemplate(const std::string& name)
@@ -1070,7 +645,12 @@ private:
 
 		// An object may carry one or more instance names, then an optional
 		// string label. Both are optional, and both are followed by '{'.
-		uint16_t peek = 0;
+		// CLIENT-RENDER-002: the first instance name is the object's own name,
+		// and it is what a `MeshMaterialList` references a `Material` by, so it
+		// is kept rather than discarded.
+		std::string firstInstance;
+		bool        haveInstance = false;
+		uint16_t    peek = 0;
 		for (;;)
 		{
 			if (!m_reader.Peek(peek))
@@ -1083,6 +663,11 @@ private:
 				if (!m_reader.Expect(kTokenName) || !m_reader.ReadName(instance))
 				{
 					return false;
+				}
+				if (!haveInstance)
+				{
+					firstInstance  = instance;
+					haveInstance   = true;
 				}
 				continue;
 			}
@@ -1110,10 +695,86 @@ private:
 			}
 		}
 
+const bool isMaterial = (name == kMaterialTemplate);
+	const bool isTexture  = (name == kTextureFilenameTemplate);
+	const bool isList     = (name == kMaterialListTemplate);
+
+		// Capture state is set up around the body and undone after it, so a
+		// nested object of the same name cannot leak a capture outwards. The
+		// depth is the body's depth, which is what ReadParts compares against.
+		const bool     saveIsTexture    = m_inTextureFilename;
+		const bool     saveIsMaterial   = m_inMaterial;
+		const bool     saveIsList       = m_inMaterialList;
+		const int      saveTextureDepth = m_textureDepth;
+		const int      saveListDepth    = m_listDepth;
+		const std::string saveRef        = m_pendingReference;
+
+		std::string materialName;
+		std::string materialTexture;
+		if (isMaterial)
+		{
+			materialName = firstInstance;
+			materialTexture.clear();
+			m_inMaterial = true;
+		}
+		if (isTexture)
+		{
+			m_inTextureFilename = true;
+			m_textureDepth = m_depth + 1;
+		}
+		if (isList)
+		{
+			m_inMaterialList = true;
+			m_listDepth = m_depth + 1;
+			// One list at a time: the counts and face indexes collected so far
+			// belong to the previous list and must not leak into this one.
+			m_materialIntegersSeen = 0;
+			m_pendingMaterialCount  = 0;
+			m_pendingFaceIndexCount = 0;
+			m_pendingFaceIndices.clear();
+			m_pendingReferences.clear();
+		}
+		m_pendingReference.clear();
+
 		MeshChunk* keep = IsGeometryTemplate(name) ? &chunk : nullptr;
 		++m_depth;
-		const bool ok = ReadParts(keep);
+		bool ok = ReadParts(keep);
 		--m_depth;
+
+		// A `TextureFilename` nested in a `Material` names the material's
+		// texture. A `TextureFilename` anywhere else is not a character
+		// material's, so it is still walked but not recorded.
+		if (ok && isTexture && m_inMaterial)
+		{
+			m_pendingMaterialTexture = m_textureFilenameText;
+			m_textureFilenameText.clear();
+		}
+
+		if (ok && isMaterial)
+		{
+			MeshMaterial material;
+			material.name            = materialName;
+			material.textureFilename = m_pendingMaterialTexture;
+			RecordMaterial(material);
+			// Cleared here rather than on every exit, because the nested
+			// TextureFilename object has just written into it.
+			m_pendingMaterialTexture.clear();
+		}
+if (ok && isList)
+	{
+		if (!AttachMaterialList())
+		{
+			ok = false;
+		}
+	}
+
+		m_inTextureFilename = saveIsTexture;
+		m_inMaterial        = saveIsMaterial;
+		m_inMaterialList    = saveIsList;
+		m_textureDepth      = saveTextureDepth;
+		m_listDepth         = saveListDepth;
+		m_pendingReference  = saveRef;
+
 		if (ok && keep != nullptr)
 		{
 			Record(name, chunk);
@@ -1124,6 +785,10 @@ private:
 	// Keeps one geometry object, wherever in the stream it was found. RAN nests
 	// `Mesh` inside `Frame`, so recording only top-level objects would drop
 	// every real mesh in the shipped tree.
+	//
+	// CLIENT-RENDER-002: nothing extra is recorded per mesh. Material lists are
+	// collected into their own flat list and paired by position in
+	// BuildMeshAsset, which is how normals and UV sets are already paired.
 	void Record(const std::string& name, const MeshChunk& chunk)
 	{
 		if (m_geometry == nullptr)
@@ -1142,6 +807,70 @@ private:
 		{
 			m_geometry->uvs.push_back(chunk);
 		}
+	}
+
+	// CLIENT-RENDER-002: the global material table. De-duplicated by instance
+	// name, first declaration wins, because `m_luffy_timeskip.mxf` references
+	// the same `Material__773_*` materials from two different sub-meshes and
+	// both must resolve to one table entry.
+	void RecordMaterial(const MeshMaterial& material)
+	{
+		if (m_geometry == nullptr)
+		{
+			return;
+		}
+		for (const MeshMaterial& existing : m_geometry->materials)
+		{
+			if (existing.name == material.name && !material.name.empty())
+			{
+				return;
+			}
+		}
+		m_geometry->materials.push_back(material);
+	}
+
+	// The counts and per-face indexes of the material list just parsed, plus
+	// the material names it references, become one entry of the flat list that
+	// BuildMeshAsset pairs against `meshes` by position.
+	bool AttachMaterialList()
+	{
+		if (m_geometry == nullptr)
+		{
+			return true;
+		}
+		// The declared shape must be complete: both counts present, at least one
+		// material, at least one face index, and exactly as many face indexes as
+		// were declared. A list missing its own counts has no face-to-material
+		// assignment to preserve.
+		if (m_materialIntegersSeen < 2 ||
+		    m_pendingMaterialCount == 0 ||
+		    m_pendingFaceIndexCount == 0 ||
+		    m_pendingFaceIndices.size() != m_pendingFaceIndexCount)
+		{
+			return false;
+		}
+		// One material reference per declared slot, in slot order -- but a list
+		// may name no materials at all, which is a real RAN shape and means
+		// something specific rather than being malformed: D3DX hands such a mesh
+		// back with NumMaterials == 0, and the engine's material loop then loads
+		// no textures for it. Refusing the file would break every file that does
+		// it, so an empty reference list is carried through and the sub-mesh is
+		// modelled as one unnamed, untextured material. A *partial* list -- some
+		// slots named, some not -- is still refused: that would leave a slot the
+		// file declared but never resolved.
+		if (!m_pendingReferences.empty() &&
+		    m_pendingReferences.size() != m_pendingMaterialCount)
+		{
+			return false;
+		}
+		XGeometry::MaterialList list;
+		list.materialCount = m_pendingMaterialCount;
+		list.faceIndices   = std::move(m_pendingFaceIndices);
+		list.references    = std::move(m_pendingReferences);
+		m_geometry->lists.push_back(std::move(list));
+		m_pendingFaceIndices.clear();
+		m_pendingReferences.clear();
+		return true;
 	}
 
 	// The body of a data object, up to its closing brace.
@@ -1184,6 +913,17 @@ private:
 					return false;
 				}
 				const bool floats = (token == kTokenFloatList);
+
+				// CLIENT-RENDER-002: RAN writes a `MeshMaterialList`'s
+				// nMaterials, nFaceIndexes and every face index as ONE integer
+				// list rather than as separate TOKEN_INTEGER records. Both
+				// shapes are the documented grammar, so both are accepted, and
+				// the count is validated against the declared nFaceIndexes
+				// before any of it is used.
+				const bool materialInts =
+					(!floats && keep == nullptr && m_inMaterialList &&
+					 m_depth == m_listDepth);
+
 				if (keep != nullptr)
 				{
 					if (floats)
@@ -1211,6 +951,18 @@ private:
 						}
 					}
 				}
+				else if (materialInts)
+				{
+					for (uint32_t i = 0; i < count; ++i)
+					{
+						uint32_t element = 0;
+						if (!m_reader.ReadU32(element) ||
+						    !PushMaterialInteger(element))
+						{
+							return false;
+						}
+					}
+				}
 				else if (!m_reader.SkipBytes(bytes))
 				{
 					return false;
@@ -1228,6 +980,13 @@ private:
 				{
 					keep->ints.push_back(value);
 				}
+				else if (m_inMaterialList && m_depth == m_listDepth)
+				{
+					if (!PushMaterialInteger(value))
+					{
+						return false;
+					}
+				}
 				continue;
 			}
 			if (token == kTokenString)
@@ -1236,6 +995,15 @@ private:
 				if (!m_reader.ReadName(text))
 				{
 					return false;
+				}
+				// CLIENT-RENDER-002: the string of a `TextureFilename` is the
+				// material's texture. Only the direct body of that object is
+				// captured, so a string anywhere else in the stream cannot be
+				// mistaken for one.
+				if (m_inTextureFilename && m_depth == m_textureDepth &&
+				    m_textureFilenameText.empty())
+				{
+					m_textureFilenameText = text;
 				}
 				// A string list continues with a comma or semicolon; the grammar
 				// may also end the list, in which case the token just read
@@ -1282,6 +1050,13 @@ private:
 					{
 						return false;
 					}
+					// CLIENT-RENDER-002: inside a `MeshMaterialList` these are
+					// the material slots, in slot order, named by the very
+					// `Material` objects the file declared earlier.
+					if (m_inMaterialList && m_depth == m_listDepth)
+					{
+						m_pendingReferences.push_back(referenced);
+					}
 					if (m_reader.Peek(peek) && peek == kTokenSemicolon)
 					{
 						if (!m_reader.Expect(kTokenSemicolon))
@@ -1309,9 +1084,72 @@ private:
 		}
 	}
 
+	// Appends one value of a `MeshMaterialList`'s numeric header, enforcing the
+	// shape as it goes: the first two values are the counts, and every one after
+	// them is a face index that must be a legal material slot. A file whose
+	// declared nFaceIndexes does not match the number of indexes it supplied is
+	// refused here rather than producing sections that do not cover the mesh.
+	//
+	// RAN packs nMaterials, nFaceIndexes and the face indexes into one integer
+	// list; the same values arriving one TOKEN_INTEGER at a time is the other
+	// documented encoding. Both call this, so the counts are validated
+	// identically whichever shape the file used.
+bool PushMaterialInteger(uint32_t value)
+{
+	switch (m_materialIntegersSeen)
+		{
+		case 0:
+			m_pendingMaterialCount = value;
+			++m_materialIntegersSeen;
+			return true;
+		case 1:
+			m_pendingFaceIndexCount = value;
+			++m_materialIntegersSeen;
+			return true;
+		default:
+			break;
+		}
+
+		if (m_pendingFaceIndices.size() >= m_pendingFaceIndexCount)
+		{
+			// More indexes than the file declared it would write.
+			return false;
+		}
+		if (value >= m_pendingMaterialCount)
+		{
+			// A face assigned to a slot that does not exist. Refused rather
+			// than clamped: clamping would draw the face with a material the
+			// file never chose.
+			return false;
+		}
+		m_pendingFaceIndices.push_back(value);
+		++m_materialIntegersSeen;
+		return true;
+	}
+
 	XReader&   m_reader;
 	XGeometry* m_geometry = nullptr;
 	int        m_depth = 0;
+
+	// CLIENT-RENDER-002 capture state. The three depth-guarded flags are what
+	// keep the generic grammar walk from recording a string or a name that
+	// happens to appear somewhere unrelated: a value is only taken at the exact
+	// nesting depth of the object whose member it is.
+	bool     m_inTextureFilename = false;
+	bool     m_inMaterial        = false;
+	bool     m_inMaterialList    = false;
+	int      m_textureDepth      = -1;
+	int      m_listDepth         = -1;
+
+	std::string m_textureFilenameText;     // the string of a TextureFilename
+	std::string m_pendingMaterialTexture;  // the texture of the Material being read
+	std::string m_pendingReference;        // kept only to restore across nesting
+
+	uint32_t m_pendingMaterialCount    = 0;
+	uint32_t m_pendingFaceIndexCount   = 0;
+	uint32_t m_materialIntegersSeen    = 0;
+	std::vector<uint32_t>    m_pendingFaceIndices;
+	std::vector<std::string> m_pendingReferences;
 };
 
 // ---------------------------------------------------------------------------
@@ -1325,7 +1163,7 @@ bool IsFiniteTriple(const float* values)
 
 // Turns the collected `Mesh` / `MeshNormals` / `MeshTextureCoords` objects into
 // one mesh. See XMeshDecoder.h for each rule and the asset it is based on.
-Result<MeshAsset> BuildMeshAsset(const XGeometry& geometry)
+Result<MeshAsset> BuildMeshAsset(XGeometry& geometry)
 {
 	if (geometry.meshes.empty())
 	{
@@ -1337,17 +1175,132 @@ Result<MeshAsset> BuildMeshAsset(const XGeometry& geometry)
 	{
 		return Status(ErrorCode::InvalidArgument);
 	}
-	// UVs are different: a file with none at all is untextured, which MeshAsset
+// UVs are different: a file with none at all is untextured, which MeshAsset
 	// represents as (0,0). A file with *some* is claiming a correspondence to
-	// the meshes, and RAN emits those blocks out of step in some files, so an
-	// unmatchable set is refused rather than paired by position.
+	// the meshes, so an unmatchable set is refused rather than paired by
+	// position.
 	if (!geometry.uvs.empty() && geometry.uvs.size() != geometry.meshes.size())
 	{
 		return Status(ErrorCode::InvalidArgument);
 	}
 
+	// CLIENT-RENDER-002: material lists follow the same rule as normals. A file
+	// with no `MeshMaterialList` at all is an untextured mesh, which MeshAsset
+	// represents with no materials and no sections. A file with *some* is
+	// claiming a correspondence to the meshes, and sections must cover every
+	// index, so a count that does not match is refused rather than paired by
+	// guesswork.
+	const bool hasMaterialLists = !geometry.lists.empty();
+	if (hasMaterialLists && geometry.lists.size() != geometry.meshes.size())
+	{
+		return Status(ErrorCode::InvalidArgument);
+	}
+
+	// CLIENT-RENDER-002: resolve each sub-mesh's material slot references to
+	// indices in the global material table. Done after the whole stream is
+	// parsed, because a list may reference a `Material` declared before *or*
+	// after it; RAN declares them all in the file header, but the format does
+	// not require that and the cost of not assuming it is one extra pass.
+	// A reference to a name that was never declared is refused: the file asks
+	// for a material whose texture cannot be known, and drawing that slot with
+	// some other material would be a guess.
+	//
+	// The table that reaches MeshAsset holds only the materials some sub-mesh
+	// actually draws with, in first-referenced order. `m_luffy_timeskip.mxf`
+	// declares 21 materials and references 17 of them; the other four
+	// (`Material__0`..`Material__3`, pointing at `M_sc_bsk_*.dds`) belong to
+	// equipment the character is not wearing. Keeping declarations no section
+	// names would add table entries with no meaning, and would break the rule
+	// that a mesh's materials and its sections are both present or both absent.
+	std::vector<std::vector<uint32_t>> slotTable;  // [sub-mesh][slot] -> material
+	std::vector<MeshMaterial> materials;          // referenced materials, in order
+	if (hasMaterialLists)
+	{
+		slotTable.clear();
+		for (const XGeometry::MaterialList& list : geometry.lists)
+		{
+			std::vector<uint32_t> slots;
+			slots.reserve(list.references.size());
+
+			// A material list that named nothing becomes one shared unnamed,
+			// untextured material. One shared entry rather than one per
+			// sub-mesh, so several untextured sub-meshes do not present as
+			// several distinct materials to whatever loads the textures.
+			//
+			// The slot table is indexed by the *face's material index*, which
+			// the parser already proved is below this list's materialCount. So
+			// every declared slot -- materialCount of them, not one -- must map
+			// to the shared unnamed material; otherwise a face whose material
+			// index is 1 or higher indexes past a one-entry table and reads a
+			// neighbouring vector's memory. b_3boss_01.x is exactly that shape:
+			// a list with materialCount > 1 and no named references.
+			if (list.references.empty())
+			{
+				uint32_t unnamed = static_cast<uint32_t>(materials.size());
+				for (size_t k = 0; k < materials.size(); ++k)
+				{
+					if (materials[k].name.empty() && materials[k].textureFilename.empty())
+					{
+						unnamed = static_cast<uint32_t>(k);
+						break;
+					}
+				}
+				if (unnamed == materials.size())
+				{
+					materials.push_back(MeshMaterial());
+				}
+				// materialCount is at least 1 (AttachMaterialList refuses 0),
+				// so this loop runs at least once.
+				for (uint32_t s = 0; s < list.materialCount; ++s)
+				{
+					slots.push_back(unnamed);
+				}
+				slotTable.push_back(std::move(slots));
+				continue;
+			}
+
+			for (const std::string& name : list.references)
+			{
+				size_t found = geometry.materials.size();
+				for (size_t m = 0; m < geometry.materials.size(); ++m)
+				{
+					if (geometry.materials[m].name == name)
+					{
+						found = m;
+						break;
+					}
+				}
+				if (found == geometry.materials.size())
+				{
+					return Status(ErrorCode::InvalidArgument);
+				}
+
+				// Map into the referenced-only table, reusing the entry when
+				// this material was already reached: the real character uses the
+				// same five `Material__773_*` materials from two sub-meshes, and
+				// they must land on one entry so one texture upload serves both.
+				uint32_t target = static_cast<uint32_t>(materials.size());
+				for (size_t k = 0; k < materials.size(); ++k)
+				{
+					if (materials[k] == geometry.materials[found])
+					{
+						target = static_cast<uint32_t>(k);
+						break;
+					}
+				}
+				if (target == materials.size())
+				{
+					materials.push_back(geometry.materials[found]);
+				}
+				slots.push_back(target);
+			}
+			slotTable.push_back(std::move(slots));
+		}
+	}
+
 	std::vector<MeshVertex> vertices;
 	std::vector<MeshIndex>  indices;
+	std::vector<MeshSection> sections;
 
 	for (size_t m = 0; m < geometry.meshes.size(); ++m)
 	{
@@ -1451,6 +1404,10 @@ Result<MeshAsset> BuildMeshAsset(const XGeometry& geometry)
 		}
 
 		const MeshIndex base = static_cast<MeshIndex>(vertices.size());
+		// CLIENT-RENDER-002: where this sub-mesh's triangles begin in the merged
+		// index array. Recorded before any of them are appended, because a
+		// section's indexOffset is absolute.
+		const uint32_t sectionBase = static_cast<uint32_t>(indices.size());
 		vertices.reserve(static_cast<size_t>(newVertices));
 		for (uint32_t v = 0; v < vertexCount; ++v)
 		{
@@ -1495,11 +1452,45 @@ Result<MeshAsset> BuildMeshAsset(const XGeometry& geometry)
 			}
 			k += 3;
 		}
+
+		// CLIENT-RENDER-002: one section per contiguous run of faces sharing a
+		// material slot. Verified above that the list declares exactly faceCount
+		// indexes, so this cannot run short of or past the faces just appended.
+		if (hasMaterialLists)
+		{
+			const XGeometry::MaterialList& list = geometry.lists[m];
+			if (list.faceIndices.size() != faceCount)
+			{
+				return Status(ErrorCode::InvalidArgument);
+			}
+			uint32_t runStart = 0;
+			for (uint32_t f = 1; f <= faceCount; ++f)
+			{
+				const bool runEnds =
+					(f == faceCount) || (list.faceIndices[f] != list.faceIndices[runStart]);
+				if (!runEnds)
+				{
+					continue;
+				}
+				MeshSection section;
+				section.indexOffset = sectionBase + runStart * 3u;
+				section.indexCount  = (f - runStart) * 3u;
+				section.materialIndex = slotTable[m][list.faceIndices[runStart]];
+				sections.push_back(section);
+				runStart = f;
+			}
+		}
 	}
 
-	return MeshAsset::Create(PrimitiveTopology::TriangleList,
-	                         std::move(vertices),
-	                         std::move(indices));
+	// CLIENT-RENDER-002: the materials are the ones some sub-mesh draws with, and
+	// the sections reference them by index. CreateWithSections re-checks every
+	// section against the index array, so this only has to hand over what it
+	// read.
+	return MeshAsset::CreateWithSections(PrimitiveTopology::TriangleList,
+	                                      std::move(vertices),
+	                                      std::move(indices),
+	                                      std::move(materials),
+	                                      std::move(sections));
 }
 
 } // namespace

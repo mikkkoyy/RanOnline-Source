@@ -390,6 +390,28 @@ Status D3D11Renderer::DrawIndexedMesh(const MeshDrawCommand& command)
 		return Status(ErrorCode::NotFound);
 	}
 
+	// CLIENT-RENDER-002: an optional index range draws one section of the
+	// mesh. The count is the only optional half -- 0 means the whole mesh,
+	// which is every draw that existed before sections did. A non-zero range
+	// must be a whole number of triangles and must lie inside the uploaded
+	// index buffer; both are checked here rather than in the driver, so a bad
+	// range is a refusal and not a draw of memory past the buffer.
+	uint32_t drawCount  = meshGpu.indexCount;
+	uint32_t drawOffset = 0;
+	if (command.indexCount != 0)
+	{
+		if ((command.indexCount % 3u) != 0u ||
+		    command.indexOffset > meshGpu.indexCount ||
+		    command.indexCount > meshGpu.indexCount - command.indexOffset)
+		{
+			Log("D3D11Renderer: index range [%u, %u) is not a triangle run inside a %u-index mesh",
+				command.indexOffset, command.indexOffset + command.indexCount, meshGpu.indexCount);
+			return Status(ErrorCode::InvalidArgument);
+		}
+		drawCount  = command.indexCount;
+		drawOffset = command.indexOffset;
+	}
+
 	D3D11ImageGpuResources imageGpu;
 	const bool hasTexture =
 	    command.texture.IsValid() && m_assetUploader->TryResolveImage(command.texture, imageGpu);
@@ -428,6 +450,12 @@ Status D3D11Renderer::DrawIndexedMesh(const MeshDrawCommand& command)
 
 	m_context->VSSetShader(m_vertexShader, nullptr, 0);
 	m_context->VSSetConstantBuffers(0, 1, &m_constantBuffer);
+	// The same cbuffer holds the pixel shader's fallbackColor and useTexture, so
+	// it is bound to the PS as well. Leaving it bound to the VS only reads as
+	// zero in the pixel stage -- every fragment would take the fallback branch
+	// with a zeroed (black) colour and no texture, whatever the caller asked
+	// for, which is exactly what a textured mesh drawn black looks like.
+	m_context->PSSetConstantBuffers(0, 1, &m_constantBuffer);
 	m_context->PSSetShader(m_pixelShader, nullptr, 0);
 
 	ID3D11ShaderResourceView* shaderResourceView =
@@ -438,7 +466,7 @@ Status D3D11Renderer::DrawIndexedMesh(const MeshDrawCommand& command)
 	m_context->RSSetViewports(1, &m_viewport);
 	m_context->OMSetRenderTargets(1, &m_renderTargetView, m_depthStencilView);
 
-	m_context->DrawIndexed(meshGpu.indexCount, 0, 0);
+	m_context->DrawIndexed(drawCount, drawOffset, 0);
 	return Ok();
 }
 
@@ -703,8 +731,16 @@ Status D3D11Renderer::CreateSamplerState()
 	desc.AddressV      = D3D11_TEXTURE_ADDRESS_WRAP;
 	desc.AddressW      = D3D11_TEXTURE_ADDRESS_WRAP;
 	desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+	// Every texture this renderer samples is a single 2D level: the uploader
+	// creates MipLevels=1 from ImageAsset (CLIENT-009 stores one 2D image). A
+	// MIN_*_MIP_* filter still computes a level-of-detail from the UV
+	// derivatives, and for a texture minified on screen that LOD can exceed
+	// mip 0. Sampling a mip level that does not exist yields black on most
+	// drivers, so MaxLOD is clamped to 0: only mip 0 is ever addressed, and the
+	// (existing) MIN_MAG linear filtering still smooths within that level. A
+	// future milestone that uploads a real mip chain can lift this clamp.
 	desc.MinLOD        = 0.0f;
-	desc.MaxLOD        = D3D11_FLOAT32_MAX;
+	desc.MaxLOD        = 0.0f;
 
 	const HRESULT hr = m_device->CreateSamplerState(&desc, &m_samplerState);
 	if (FAILED(hr))
