@@ -38,10 +38,6 @@ namespace Modern::Client
 // grammar. That includes the ones this milestone deliberately does not
 // represent:
 //
-//   - `MeshMaterialList`, `Material`, `TextureFilename`
-//       Parsed and discarded. Materials and textures are intentionally
-//       deferred to a future milestone; CLIENT-015 does not expand MeshAsset to
-//       carry them and the decoder's only output is geometry.
 //   - `XSkinMeshHeader`, `SkinWeights`, `VertexDuplicationIndices`
 //       Parsed and discarded. Skinning is deferred. `VertexDuplicationIndices`
 //       was checked against the real assets and is *not* required for static

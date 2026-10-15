@@ -59,7 +59,8 @@ formula provenance.
 | VERTICAL-026 CALCDAMAGE variant authority | [x] RESOLVED - CALCDAMAGE_20060328 | see `docs/reference/server/VERTICAL-026_CALCDAMAGE_VARIANT_AUTHORITY.md` |
 | VERTICAL-027 Modern network boundary foundation | [x] | see `docs/reference/server/VERTICAL-027_NETWORK_BOUNDARY_FOUNDATION.md` |
 
-| ASURA-CHARACTER-001B Original RAN Brawler body | [x] body mesh; texture binding is a documented gap | this commit |
+| ASURA-CHARACTER-001B Original RAN Brawler body | [x] body mesh; texture binding is a documented gap | superseded by ASURA-CHARACTER-001C |
+| ASURA-CHARACTER-001C Bind original RAN Brawler body textures | [x] all five real body textures recovered and bound | this commit |
 ---
 
 ## CLIENT-RENDER-002 â€” Render ASURA character materials and textures
@@ -1169,9 +1170,9 @@ what the gap below predicts.
 
 ### Remaining limitations
 
-1. **`s_m_hb.X` textures are not bound (the one real gap).** The mesh decodes
-   structurally and draws, but arrives with **one unnamed, untextured material**
-   and all five sections take the fallback colour.
+1. ~~**`s_m_hb.X` textures are not bound (the one real gap).**~~ **RESOLVED by
+   ASURA-CHARACTER-001C** â€” see that section below. The gap was real for this
+   milestone and is kept here as the record of what the bytes actually are.
 
    This is a decoder capability, not a data problem. Verified byte by byte in
    `data/skin/s_m_hb.X`: each of the four `Mesh` containers has its own
@@ -1192,8 +1193,11 @@ what the gap below predicts.
    material table currently surfaces zero of them. When the decoder learns the
    shape, that test fails and the expectation moves.
 
-   Everything downstream is already proven: all five filenames resolve through
+Everything downstream is already proven: all five filenames resolve through
    the existing `TextureLoader`, and the same test asserts each one.
+
+   The pinned-gap test has since been replaced by recovery assertions; see
+   ASURA-CHARACTER-001C.
 
 2. **Not character assembly.** Only the body mesh is rendered. The full
    equipment set (upper + lower + foot + weapon, four pieces on one skeleton),
@@ -1209,4 +1213,145 @@ what the gap below predicts.
    `ItemContributionAggregator` / `Aggregate` not found, `SkillLevelData` not a
    member of `Modern::SkillDefinition`. `ModernServer` therefore fails to build,
    and `ModernClientGameplayTests` â€” which links it â€” cannot be produced.
+   Nothing in `modern/server/` was modified here.
+---
+
+## ASURA-CHARACTER-001C - Bind original RAN Brawler body textures
+
+**State: complete.** `data/skin/s_m_hb.X` now recovers and binds all five of its
+real RAN DDS materials, and the body draws textured instead of in the magenta
+diagnostic fallback. Verified against the shipped asset, not assumed.
+
+### What was actually wrong
+
+Two independent defects, found by instrumenting the decoder against the real
+file rather than by guessing:
+
+1. **Nested `Material` objects shared one texture slot.** `XMeshDecoder` kept a
+   single pending texture string. A `Material` nested inside another completes
+   first and took that shared slot, so the enclosing `Material` was left with no
+   texture at all. It now keeps one slot per open `Material` and unwinds by
+   itself as objects close — no depth arithmetic.
+
+2. **Lists that name nothing were forced onto the fallback.** The decoder
+   resolves a list's slots by material **name**, and its unnamed-list path (added
+   for large unnamed lists) mapped every slot onto one shared untextured
+   material. That is where the magenta came from.
+
+`data/skin/s_m_hb.X` in fact contains four `MeshMaterialList` objects declaring
+material counts **2, 1, 1, 1** and five **unnamed** `Material` instances, each
+carrying its texture on a `TextureFilename` child.
+
+The binding rule was established from the bytes. Instrumenting the parse showed
+that **all four lists close before the first `Material` is recorded**, so *any*
+rule keyed on a list's position relative to its own materials finds nothing —
+which is why ASURA-CHARACTER-001B found none. What the format does support, and
+what the file confirms, is a **sequential cursor in document order**: walk the
+lists in parse order, each consuming the next `materialCount` instances.
+
+```
+body list (2) -> m1_hb_body.dds, m2_bs_body.DDS
+foot list (1) -> m1_khb_foot.dds
+leg  list (1) -> m1_hb_leg.dds
+hand list (1) -> m1_hb_hand.dds
+```
+
+### Why the cursor is only trusted when it accounts for the whole file
+
+Binding "the next `materialCount` instances" to any list that asks would hand
+materials to whichever list happened to come first, which paints the wrong
+geometry on any file whose lists do not line up. The cursor is therefore enabled
+only when **every unnamed list's declared `materialCount`, summed, equals the
+number of `Material` instances in the file** — so the walk provably gives each
+list exactly what it declared, with none left over and none invented.
+
+That one condition separates the two real shapes cleanly:
+
+| Asset | Lists vs materials | Behaviour |
+| ----- | ------------------ | --------- |
+| `data/skin/s_m_hb.X` | 2+1+1+1 = 5 = 5 materials | cursor applies; all five bound |
+| `data/skeleton/b_3boss_01.x` | 116 lists against 3 materials | 3 bound, **112 of 116 sections keep the shared untextured fallback** |
+| no `Material` instances at all | 0 = 0 | fallback unchanged, exactly as before |
+
+A list that declares **no** slots never consumes a step and never pushes an
+empty slot vector; it reaches the fallback, so the slot table stays indexable by
+the parser's per-face material index.
+
+### Verification
+
+| Check | Result |
+| ----- | ------ |
+| Debug build (client app + all client test targets) | PASS - 0 errors, 0 new warnings |
+| `ctest -C Debug -E GameplayTests` | **19/19 PASS** |
+| `ModernClientRanMeshSourceTests` | 15/15 |
+| Real `s_m_hb.X` decode | 840 vertices, 3,114 indices, 1,038 triangles, **5 materials, 5 sections**, all 5 textured |
+| Distinct material slots in use | **5 of 5** - no merging of unnamed materials |
+| Section index ranges | tile `[0, 3114)` exactly |
+| All five DDS files | resolve under `textures/char/` and decode; **5 uploaded to the GPU** |
+| `data/skeleton/b_3boss_01.x` regression | 3 materials, 116 sections, **112 keep the shared untextured fallback** |
+| `data/skin/m_luffy_timeskip.mxf` regression | **unchanged**: 8,868 v / 36,741 i / 12,247 tri / 17 materials / 22 sections / 2 textures |
+| `s_m_hb.X` truncation sweep | 25 prefixes, every accepted prefix internally consistent, none half-bound |
+| GUI | **PASS** - textured body, five distinct regions, no magenta |
+| Screenshot | `docs/reference/client/ASURA-CHARACTER-001C-brawler-body.png` |
+
+Run log for the body mesh:
+
+```
+ModernClientApp: decoded data/skin/s_m_hb.X: 840 vertices, 3114 indices, 1038 triangles
+ModernClientApp: mesh carries 5 materials and 5 sections
+ModernClientApp: material '' texture 'm1_hb_body.dds' -> ...\textures\char\m1_hb_body.dds
+  uploaded as image 1 (256 x 256, R8G8B8A8_UNorm)
+ModernClientApp: material '' texture 'm2_bs_body.DDS' -> ...\textures\char\m2_bs_body.dds
+  uploaded as image 2 (256 x 256, R8G8B8A8_UNorm)
+ModernClientApp: material '' texture 'm1_khb_foot.dds' -> ...\textures\char\m1_khb_foot.dds
+  uploaded as image 3 (128 x 128, R8G8B8A8_UNorm)
+ModernClientApp: material '' texture 'm1_hb_leg.dds' -> ...\textures\char\m1_hb_leg.dds
+  uploaded as image 4 (256 x 256, R8G8B8A8_UNorm)
+ModernClientApp: material '' texture 'm1_hb_hand.dds' -> ...\textures\char\m1_hb_hand.dds
+  uploaded as image 5 (128 x 128, R8G8B8A8_UNorm)
+ModernClientApp: texture cache holds 5 decoded image(s); 5 uploaded to the GPU
+ModernClientApp: section 0: indices [0, 864) material 0 '' texture 'm1_hb_body.dds' -> 1 (textured)
+ModernClientApp: section 1: indices [864, 1254) material 1 '' texture 'm2_bs_body.DDS' -> 2 (textured)
+ModernClientApp: section 2: indices [1254, 1494) material 2 '' texture 'm1_khb_foot.dds' -> 3 (textured)
+ModernClientApp: section 3: indices [1494, 2454) material 3 '' texture 'm1_hb_leg.dds' -> 4 (textured)
+ModernClientApp: section 4: indices [2454, 3114) material 4 '' texture 'm1_hb_hand.dds' -> 5 (textured)
+```
+
+Compare with ASURA-CHARACTER-001B, where the same run logged `mesh carries 1
+materials and 5 sections` and every section `-> none (fallback color)`.
+
+### What the screenshot shows
+
+The same humanoid figure ASURA-CHARACTER-001B captured, now drawn with its real
+textures: a distinct, non-uniform surface across the torso, arms, legs and
+boots, and **no magenta anywhere**. Each of the five sections samples a different
+image, which is the visible counterpart of the five distinct material slots.
+
+The surface is correct in *binding* but not yet in *mapping* — the RAN body
+atlases are sampled with UVs the decoder does not yet reconstruct faithfully, so
+the pattern reads as noise rather than as skin. That is a UV/mesh detail issue,
+not a material-binding one, and it is out of scope for this milestone.
+
+### Remaining limitations
+
+1. **UVs are not yet faithful.** The textures bind and sample, but the RAN body
+   atlases do not line up with the geometry. This milestone made the images
+   reachable; making them line up is separate.
+2. **Not character assembly.** Only the body mesh is rendered. The full
+   equipment set (upper + lower + foot + weapon, four pieces on one skeleton),
+   skeleton-driven skinning, hair/face, and animation are separate follow-ups.
+   `s_m_hb.X` holds four containers (`m2_hb_body`, `m2_hb_leg`, `m2_hb_foot`,
+   `m2_hb_hand`); all four are decoded and now each list carries its own
+   texture, but they are merged into one buffer and drawn unskinned in the bind
+   pose.
+3. **Per-node selection is not implemented.** The `.cps` names one container
+   (`m2_hb_body[Mesh]`); the decoder merges all of them. Selecting a single
+   container needs the decoder to expose node names.
+4. **Named-material lists are unchanged.** Lists that resolve by name (Luffy, 17
+   materials, 22 sections) take exactly the path they did before.
+5. **Pre-existing, unrelated build blocker.** `modern/server/world/FieldRoleRuntime.cpp`
+   (last touched by `b5c265d`, untouched by this milestone) does not compile:
+   `ItemContributionAggregator` / `Aggregate` not found, `SkillLevelData` not a
+   member of `Modern::SkillDefinition`. `ModernServer` therefore fails to build,
+   and `ModernClientGameplayTests` — which links it — cannot be produced.
    Nothing in `modern/server/` was modified here.

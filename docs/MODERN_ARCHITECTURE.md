@@ -4438,9 +4438,9 @@ skin, mesh, skeleton or animation reference at all. It names three schools
 (`SacredGate`, `MysticPeak`, `Phoenix`) and 48 `classXX.charset` files. The 48
 classes are the 16 `EMCHARINDEX` slots (`GLCharDefine.h:235`) per school, and
 each `.charset` carries `emClass`, `wSchool`, `wHair`, `wFace` and the starting
-`PutOnItems` / `cInventory` — no geometry.
+`PutOnItems` / `cInventory` ï¿½ no geometry.
 
-### 26.2 `ItemWearingFileReader` — the bounded CSV step
+### 26.2 `ItemWearingFileReader` ï¿½ the bounded CSV step
 
 `item.csv` is ~22 MB with 399 columns per row. The reader takes the ids it
 wants, makes one streaming pass, and keeps only the matched rows' wearing-file
@@ -4463,7 +4463,7 @@ columns; it never builds an item model.
   reader never does: a value is always a literal column value from a literal
   row.
 
-### 26.3 `SkinPieceContainer` — the `.cps` boundary
+### 26.3 `SkinPieceContainer` ï¿½ the `.cps` boundary
 
 Container header, from `legacy/Lib_Engine/Common/SerialFile.cpp:50`
 (`ReadFileType`) and `legacy/Lib_Engine/Common/basestream.h:17`:
@@ -4475,7 +4475,7 @@ Container header, from `legacy/Lib_Engine/Common/SerialFile.cpp:50`
 | 0x084 | ... | payload, little-endian |
 
 Payload for version **0x0106** (`DxSkinPieceSaveLoad.cpp:658`,
-`LoadPiece_0106`) — the version all four confirmed class00 pieces carry:
+`LoadPiece_0106`) ï¿½ the version all four confirmed class00 pieces carry:
 
 ```
 uint32 version, uint32 reference,
@@ -4485,8 +4485,8 @@ string meshNodeName,
 uint32 materialSlotCount, ...
 ```
 
-Only 0x0106 is decoded. Any other version is `NotAllowed` — valid RAN data
-this reader does not claim to understand — which is deliberately distinct from
+Only 0x0106 is decoded. Any other version is `NotAllowed` ï¿½ valid RAN data
+this reader does not claim to understand ï¿½ which is deliberately distinct from
 the `InvalidArgument` it returns for malformed input.
 
 **The tail is not decoded.** The material record array, trace array, effect
@@ -4499,7 +4499,7 @@ All field reads go through a bounds-checked cursor: truncation, a string length
 past the end, a zero string length, and a `materialSlotCount` larger than the
 remaining bytes are all refused.
 
-### 26.4 `RanMaterialSlot` — two kinds of name in the same slot
+### 26.4 `RanMaterialSlot` ï¿½ two kinds of name in the same slot
 
 The RAN meshes and the RAN wearing files put two unrelated kinds of string where
 a texture name goes.
@@ -4517,12 +4517,12 @@ returns zero matches: RAN resolves these through its own piece-material tables
 not by filename.
 
 `ClassifyRanMaterialName` sorts the two apart so a slot is reported as an
-unresolved RAN slot — naming the piece, the material and the attempt — instead
+unresolved RAN slot ï¿½ naming the piece, the material and the attempt ï¿½ instead
 of as a confusing missing-file error. It never invents a texture and never
 suppresses the diagnostic. The legacy `_a` / `_a1` / `_a2` alpha convention is
 deliberately absent: no selected asset needs it and its behaviour is unverified.
 
-### 26.5 `RanMeshSource` — container routing
+### 26.5 `RanMeshSource` ï¿½ container routing
 
 RAN ships the same DirectX `.x` content two ways: obfuscated in an `.mxf`, or as
 a plain `.X` with no container. The Male Brawler body is the plain kind
@@ -4532,7 +4532,7 @@ container kind.
 `RanMeshSource::Classify` decides from the **bytes**, not the extension: a
 payload already starting with `"xof "` passes through unchanged, anything else
 goes to `MxfMeshTransform`. Neither the transform nor `XMeshDecoder` was
-modified — this is routing only, so the two containers cannot be confused by a
+modified ï¿½ this is routing only, so the two containers cannot be confused by a
 caller remembering the wrong extension.
 
 ### 26.6 Application surface
@@ -4554,13 +4554,48 @@ hand. Luffy remains the default.
 
 `SkinPieceContainer` produces the mesh *name*. `XMeshDecoder` merges every
 `Mesh` container in the file into one buffer. So the rendered result is the body
-mesh file's contents — for `s_m_hb.X` that is four containers (`m2_hb_body`,
+mesh file's contents ï¿½ for `s_m_hb.X` that is four containers (`m2_hb_body`,
 `m2_hb_leg`, `m2_hb_foot`, `m2_hb_hand`) drawn together, unskinned, in the bind
-pose — and **not** the assembled character. Equipment assembly, bone influences,
+pose ï¿½ and **not** the assembled character. Equipment assembly, bone influences,
 animation, hair/face and per-container selection are all follow-ups.
 
-The one live gap is texture binding: see
-`docs/MODERNIZATION_STATUS.md` ASURA-CHARACTER-001B. In short, RAN declares
-*unnamed* `Material` instances whose textures the decoder discards, because it
-resolves material slots by name. The binding is positional and is pinned by a
-failing-on-fix test until it is implemented.
+### 26.8 Unnamed material binding (ASURA-CHARACTER-001C)
+
+RAN declares materials in two shapes. Most list their material by **name** and
+resolve through that name (this is the path Luffy uses, and it is unchanged).
+Some â€” including every list in `data/skin/s_m_hb.X` â€” name nothing, so the only
+thing tying a list to an image is the `TextureFilename` object inside an
+**unnamed** `Material`. A name lookup cannot recover those, which is why the
+Brawler body drew in the magenta fallback.
+
+Two rules govern them, both derived from the bytes rather than assumed:
+
+1. **One texture slot per open `Material`.** The decoder used to keep a single
+   pending texture string, so a `Material` nested inside another completed first
+   and took the shared slot, leaving the outer one with no texture. It now keeps
+   a stack â€” one slot per open `Material`, popping as objects close.
+
+2. **A sequential cursor, enabled only when it accounts for the whole file.**
+   Walking the lists in parse order and letting each consume the next
+   `materialCount` `Material` instances reproduces `s_m_hb.X` exactly. That walk
+   is only applied when every unnamed list's declared `materialCount`, summed,
+   equals the number of `Material` instances present â€” so the mapping is
+   provably complete, with none left over and none invented. When the sums
+   disagree the cursor is not used at all and the list falls back to the shared
+   untextured material, rather than being handed a guess.
+
+   Note what makes this necessary: in `s_m_hb.X` **all four lists close before
+   the first `Material` is recorded**. Any rule keyed on a list's position
+   relative to its own materials therefore finds nothing â€” which is exactly why
+   the positional reading implied by ASURA-CHARACTER-001B's analysis did not
+   work as stated.
+
+A list that declares no slots never consumes a step and never pushes an empty
+slot vector; it reaches the fallback, so the slot table stays correctly indexable
+by the parser's per-face material index.
+
+`data/skeleton/b_3boss_01.x` is the regression that keeps this honest: 116 lists
+against 3 `Material` instances, so 112 of its 116 sections still draw on the
+shared untextured fallback.
+
+See `docs/MODERNIZATION_STATUS.md` ASURA-CHARACTER-001C.

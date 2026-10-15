@@ -716,6 +716,9 @@ const bool isMaterial = (name == kMaterialTemplate);
 			materialName = firstInstance;
 			materialTexture.clear();
 			m_inMaterial = true;
+			// ASURA-CHARACTER-001C: this Material gets its own texture slot,
+			// whatever an enclosing Material happens to be holding.
+			m_materialTextureStack.push_back(std::string());
 		}
 		if (isTexture)
 		{
@@ -744,21 +747,21 @@ const bool isMaterial = (name == kMaterialTemplate);
 		// A `TextureFilename` nested in a `Material` names the material's
 		// texture. A `TextureFilename` anywhere else is not a character
 		// material's, so it is still walked but not recorded.
-		if (ok && isTexture && m_inMaterial)
+		if (ok && isTexture && m_inMaterial && !m_materialTextureStack.empty())
 		{
-			m_pendingMaterialTexture = m_textureFilenameText;
+			m_materialTextureStack.back() = m_textureFilenameText;
 			m_textureFilenameText.clear();
 		}
 
-		if (ok && isMaterial)
+		if (ok && isMaterial && !m_materialTextureStack.empty())
 		{
 			MeshMaterial material;
-			material.name            = materialName;
-			material.textureFilename = m_pendingMaterialTexture;
+			material.name = materialName;
+			// The innermost open Material owns the texture just written, and
+			// that is this one; the enclosing Material keeps its own.
+			material.textureFilename = m_materialTextureStack.back();
+			m_materialTextureStack.pop_back();
 			RecordMaterial(material);
-			// Cleared here rather than on every exit, because the nested
-			// TextureFilename object has just written into it.
-			m_pendingMaterialTexture.clear();
 		}
 if (ok && isList)
 	{
@@ -1142,7 +1145,17 @@ bool PushMaterialInteger(uint32_t value)
 	int      m_listDepth         = -1;
 
 	std::string m_textureFilenameText;     // the string of a TextureFilename
-	std::string m_pendingMaterialTexture;  // the texture of the Material being read
+
+	// ASURA-CHARACTER-001C: the texture of each `Material` currently being
+	// read, one entry per open Material.
+	//
+	// This was a single shared string, which is wrong for a file that nests
+	// one Material inside another: the inner Material completes first and
+	// takes the shared slot, so the outer one is left with no texture at all.
+	// A stack gives every open Material its own slot with no depth
+	// arithmetic, and unwinds by itself as objects close.
+	std::vector<std::string> m_materialTextureStack;
+
 	std::string m_pendingReference;        // kept only to restore across nesting
 
 	uint32_t m_pendingMaterialCount    = 0;
@@ -1217,15 +1230,120 @@ Result<MeshAsset> BuildMeshAsset(XGeometry& geometry)
 	if (hasMaterialLists)
 	{
 		slotTable.clear();
+
+		// ASURA-CHARACTER-001C: reading cursor into `geometry.materials`, used
+		// only by lists that name no material. See the unnamed branch below.
+		//
+		// The cursor is only worth trusting when it accounts for the WHOLE
+		// file: every unnamed list's declared materialCount summed together
+		// must equal the number of Material instances present. Only then does
+		// the sequential walk provably give each list exactly the instances it
+		// declared, with none left over and none invented.
+		//
+		// That condition is what separates the two real shapes:
+		//
+		//   * `data/skin/s_m_hb.X`: 2 + 1 + 1 + 1 == 5 == its five Material
+		//     instances. The walk accounts for the file exactly, so it is
+		//     applied.
+		//   * `data/skeleton/b_3boss_01.x`: 116 lists against three Material
+		//     instances. The sums cannot agree, so no cursor is used and the
+		//     shared untextured fallback stands. Binding three instances to
+		//     "whichever lists asked first" would be a guess, and a wrong
+		//     guess paints the wrong geometry.
+		//
+		// A file with no Material instances at all satisfies the equality
+		// trivially, but the cursor then never has anything to consume, so
+		// every list takes the fallback exactly as it did before.
+		size_t unnamedCursor = 0;
+		{
+			// Saturating sum: once it passes the instance count it can never
+			// come back into agreement, so there is no point counting further.
+			size_t declared = 0;
+			const size_t instances = geometry.materials.size();
+			for (const XGeometry::MaterialList& list : geometry.lists)
+			{
+				if (!list.references.empty()) { continue; }
+				declared += list.materialCount;
+				if (declared > instances) { break; }
+			}
+
+			if (declared != instances)
+			{
+				// Not provable, so leave the cursor past the end and let every
+				// unnamed list fall through to the fallback.
+				unnamedCursor = instances + 1;
+			}
+		}
+
 		for (const XGeometry::MaterialList& list : geometry.lists)
 		{
 			std::vector<uint32_t> slots;
-			slots.reserve(list.references.size());
+			slots.reserve(list.references.empty() ? list.materialCount
+			                                     : list.references.size());
 
-			// A material list that named nothing becomes one shared unnamed,
-			// untextured material. One shared entry rather than one per
-			// sub-mesh, so several untextured sub-meshes do not present as
-			// several distinct materials to whatever loads the textures.
+			// ASURA-CHARACTER-001C: how a list that names nothing finds its
+			// materials.
+			//
+			// Naming nothing does not mean being material-free. In
+			// `data/skin/s_m_hb.X` -- the Male Brawler base body -- all four
+			// lists name nothing, all five `Material` instances are unnamed,
+			// and every texture is reachable only through the instance that
+			// carries it. The previous behaviour collapsed all of that onto one
+			// shared untextured material, which is why the body rendered in the
+			// magenta diagnostic colour.
+			//
+			// The association is SEQUENTIAL IN DOCUMENT ORDER: walk the lists
+			// in the order they were parsed and let each consume the next
+			// `materialCount` instances. That is what the file actually
+			// supports, and it was verified against its bytes rather than
+			// assumed -- in particular all four lists close before the first
+			// Material is recorded, so any rule keyed on a list's position
+			// relative to its own materials finds nothing. Walking the lists
+			// reproduces every mapping exactly:
+			//
+			//     body list (2) -> m1_hb_body.dds, m2_bs_body.DDS
+			//     foot list (1) -> m1_khb_foot.dds
+			//     leg  list (1) -> m1_hb_leg.dds
+			//     hand list (1) -> m1_hb_hand.dds
+			//
+			// No assumption is made about a Material being adjacent to, inside
+			// or outside its list.
+			//
+			// The cursor is reachable only when it accounts for the whole file
+			// (see above) and only for a list that actually declared slots. A
+			// list that declares none must not consume a step, and must not
+			// push an empty slot vector -- it has to reach the fallback below.
+			if (list.references.empty() && list.materialCount > 0 &&
+				unnamedCursor + list.materialCount <= geometry.materials.size())
+			{
+				for (size_t s = 0; s < list.materialCount; ++s)
+				{
+					const MeshMaterial& source = geometry.materials[unnamedCursor + s];
+					uint32_t target = static_cast<uint32_t>(materials.size());
+					for (size_t k = 0; k < materials.size(); ++k)
+					{
+						if (materials[k] == source)
+						{
+							target = static_cast<uint32_t>(k);
+							break;
+						}
+					}
+					if (target == materials.size())
+					{
+						materials.push_back(source);
+					}
+					slots.push_back(target);
+				}
+				unnamedCursor += list.materialCount;
+				slotTable.push_back(std::move(slots));
+				continue;
+			}
+
+			// A material list that named nothing AND had no material
+			// instances becomes one shared unnamed, untextured material. One
+			// shared entry rather than one per sub-mesh, so several
+			// untextured sub-meshes do not present as several distinct
+			// materials to whatever loads the textures.
 			//
 			// The slot table is indexed by the *face's material index*, which
 			// the parser already proved is below this list's materialCount. So
