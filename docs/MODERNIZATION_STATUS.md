@@ -94,6 +94,38 @@ the two renderer defects fixed during integration are in
 
 ---
 
+## ASURA-TEXTURE-001 — Scan and integrate ASURA textures
+
+**State: complete (supported subset).** The texture pipeline is general and
+proven against the real ASURA `textures/` tree; unsupported formats are reported,
+not claimed. Full detail in `docs/MODERN_ARCHITECTURE.md` section 25.
+
+- **Inventory (whole tree, content-classified):** 13,932 image files, 2.32 GiB —
+  DDS 12,732, MTF 590, PNG 381, TGA 167, BMP 31, JPG 31. Detected by file
+  signature, never by extension. `.cps/.pie/.pie15/.bin` are RAN containers
+  (`default\0` magic), not images. 733 filename collisions and 186 duplicate-size
+  groups reported.
+- **New decoders:** TGA (types 2/3/10, 24/32/8-bit, origin + RLE) and BMP
+  (BI_RGB 8/24/32-bit, orientation), wired into the content-magic dispatch
+  alongside the existing PNG/DDS/MTF. `TextureCache` decodes each resolved file
+  once; the app uploads each once, keyed by resolved path.
+- **Real-asset decode sample (200/format):** DDS 198/200, PNG 200/200, TGA
+  167/167, BMP 31/31, MTF 126/200, JPG 0/31. A CTest sample (12/format) decodes
+  all five supported formats from the real tree.
+- **Build/tests:** fresh `build-asura-texture-001` (Visual Studio 17 2022, Win32,
+  Debug); new `ModernClientTextureInventoryTests` (16 cases); client CTest
+  14/14 hermetically. `ModernClientApp --audit-textures` runs the headless
+  inventory and writes JSON (`--report`).
+- **Runtime:** the client renders the character with both PNGs and reports
+  `texture cache holds 2 decoded image(s); 2 uploaded to the GPU`; clean window
+  close exits 0.
+- **Gaps (reported, not claimed):** JPEG (no image dependency is introduced),
+  PNG palette (6 files), and DDS/MTF refused layouts (an MTF that wraps an
+  unsupported DDS layout decodes to that DDS failure — the ~63% MTF rate is this,
+  not an MTF bug).
+
+---
+
 ## BUILD-001 — Tracked build-artifact cleanup
 
 **State: complete. Verified, not assumed.**

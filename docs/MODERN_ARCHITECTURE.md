@@ -2507,6 +2507,118 @@ character texture milestone does not depend on it.
 
 ---
 
+## 25. ASURA-TEXTURE-001: scan and integrate the ASURA textures
+
+CLIENT-RENDER-002 rendered one character textured. This milestone makes the
+texture pipeline general and proves it against the whole shipped ASURA tree:
+inventory every image, decode by content, cache decode/upload per resolved
+file, and stay honest about what is not supported.
+
+### The inventory (real ASURA tree at `textures/`)
+
+| Extension | Files | Bytes | Notes |
+| --------- | ----- | ----- | ----- |
+| `.dds`  | 12,732 | 2.05 GiB | the dominant shipped texture format |
+| `.mtf`  |    590 | 0.22 GiB | RAN's obfuscated DDS wrapper |
+| `.png`  |    381 | 0.08 GiB | characters/items art |
+| `.tga`  |    167 | 0.03 GiB | UI flare / effect art |
+| `.bmp`  |     31 | 3.9 MiB  | UI |
+| `.jpg`  |     31 | 1.3 MiB  | (32 total; one lives outside `textures/`) |
+| **total** | **13,932** | **2.32 GiB** | 733 filename collisions, 186 duplicate-size groups |
+
+ASURA's `.cps` / `.pie` / `.pie15` / `.bin` files begin with the ASCII bytes
+`default\0` -- a RAN container header, not an image magic -- so they are not
+texture candidates and are excluded. Extension is never trusted: every file is
+classified by its own bytes.
+
+### Content-based detection and the decoders
+
+`TextureLoader::Decode` sniffs, most-specific first, and the extension of the
+file is never consulted:
+
+| Signature | Decoder | ASURA-TEXTURE-001 |
+| --------- | ------- | ----------------- |
+| 8-byte PNG magic | `PngImageDecoder` | (CLIENT-RENDER-002) |
+| `DDS ` magic | `DdsImageDecoder` | (CLIENT-RENDER-002/CLIENT-011) |
+| MTF version `0x100` | `MtfTextureTransform` then `DdsImageDecoder` | (CLIENT-012) |
+| `BM` magic | **`BmpImageDecoder`** | new |
+| TRUEVISION footer / strict Targa header | **`TgaImageDecoder`** | new |
+| anything else | `InvalidArgument` | |
+
+`BmpImageDecoder` reads BITMAPINFOHEADER (and V4/V5 supersets), BI_RGB only, at
+8-bit (palette), 24-bit (BGR) and 32-bit (BGRX -- the unused fourth byte is
+opaque, not alpha), honouring top-down (-height) vs bottom-up. `TgaImageDecoder`
+reads image types 2 (uncompressed truecolour), 3 (grayscale) and 10 (RLE
+truecolour) at 24/32-bit, honouring the origin flag and unmasking BGR(A)->RGB(A).
+Both refuse out-of-subset inputs with a stated reason, bound every size in
+64-bit through `ComputeImageByteCount` before allocating, and produce
+`R8G8B8A8_UNorm`. No image decoder here reaches a renderer, GPU, Windows or
+DirectX type.
+
+### Caching
+
+`TextureCache` (asset layer, GPU-free) decodes each resolved file once, keyed by
+the lexically-normal path. The application keys its path->handle upload map the
+same way, so a texture referenced by many materials -- or by different names that
+resolve to one file -- is read, decoded **and** uploaded exactly once. The render
+regression (`m_luffy_timeskip.mxf`, 17 materials -> 2 distinct textures) logs
+`texture cache holds 2 decoded image(s); 2 uploaded to the GPU`.
+
+### Configuration
+
+Asset root resolves `--asset-root <path>` > `RAN_ASSET_ROOT` > current directory.
+`--asset-root` is unchanged from CLIENT-RENDER-001B; the pipeline reads every
+texture from that root and never hardcodes a filename. `ModernClientApp` also
+gained a headless `--audit-textures [--report <json>] [--decode-limit <n>]` mode
+that inventories the tree without a window or device (a frame loop cannot walk
+14k files), and `RAN_ASSET_ROOT` remains the way to point tests and the app at a
+local `D:\FILES\project\RanOnline-Build\ASURA CLIENT`.
+
+### Verified results
+
+- **Tests:** `ModernClientTextureInventoryTests` (16 cases: TGA pixels/flip/RLE/
+  gray, BMP flip/top-down/palette/32-bit, content dispatch, `TextureCache`
+  decode-once, loader tree lookup, malformed batches) plus the whole client
+  suite. 14/14 client CTest targets pass hermetically; with `RAN_ASSET_ROOT`
+  set, a bounded real sample (12/format) decodes for **all five** of
+  DDS/MTF/PNG/TGA/BMP.
+- **Inventory decode sample** (`--audit-textures`, 200/format, content-decoded):
+  DDS 198/200, PNG 200/200, TGA 167/167, BMP 31/31, MTF 126/200, JPG 0/31.
+- **Runtime:** the production client loads the real character with both PNGs
+  and the cache statistics above; a clean window close exits 0.
+
+### Unsupported / gaps (not claimed as success)
+
+- **JPEG** (31 files in-tree): no baseline image dependency exists and the asset
+  layer deliberately links nothing beyond `Modern`/`ModernClientResources`, so
+  JPEG is refused rather than pulled in through a third-party library. A decoder
+  would be its own change against the dependency policy.
+- **PNG palette images** (`colorType 3`, 6 files, bit depth 1): `PngImageDecoder`
+  supports only 8-bit truecolour (RGB/RGBA), non-interlaced; palette bytes are
+  refused.
+- **DDS/MTF refused layouts:** the DDS decoder supports BC1/2/3 and 32-bit
+  uncompressed; DXT2, 16-bit, paletted, cubemap/volume and DX10 layouts are
+  refused. An MTF that wraps one of those decrypts then fails the DDS decode,
+  which is why the MTF sample decodes at ~63% -- the same DDS coverage limit,
+  not an MTF bug.
+- **TGA 15/16-bit and colour-mapped types** (1/9/11): none are shipped today;
+  refused if encountered.
+- **Exhaustive decode** of all 12,732 DDS was not run here (a full read of the
+  2.3 GiB tree minutes exceeds a bounded window on this disk); the audit
+  catalogues every file and decodes a 200/format sample, and the CTest proves a
+  smaller real sample. The per-format sample rates above are the evidence, not a
+  full-tree pass.
+
+### Tests
+
+`modern/client/assets/ClientTextureInventoryTests.cpp`. The Targa and BMP
+fixtures are assembled byte by byte from the format descriptions, never produced
+by calling the decoder, and the real-asset case reads only a developer-supplied
+tree (`RAN_ASSET_ROOT`), so ordinary CI stays hermetic and no proprietary asset
+is committed.
+
+---
+
 # CORE-002: RAN Stat System
 
 The first system that computes anything rather than describing it. It

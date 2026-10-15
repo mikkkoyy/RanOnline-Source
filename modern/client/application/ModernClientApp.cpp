@@ -44,6 +44,7 @@
 #include "assets/ImageAsset.h"
 #include "assets/MeshAsset.h"
 #include "assets/MxfMeshTransform.h"
+#include "assets/TextureCache.h"
 #include "assets/TextureLoader.h"
 #include "assets/XMeshDecoder.h"
 #include "input/InputEvents.h"
@@ -60,11 +61,17 @@
 #include "resources/ResourceId.h"
 
 #include <cstdarg>
+#include <algorithm>
+#include <cctype>
+#include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -95,6 +102,7 @@ using Modern::Client::ResourceManager;
 using Modern::Client::ResourceId;
 using Modern::Client::ResourceData;
 using Modern::Status;
+using Modern::Client::TextureCache;
 using Modern::Client::TextureLoader;
 using Modern::Client::Win32InputSource;
 using Modern::Client::Win32PlatformEvents;
@@ -132,11 +140,163 @@ void PrintUsage()
 		"\n"
 		"Usage:\n"
 		"  ModernClientApp.exe [--asset-root <path>]\n"
+		"  ModernClientApp.exe --audit-textures [--asset-root <path>] [--report <json>]\n"
+		"                       [--decode-limit <n-per-format>]\n"
 		"\n"
-		"  --asset-root <path>  RAN client tree to load the character from\n"
-		"                       (default: $RAN_ASSET_ROOT, then the current directory)\n"
+		"  --asset-root <path>            RAN client tree to load data from\n"
+		"                                 (default: $RAN_ASSET_ROOT, then the current directory)\n"
+		"  --audit-textures               Headless: inventory the texture tree, report per-format\n"
+		"                                 counts, duplicate content and filename collisions, decode\n"
+		"                                 a bounded sample, and exit (no window, no GPU)\n"
+		"  --report <path>                Also write the full catalog as JSON\n"
+		"  --decode-limit <n>             Files decoded per format in the audit (default 300)\n"
 		"\n"
-		"  The window is 960x540. Escape or closing the window exits.\n");
+		"  The render window is 960x540. Escape or closing the window exits.\n");
+}
+
+// ASURA-TEXTURE-001: headless texture inventory. Walks `<root>/textures` and
+// catalogues every image candidate from directory metadata (extension, size --
+// no full read, so listing the whole tree is cheap even over 14k files) plus
+// filename collisions and size-collision groups. It then decodes a bounded
+// sample per format through the same content dispatch the renderer uses and
+// reports decoded / undecipherable. Deterministic (sorted), windowless and
+// device-free. Exhaustive byte-for-byte duplicate detection reads every file
+// and is deliberately left out of this fast pass. Returns 0 when the tree was
+// walked, non-zero when the textures directory is missing.
+int RunTextureAudit(const std::string& assetRoot, const std::string& reportPath,
+                    size_t decodeLimitPerFormat)
+{
+	namespace fs = std::filesystem;
+	const fs::path textureRoot = fs::path(assetRoot) / kTexturesDir;
+	std::error_code dirEc;
+	if (!fs::is_directory(textureRoot, dirEc))
+	{
+		Log("ModernClientApp: audit found no textures directory under '%s'", assetRoot.c_str());
+		return 1;
+	}
+
+	struct Tally
+	{
+		size_t files         = 0;
+		size_t bytes         = 0;
+		size_t decoded       = 0;
+		size_t undecipherable = 0;
+	};
+	const char* kImageExts[] = { ".dds", ".mtf", ".png", ".tga", ".bmp", ".jpg", ".jpeg" };
+	auto isImageExt = [&](const std::string& e) {
+		for (const char* t : kImageExts) { if (e == t) { return true; } }
+		return false;
+	};
+
+	// 1. Catalogue from directory metadata: walk, then sort for determinism.
+	struct Entry { std::filesystem::path path; std::string ext; uintmax_t bytes; };
+	std::vector<Entry> catalog;
+	std::error_code ec;
+	for (fs::recursive_directory_iterator it(textureRoot, ec), end; !ec && it != end; it.increment(ec))
+	{
+		std::error_code fec;
+		if (!it->is_regular_file(fec)) { continue; }
+		std::string ext = it->path().extension().string();
+		std::transform(ext.begin(), ext.end(), ext.begin(),
+		               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		if (!isImageExt(ext)) { continue; }
+		uintmax_t size = it->file_size(fec);
+		if (fec) { continue; }
+		catalog.push_back({ it->path(), ext, size });
+	}
+	std::sort(catalog.begin(), catalog.end(),
+	          [](const Entry& a, const Entry& b) { return a.path < b.path; });
+
+	std::unordered_map<std::string, Tally>      byExt;
+	std::unordered_map<std::string, size_t>     namePathCount; // lower filename -> paths
+	std::unordered_map<uintmax_t, size_t>       sizeCount;     // file size -> files
+	size_t totalFiles = 0, totalBytes = 0;
+
+	for (const Entry& entry : catalog)
+	{
+		Tally& tally = byExt[entry.ext];
+		++tally.files;
+		tally.bytes += static_cast<size_t>(entry.bytes);
+		++totalFiles;
+		totalBytes += static_cast<size_t>(entry.bytes);
+
+		std::string lowerName = entry.path.filename().string();
+		std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
+		               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		++namePathCount[lowerName];
+		++sizeCount[entry.bytes];
+	}
+	// A filename collision is one name on more than one path (ambiguous lookup).
+	size_t filenameCollisions = 0;
+	for (const auto& kv : namePathCount) { if (kv.second > 1) { ++filenameCollisions; } }
+	// A duplicate-size group is a byte-size shared by more than one file -- a
+	// cheap signal for candidate duplicates without reading every file.
+	size_t duplicateSizeGroups = 0;
+	for (const auto& kv : sizeCount) { if (kv.second > 1) { ++duplicateSizeGroups; } }
+
+	// 2. Decode a bounded sample per format (reads only the sample).
+	std::unordered_map<std::string, size_t> decodedThisExt;
+	for (const Entry& entry : catalog)
+	{
+		if (decodedThisExt[entry.ext] >= decodeLimitPerFormat) { continue; }
+		++decodedThisExt[entry.ext];
+		std::ifstream file(entry.path, std::ios::binary);
+		if (!file) { continue; }
+		std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(file)),
+		                           std::istreambuf_iterator<char>());
+		if (bytes.empty()) { continue; }
+		if (TextureLoader::Decode(ResourceData(std::move(bytes))).IsOk()) { ++byExt[entry.ext].decoded; }
+		else { ++byExt[entry.ext].undecipherable; }
+	}
+
+	std::printf("ModernClientApp: texture audit of '%s'\n", textureRoot.string().c_str());
+	std::printf("  %-6s %10s %13s %9s %9s\n",
+	            "ext", "files", "bytes", "decoded", "undeciph.");
+	for (const char* ext : kImageExts)
+	{
+		const auto it = byExt.find(ext);
+		if (it == byExt.end()) { continue; }
+		const Tally& t = it->second;
+		std::printf("  %-6s %10zu %13zu %9zu %9zu\n", ext,
+		            t.files, t.bytes, t.decoded, t.undecipherable);
+	}
+	std::printf("  total: %zu files, %zu bytes (%.1f MiB)\n",
+	            totalFiles, totalBytes, static_cast<double>(totalBytes) / (1024.0 * 1024.0));
+	std::printf("  filename collisions: %zu; duplicate-size groups: %zu "
+	            "(decode sample capped at %zu/format)\n",
+	            filenameCollisions, duplicateSizeGroups, decodeLimitPerFormat);
+
+	if (!reportPath.empty())
+	{
+		std::ofstream json(reportPath, std::ios::trunc);
+		if (json)
+		{
+			json << "{\n  \"assetRoot\": \"" << assetRoot << "\",\n";
+			json << "  \"totalFiles\": " << totalFiles << ", \"totalBytes\": " << totalBytes << ",\n";
+			json << "  \"filenameCollisions\": " << filenameCollisions
+			     << ", \"duplicateSizeGroups\": " << duplicateSizeGroups << ",\n";
+			json << "  \"formats\": [\n";
+			bool first = true;
+			for (const char* ext : kImageExts)
+			{
+				const auto it = byExt.find(ext);
+				if (it == byExt.end()) { continue; }
+				const Tally& t = it->second;
+				if (!first) { json << ",\n"; }
+				first = false;
+				json << "    { \"ext\": \"" << ext << "\", \"files\": " << t.files
+				     << ", \"bytes\": " << t.bytes << ", \"decoded\": " << t.decoded
+				     << ", \"undecipherable\": " << t.undecipherable << " }";
+			}
+			json << "\n  ]\n}\n";
+			std::printf("ModernClientApp: wrote inventory JSON to '%s'\n", reportPath.c_str());
+		}
+		else
+		{
+			Log("ModernClientApp: could not open report '%s' for writing", reportPath.c_str());
+		}
+	}
+	return 0;
 }
 
 // Row-major left-handed look-at view matrix (the layout
@@ -177,6 +337,9 @@ void BuildPerspectiveRowMajor(float fovYRadians, float aspect, float nearPlane, 
 int main(int argc, char** argv)
 {
 	std::string assetRoot;
+	bool        auditTextures = false;
+	std::string reportPath;
+	size_t      decodeLimit = 300;
 	for (int i = 1; i < argc; ++i)
 	{
 		const std::string argument = argv[i];
@@ -187,6 +350,18 @@ int main(int argc, char** argv)
 		else if (argument.rfind("--asset-root=", 0) == 0)
 		{
 			assetRoot = argument.substr(std::strlen("--asset-root="));
+		}
+		else if (argument == "--audit-textures")
+		{
+			auditTextures = true;
+		}
+		else if (argument == "--report" && i + 1 < argc)
+		{
+			reportPath = argv[++i];
+		}
+		else if (argument == "--decode-limit" && i + 1 < argc)
+		{
+			decodeLimit = static_cast<size_t>(std::strtoull(argv[++i], nullptr, 10));
 		}
 		else if (argument == "--help" || argument == "-h")
 		{
@@ -214,6 +389,14 @@ int main(int argc, char** argv)
 	}
 
 	Log("ModernClientApp: asset root '%s'", assetRoot.c_str());
+
+	// Headless texture inventory: no window, no device. This is the batch
+	// validation path that walks the whole tree (a frame-bound window would
+	// not), so it runs before anything GPU is created.
+	if (auditTextures)
+	{
+		return RunTextureAudit(assetRoot, reportPath, decodeLimit);
+	}
 
 	// 1. Platform window. Everything else binds to this window handle.
 	//
@@ -368,6 +551,13 @@ int main(int argc, char** argv)
 		}
 		else
 		{
+			// Decode-once (TextureCache) and upload-once (textureUploadCache),
+			// both keyed by the resolved file, so a texture referenced by many
+			// materials -- or by different names that resolve to one file -- is
+			// read, decoded and uploaded exactly once rather than per reference.
+			TextureCache textureCache;
+			std::unordered_map<std::string, ImageResourceHandle> textureUploadCache;
+
 			for (size_t m = 0; m < materials.size(); ++m)
 			{
 				const MeshMaterial& material = materials[m];
@@ -375,26 +565,6 @@ int main(int argc, char** argv)
 				{
 					// A material with no texture is a real, legal shape; it draws
 					// with the fallback color by design, which is not a failure.
-					continue;
-				}
-
-				// Share the handle with an earlier material that named the same
-				// file: one upload per unique image, not one per material.
-				ImageResourceHandle reused;
-				bool alreadyUploaded = false;
-				for (size_t k = 0; k < m; ++k)
-				{
-					if (materials[k].textureFilename == material.textureFilename &&
-					    materialTextures[k].IsValid())
-					{
-						reused = materialTextures[k];
-						alreadyUploaded = true;
-						break;
-					}
-				}
-				if (alreadyUploaded)
-				{
-					materialTextures[m] = reused;
 					continue;
 				}
 
@@ -409,7 +579,17 @@ int main(int argc, char** argv)
 					continue;
 				}
 
-				const Modern::Result<ImageAsset> image = textureLoader.Load(material.textureFilename);
+				const std::string key = resolved.lexically_normal().string();
+				// Already decoded and uploaded under this resolved path: bind the
+				// same handle again, touching neither the file nor the GPU.
+				const auto alreadyUploaded = textureUploadCache.find(key);
+				if (alreadyUploaded != textureUploadCache.end())
+				{
+					materialTextures[m] = alreadyUploaded->second;
+					continue;
+				}
+
+				const Modern::Result<const ImageAsset*> image = textureCache.Acquire(resolved);
 				if (image.IsError())
 				{
 					Log("ModernClientApp: material '%s' texture '%s' (%s) failed to decode (%s)",
@@ -420,7 +600,7 @@ int main(int argc, char** argv)
 				}
 
 				const Modern::Result<ImageResourceHandle> uploaded =
-				    uploader.UploadImage(image.GetValue());
+				    uploader.UploadImage(*image.GetValue());
 				if (uploaded.IsError())
 				{
 					Log("ModernClientApp: material '%s' texture '%s' (%s) failed to upload (%s)",
@@ -431,14 +611,18 @@ int main(int argc, char** argv)
 				}
 
 				materialTextures[m] = uploaded.GetValue();
+				textureUploadCache.emplace(key, uploaded.GetValue());
 				uploadedTextures.push_back(uploaded.GetValue());
 				Log("ModernClientApp: material '%s' texture '%s' -> '%s' uploaded as image %llu "
 				    "(%u x %u, %s)",
 				    material.name.c_str(), material.textureFilename.c_str(), resolved.string().c_str(),
 				    static_cast<unsigned long long>(uploaded.GetValue().Get()),
-				    image.GetValue().GetWidth(), image.GetValue().GetHeight(),
-				    ToString(image.GetValue().GetFormat()));
+				    image.GetValue()->GetWidth(), image.GetValue()->GetHeight(),
+				    ToString(image.GetValue()->GetFormat()));
 			}
+
+			Log("ModernClientApp: texture cache holds %zu decoded image(s); %zu uploaded to the GPU",
+			    textureCache.GetCachedCount(), textureUploadCache.size());
 		}
 
 		// The per-section draw plan, logged once for evidence: every section's

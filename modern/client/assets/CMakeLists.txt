@@ -16,6 +16,8 @@ add_library(ModernClientAssets STATIC
     TestImageDecoder.cpp
     DdsImageDecoder.cpp
     PngImageDecoder.cpp
+    BmpImageDecoder.cpp
+    TgaImageDecoder.cpp
     MeshAsset.cpp
     TestMeshDecoder.cpp
     MtfTextureTransform.cpp
@@ -23,6 +25,7 @@ add_library(ModernClientAssets STATIC
 
     XMeshDecoder.cpp
     TextureLoader.cpp
+    TextureCache.cpp
 )
 
 target_include_directories(ModernClientAssets PUBLIC
@@ -208,3 +211,30 @@ if(MSVC)
 endif()
 
 add_test(NAME ModernClientPngImageTests COMMAND ModernClientPngImageTests)
+
+# ASURA-TEXTURE-001: Targa / BMP decoders, content dispatch, the decode-once
+# texture cache, and the real-ASURA inventory sweep. An eighth executable for
+# the same reason as the others: each suite owns its own main() so they stay
+# independent translation units registered with CTest. Its TGA / BMP fixtures
+# are assembled byte by byte from the published format descriptions, so nothing
+# proprietary is committed; the optional real-asset case walks a client tree
+# only when RAN_ASSET_ROOT names one. Same linkage as the image suite -- asset
+# layer plus resource layer, no renderer, no graphics API, no legacy library.
+add_executable(ModernClientTextureInventoryTests
+    ClientTextureInventoryTests.cpp
+)
+
+target_include_directories(ModernClientTextureInventoryTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_SOURCE_DIR}/modern/tests
+)
+
+target_link_libraries(ModernClientTextureInventoryTests PRIVATE ModernClientAssets ModernClientResources)
+
+target_compile_features(ModernClientTextureInventoryTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernClientTextureInventoryTests PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+add_test(NAME ModernClientTextureInventoryTests COMMAND ModernClientTextureInventoryTests)

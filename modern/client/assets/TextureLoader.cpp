@@ -1,8 +1,14 @@
 #include "assets/TextureLoader.h"
 
 #include "assets/DdsImageDecoder.h"
+#include "assets/BmpImageDecoder.h"
 #include "assets/MtfTextureTransform.h"
 #include "assets/PngImageDecoder.h"
+#include "assets/TgaImageDecoder.h"
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 
 #include <algorithm>
 #include <fstream>
@@ -212,6 +218,22 @@ Result<ImageAsset> TextureLoader::Decode(const ResourceData& data)
 		}
 		DdsImageDecoder decoder;
 		return decoder.DecodeImage(plain.GetValue());
+	}
+
+	// BMP carries a two-byte `BM` magic, so it sniffs as reliably as DDS.
+	if (BmpImageDecoder::LooksLikeBmp(bytes, size))
+	{
+		BmpImageDecoder decoder;
+		return decoder.DecodeImage(data);
+	}
+
+	// TGA has no leading magic. Its detection is the footer signature or a
+	// strict header check, tried last so no signed format above is ever
+	// mis-attributed to it.
+	if (TgaImageDecoder::LooksLikeTga(bytes, size))
+	{
+		TgaImageDecoder decoder;
+		return decoder.DecodeImage(data);
 	}
 
 	return Status(ErrorCode::InvalidArgument);
