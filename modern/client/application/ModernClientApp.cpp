@@ -1,4 +1,4 @@
-// CLIENT-RENDER-001B: the modern client production executable.
+// ASURA-CHARACTER-001B: the modern client production executable.
 //
 // ModernClientApp wires the real client stack into one windowed program:
 //
@@ -6,32 +6,44 @@
 //   Win32InputSource     -> Win32 input translated to platform-independent events
 //   D3D11Renderer        -> the Direct3D 11 backend (real frames, real Present)
 //   D3D11AssetUploader   -> CPU assets uploaded to real GPU buffers/textures
-//   asset pipeline       -> m_luffy_timeskip.mxf -> MxfMeshTransform
-//                           -> XMeshDecoder -> MeshAsset -> GPU upload
+//   asset pipeline       -> [mxf | plain .X] -> RanMeshSource -> XMeshDecoder
+//                           -> MeshAsset -> GPU upload
 //   Application          -> the frame loop, with a static character draw
 //
-// The character is drawn every frame from the real decoded mesh, one indexed
-// draw per MeshSection, each binding its own material's PNG texture
-// (blackcatyb_luffy_timeskip.png on the body, blackcatyb_luffy_timeskip_eye.png
-// on the eye) at its own index range. The textures are resolved by name through
-// TextureLoader over the ASURA texture tree and uploaded once each; a material
-// that names no texture, or whose named texture cannot be resolved or decoded,
-// falls back to a clearly-labelled diagnostic color and is reported as such --
-// it is never counted as a textured draw.
+// Two meshes can be rendered, and which one is a runtime choice:
+//
+//   * The default is the CLIENT-RENDER-002 regression asset,
+//     data/skin/m_luffy_timeskip.mxf: an `.mxf` container, whose materials
+//     name real PNG files (blackcatyb_luffy_timeskip.png on the body,
+//     blackcatyb_luffy_timeskip_eye.png on the eye).
+//
+//   * ASURA-CHARACTER-001B adds an ORIGINAL RAN playable character: the
+//     SacredGate Male Brawler base body, data/skin/s_m_hb.X. It is a plain
+//     DirectX `.X` with no container at all, so RanMeshSource routes it
+//     past the `.mxf` transform unchanged. Its materials name real DDS
+//     files (m1_hb_body.dds, m1_khb_foot.dds, ...), resolved by name over
+//     the ASURA texture tree.
+//
+//   The mesh is selected by --skin-piece (a RAN wearing file under
+//   data/skinobject/, e.g. CUN0001_m.cps, whose mesh field names the body)
+//   or by --mesh (an explicit path relative to the asset root).
+//
+// What is drawn every frame: one indexed draw per MeshSection, each binding
+// its own material's texture at its own index range. Every *unique* texture
+// is decoded and uploaded exactly once and the handle is shared. A material
+// that names no texture, or whose named texture cannot be resolved, decoded
+// or uploaded, falls back to a clearly-labelled diagnostic color and is
+// reported as such -- it is never counted as a textured draw, and a run
+// whose named textures did not all load exits non-zero.
 //
 // Usage:
-//   ModernClientApp.exe [--asset-root <path>]
+//   ModernClientApp.exe [--asset-root <path>] [--mesh <path>]
+//                       [--skin-piece <path>]
 //
-// --asset-root names the RAN client tree to load data/skin/m_luffy_timeskip.mxf
-// from. Without it, the RAN_ASSET_ROOT environment variable is tried, then the
-// current directory. Escape or closing the window exits; the process always
-// returns 0 on a clean stop and non-zero on any initialization failure.
+// --asset-root names the RAN client tree. Without it, RAN_ASSET_ROOT is
+// tried, then the current directory. Escape or closing the window exits;
+// the process returns 0 on a clean stop and non-zero on any failure.
 
-// Windows.h (pulled in by the D3D11 backend headers below) defines
-// min/max as macros and renames GetMessage to GetMessageA/W. The first
-// would break std::min/std::max below; the second would rename every
-// Modern::Result::GetMessage() call in this file. NOMINMAX and the
-// #undef after the includes keep both languages speaking.
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
@@ -44,6 +56,9 @@
 #include "assets/ImageAsset.h"
 #include "assets/MeshAsset.h"
 #include "assets/MxfMeshTransform.h"
+#include "assets/RanMaterialSlot.h"
+#include "assets/RanMeshSource.h"
+#include "assets/SkinPieceContainer.h"
 #include "assets/TextureCache.h"
 #include "assets/TextureLoader.h"
 #include "assets/XMeshDecoder.h"
@@ -79,6 +94,7 @@ using Modern::Vector3;
 using Modern::Client::Application;
 using Modern::Client::D3D11AssetUploader;
 using Modern::Client::D3D11Renderer;
+using Modern::Client::DescribeRanMaterialResolution;
 using Modern::Client::DisplayMode;
 using Modern::Client::FileSystemResourceProvider;
 using Modern::Client::IInputSource;
@@ -96,12 +112,18 @@ using Modern::Client::MeshResourceHandle;
 using Modern::Client::MeshSection;
 using Modern::Client::MeshVertex;
 using Modern::Client::MxfMeshTransform;
+using Modern::Client::RanMaterialNameKind;
+using Modern::Client::RanMeshContainer;
+using Modern::Client::RanMeshSource;
 using Modern::Client::RenderColor;
 using Modern::Client::RendererConfig;
 using Modern::Client::ResourceManager;
 using Modern::Client::ResourceId;
 using Modern::Client::ResourceData;
 using Modern::Status;
+using Modern::Client::SkinPiece;
+using Modern::Client::SkinPieceContainer;
+using Modern::Client::SkinPieceType;
 using Modern::Client::TextureCache;
 using Modern::Client::TextureLoader;
 using Modern::Client::Win32InputSource;
@@ -114,8 +136,17 @@ namespace
 constexpr uint32_t kClientWidth  = 960;
 constexpr uint32_t kClientHeight = 540;
 
-constexpr const char* kSkinMeshPath  = "data/skin/m_luffy_timeskip.mxf";
-constexpr const char* kTexturesDir   = "textures";
+// The CLIENT-RENDER-002 regression mesh. Still the default so that a plain
+// run of the client keeps proving the MXF path works.
+constexpr const char* kSkinMeshPath = "data/skin/m_luffy_timeskip.mxf";
+
+// ASURA-CHARACTER-001B: the directories a RAN wearing file and the mesh it
+// names are relative to. Kept as constants so no absolute client path is
+// ever compiled in.
+constexpr const char* kSkinPieceDir = "data/skinobject";
+constexpr const char* kSkinDir      = "data/skin";
+constexpr const char* kSkeletonDir  = "data/skeleton";
+constexpr const char* kTexturesDir  = "textures";
 
 // The colour drawn for a section whose material names no texture, or whose
 // named texture could not be resolved/decoded/uploaded. It is deliberately
@@ -139,12 +170,17 @@ void PrintUsage()
 		"ModernClientApp - RAN Online modern client renderer\n"
 		"\n"
 		"Usage:\n"
-		"  ModernClientApp.exe [--asset-root <path>]\n"
+		"  ModernClientApp.exe [--asset-root <path>] [--mesh <path>] [--skin-piece <path>]\n"
 		"  ModernClientApp.exe --audit-textures [--asset-root <path>] [--report <json>]\n"
 		"                       [--decode-limit <n-per-format>]\n"
 		"\n"
 		"  --asset-root <path>            RAN client tree to load data from\n"
 		"                                 (default: $RAN_ASSET_ROOT, then the current directory)\n"
+		"  --mesh <path>                  Mesh to render, relative to the asset root\n"
+		"                                 (default: data/skin/m_luffy_timeskip.mxf)\n"
+		"  --skin-piece <path>            RAN wearing file under data/skinobject to take the\n"
+		"                                 mesh from, e.g. data/skinobject/CUN0001_m.cps.\n"
+		"                                 Overrides --mesh when both are given.\n"
 		"  --audit-textures               Headless: inventory the texture tree, report per-format\n"
 		"                                 counts, duplicate content and filename collisions, decode\n"
 		"                                 a bounded sample, and exit (no window, no GPU)\n"
@@ -337,6 +373,8 @@ void BuildPerspectiveRowMajor(float fovYRadians, float aspect, float nearPlane, 
 int main(int argc, char** argv)
 {
 	std::string assetRoot;
+	std::string meshPath;
+	std::string skinPiecePath;
 	bool        auditTextures = false;
 	std::string reportPath;
 	size_t      decodeLimit = 300;
@@ -350,6 +388,22 @@ int main(int argc, char** argv)
 		else if (argument.rfind("--asset-root=", 0) == 0)
 		{
 			assetRoot = argument.substr(std::strlen("--asset-root="));
+		}
+		else if (argument == "--mesh" && i + 1 < argc)
+		{
+			meshPath = argv[++i];
+		}
+		else if (argument.rfind("--mesh=", 0) == 0)
+		{
+			meshPath = argument.substr(std::strlen("--mesh="));
+		}
+		else if (argument == "--skin-piece" && i + 1 < argc)
+		{
+			skinPiecePath = argv[++i];
+		}
+		else if (argument.rfind("--skin-piece=", 0) == 0)
+		{
+			skinPiecePath = argument.substr(std::strlen("--skin-piece="));
 		}
 		else if (argument == "--audit-textures")
 		{
@@ -423,7 +477,7 @@ int main(int argc, char** argv)
 	if (inputInitStatus.IsError())
 	{
 		Log("ModernClientApp: input system initialization failed (%s)",
-			inputInitStatus.GetMessage());
+		    inputInitStatus.GetMessage());
 		return 1;
 	}
 
@@ -447,7 +501,7 @@ int main(int argc, char** argv)
 	renderer.SetAssetUploader(&uploader);
 
 	// 5. The character asset through the real pipeline:
-	//    file -> ResourceManager -> MXF transform -> X decoder -> MeshAsset.
+	//    file -> ResourceManager -> container -> X decoder -> MeshAsset.
 	FileSystemResourceProvider resourceProvider(assetRoot);
 	if (resourceProvider.Initialize().IsError())
 	{
@@ -463,10 +517,75 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	const Modern::Result<ResourceId> skinMeshId = ResourceId::Create(kSkinMeshPath);
+	// 5a. Mesh selection.
+	//
+	//     Default: the CLIENT-RENDER-002 regression `.mxf`.
+	//     --mesh:  an explicit path relative to the asset root.
+	//     --skin-piece: a RAN wearing file; its mesh field names the mesh, so
+	//     the character is reached through the real RAN item -> piece -> mesh
+	//     chain rather than by naming the mesh by hand.
+	//
+	//     --skin-piece wins over --mesh, because it carries strictly more
+	//     information about which character is meant.
+	std::string selectedMeshPath = meshPath.empty() ? std::string(kSkinMeshPath) : meshPath;
+	std::string pieceSource;   // what to attribute materials to in diagnostics
+	SkinPiece   piece;
+
+	if (!skinPiecePath.empty())
+	{
+		const Modern::Result<ResourceId> pieceId = ResourceId::Create(skinPiecePath);
+		if (pieceId.IsError())
+		{
+			Log("ModernClientApp: bad skin-piece resource id '%s' (%s)",
+			    skinPiecePath.c_str(), pieceId.GetMessage());
+			return 1;
+		}
+		const Modern::Result<ResourceData> pieceData =
+		    resourceManager.Load(pieceId.GetValue());
+		if (pieceData.IsError())
+		{
+			Log("ModernClientApp: failed to load skin piece '%s' (%s)",
+			    skinPiecePath.c_str(), pieceData.GetMessage());
+			return 1;
+		}
+		const Modern::Result<SkinPiece> decodedPiece =
+		    SkinPieceContainer::Decode(pieceData.GetValue());
+		if (decodedPiece.IsError())
+		{
+			Log("ModernClientApp: skin piece '%s' could not be decoded (%s)",
+			    skinPiecePath.c_str(), decodedPiece.GetMessage());
+			return 1;
+		}
+		piece = decodedPiece.GetValue();
+		pieceSource = skinPiecePath;
+
+		Log("ModernClientApp: RAN wearing piece %s: version 0x%04X, type %s, "
+		    "mesh '%s', skeleton '%s', mesh node '%s', %u material slot(s), "
+		    "%zu byte(s) of undecoded tail retained",
+		    skinPiecePath.c_str(), piece.version, ToString(piece.GetPieceType()),
+		    piece.meshFilename.c_str(), piece.skeletonFilename.c_str(),
+		    piece.meshNodeName.c_str(), piece.materialSlotCount,
+		    piece.GetOpaqueTailSize());
+
+		// The piece's mesh lives under data/skin and its skeleton under
+		// data/skeleton. Both are relative to the asset root, so no absolute
+		// client path is ever compiled in.
+		selectedMeshPath = std::string(kSkinDir) + "/" + piece.meshFilename;
+
+		const std::filesystem::path skeletonPath =
+		    std::filesystem::path(assetRoot) / kSkeletonDir / piece.skeletonFilename;
+		Log("ModernClientApp: piece skeleton '%s' %s",
+		    piece.skeletonFilename.c_str(),
+		    std::filesystem::is_regular_file(skeletonPath) ? "present" : "MISSING");
+	}
+
+	Log("ModernClientApp: rendering mesh '%s'", selectedMeshPath.c_str());
+
+	const Modern::Result<ResourceId> skinMeshId = ResourceId::Create(selectedMeshPath);
 	if (skinMeshId.IsError())
 	{
-		Log("ModernClientApp: bad resource id '%s' (%s)", kSkinMeshPath, skinMeshId.GetMessage());
+		Log("ModernClientApp: bad resource id '%s' (%s)", selectedMeshPath.c_str(),
+		    skinMeshId.GetMessage());
 		return 1;
 	}
 
@@ -474,16 +593,27 @@ int main(int argc, char** argv)
 	if (skinFileData.IsError())
 	{
 		Log("ModernClientApp: failed to load '%s' (%s) -- is the asset root a RAN client tree?",
-			kSkinMeshPath, skinFileData.GetMessage());
+		    selectedMeshPath.c_str(), skinFileData.GetMessage());
 		return 1;
 	}
 
-	MxfMeshTransform mxfTransform;
-	const Modern::Result<ResourceData> xFileData = mxfTransform.Transform(skinFileData.GetValue());
+	// 5b. Container routing. RAN ships the same DirectX `.x` content either
+	//     obfuscated in an `.mxf` or as a plain `.X`; which one this is is
+	//     decided from the bytes, not from the extension.
+	const Modern::Result<RanMeshContainer> container = RanMeshSource::Classify(skinFileData.GetValue());
+	if (container.IsError())
+	{
+		Log("ModernClientApp: '%s' is neither a plain .X nor a readable .mxf (%s)",
+		    selectedMeshPath.c_str(), container.GetMessage());
+		return 1;
+	}
+	Log("ModernClientApp: mesh container is %s", ToString(container.GetValue()));
+
+	const Modern::Result<ResourceData> xFileData = RanMeshSource::ToPlainX(skinFileData.GetValue());
 	if (xFileData.IsError())
 	{
-		Log("ModernClientApp: MXF transform of '%s' failed (%s)",
-			kSkinMeshPath, xFileData.GetMessage());
+		Log("ModernClientApp: container transform of '%s' failed (%s)",
+		    selectedMeshPath.c_str(), xFileData.GetMessage());
 		return 1;
 	}
 
@@ -492,20 +622,21 @@ int main(int argc, char** argv)
 	if (skinMesh.IsError())
 	{
 		Log("ModernClientApp: X mesh decode of '%s' failed (%s)",
-			kSkinMeshPath, skinMesh.GetMessage());
+		    selectedMeshPath.c_str(), skinMesh.GetMessage());
 		return 1;
 	}
 
 	const MeshAsset& mesh = skinMesh.GetValue();
 	Log("ModernClientApp: decoded %s: %zu vertices, %zu indices, %zu triangles",
-		kSkinMeshPath, mesh.GetVertexCount(), mesh.GetIndexCount(), mesh.GetTriangleCount());
+	    selectedMeshPath.c_str(), mesh.GetVertexCount(), mesh.GetIndexCount(),
+	    mesh.GetTriangleCount());
 
 	// 6. Upload the mesh to real GPU buffers.
 	const Modern::Result<MeshResourceHandle> meshHandle = uploader.UploadMesh(mesh);
 	if (meshHandle.IsError())
 	{
 		Log("ModernClientApp: GPU upload of the character mesh failed (%s)",
-			meshHandle.GetMessage());
+		    meshHandle.GetMessage());
 		return 1;
 	}
 
@@ -518,7 +649,16 @@ int main(int argc, char** argv)
 	//     texture by bare filename; that filename is resolved over the ASURA
 	//     texture tree by TextureLoader (the same name/path resolution the
 	//     legacy TextureManager performed, with no D3D coupling) and decoded by
-	//     content magic -- PNG here, with DDS/MTF handled by the same dispatch.
+	//     content magic -- PNG for the Luffy regression asset, DDS for the RAN
+	//     body, both through the same dispatch.
+	//
+	//     ASURA-CHARACTER-001B adds one distinction that matters here. RAN
+	//     meshes also carry RAN-internal material slot names such as IMAGE01
+	//     or BLOOD01, which are role identifiers rather than filenames and
+	//     which no shipped texture is named after. When one of those reaches
+	//     the loader it is reported as an unresolved RAN slot -- naming the
+	//     piece, the material and the attempt -- rather than as a generic
+	//     missing file, and it is never counted as a textured draw.
 	//
 	//     Every *unique* texture is decoded and uploaded exactly once and the
 	//     handle is shared by every material that names it, so a mesh that
@@ -536,7 +676,7 @@ int main(int argc, char** argv)
 	bool namedTexturesAllLoaded = true;
 
 	Log("ModernClientApp: mesh carries %zu materials and %zu sections",
-		materials.size(), sections.size());
+	    materials.size(), sections.size());
 
 	if (mesh.HasSections())
 	{
@@ -546,7 +686,7 @@ int main(int argc, char** argv)
 		if (textureInit.IsError())
 		{
 			Log("ModernClientApp: texture tree '%s' could not be indexed (%s)",
-				textureRoot.string().c_str(), textureInit.GetMessage());
+			    textureRoot.string().c_str(), textureInit.GetMessage());
 			namedTexturesAllLoaded = false;
 		}
 		else
@@ -565,15 +705,30 @@ int main(int argc, char** argv)
 				{
 					// A material with no texture is a real, legal shape; it draws
 					// with the fallback color by design, which is not a failure.
+					Log("ModernClientApp: material '%s' declares no texture; it draws the fallback color by design",
+					    material.name.c_str());
+					continue;
+				}
+
+				// ASURA-CHARACTER-001B: a RAN-internal slot name is reported as
+				// such, up front, instead of as a bare-name lookup miss.
+				const RanMaterialNameKind nameKind =
+				    Modern::Client::ClassifyRanMaterialName(material.textureFilename);
+				if (nameKind == RanMaterialNameKind::RanMaterialSlot)
+				{
+					Log("ModernClientApp: %s",
+					    DescribeRanMaterialResolution(pieceSource, material.textureFilename,
+					                                 "").c_str());
+					namedTexturesAllLoaded = false;
 					continue;
 				}
 
 				const std::filesystem::path resolved = textureLoader.Find(material.textureFilename);
 				if (resolved.empty())
 				{
-					Log("ModernClientApp: material '%s' names texture '%s' that is not in the "
-					    "texture tree '%s'",
-					    material.name.c_str(), material.textureFilename.c_str(),
+					Log("ModernClientApp: %s (searched tree '%s')",
+					    DescribeRanMaterialResolution(pieceSource, material.textureFilename,
+					                                 "").c_str(),
 					    textureRoot.string().c_str());
 					namedTexturesAllLoaded = false;
 					continue;
@@ -692,7 +847,7 @@ int main(int argc, char** argv)
 	                         nearPlane, farPlane, projection);
 
 	Log("ModernClientApp: camera at (%.2f, %.2f, %.2f), bounding sphere radius %.2f",
-		eye.x, eye.y, eye.z, radius);
+	    eye.x, eye.y, eye.z, radius);
 
 	// 8. The application loop: platform pump, input queue, one static draw
 	//    per frame, real D3D11 present.
@@ -771,7 +926,7 @@ int main(int argc, char** argv)
 	renderer.Shutdown();                 // swap chain, device, immediate context
 
 	Log("ModernClientApp: stopped after %llu frames",
-		static_cast<unsigned long long>(application.GetFrameCount()));
+	    static_cast<unsigned long long>(application.GetFrameCount()));
 
 	if (!namedTexturesAllLoaded)
 	{

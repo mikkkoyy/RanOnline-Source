@@ -26,6 +26,16 @@ add_library(ModernClientAssets STATIC
     XMeshDecoder.cpp
     TextureLoader.cpp
     TextureCache.cpp
+
+    # ASURA-CHARACTER-001B: the original RAN playable-character path. The bounded
+    # item-wearing-file reader (item.csv -> .cps), the .cps SkinPieceContainer
+    # reader (.cps -> mesh/skeleton/node), RAN material-name classification,
+    # and the .mxf/plain-.X source routing that lets a plain RAN .X reach
+    # XMeshDecoder unchanged.
+    ItemWearingFile.cpp
+    SkinPieceContainer.cpp
+    RanMaterialSlot.cpp
+    RanMeshSource.cpp
 )
 
 target_include_directories(ModernClientAssets PUBLIC
@@ -238,3 +248,52 @@ if(MSVC)
 endif()
 
 add_test(NAME ModernClientTextureInventoryTests COMMAND ModernClientTextureInventoryTests)
+
+# ASURA-CHARACTER-001B: the original RAN playable-character asset path.
+# A ninth executable, for the same reason as the others: each suite owns its
+# own main() so they stay independent translation units registered with CTest.
+# The item.csv and .cps fixtures are written by the test binary from the
+# layouts published in the legacy headers the readers implement, so nothing
+# proprietary is committed; the optional real-asset cases read a client tree
+# only when RAN_ASSET_ROOT names one. Same linkage as the image suite --
+# asset layer plus resource layer, no renderer, no graphics API, no legacy
+# library.
+add_executable(ModernClientCharacterAssetTests
+    ClientCharacterAssetTests.cpp
+)
+
+target_include_directories(ModernClientCharacterAssetTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_SOURCE_DIR}/modern/tests
+)
+
+target_link_libraries(ModernClientCharacterAssetTests PRIVATE ModernClientAssets ModernClientResources)
+
+target_compile_features(ModernClientCharacterAssetTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernClientCharacterAssetTests PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+add_test(NAME ModernClientCharacterAssetTests COMMAND ModernClientCharacterAssetTests)
+
+# ASURA-CHARACTER-001B: .mxf / plain .X source routing, and the real RAN
+# character mesh decoded through it. A tenth executable, same reason.
+add_executable(ModernClientRanMeshSourceTests
+    ClientRanMeshSourceTests.cpp
+)
+
+target_include_directories(ModernClientRanMeshSourceTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_SOURCE_DIR}/modern/tests
+)
+
+target_link_libraries(ModernClientRanMeshSourceTests PRIVATE ModernClientAssets ModernClientResources)
+
+target_compile_features(ModernClientRanMeshSourceTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernClientRanMeshSourceTests PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+add_test(NAME ModernClientRanMeshSourceTests COMMAND ModernClientRanMeshSourceTests)

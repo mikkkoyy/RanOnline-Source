@@ -4414,3 +4414,153 @@ subsystem, and duplicating those calculations would break the single-authority
 rule the derived-stat layer depends on.
 
 See `docs/reference/client/VERTICAL-015_SKILL_FACT_FOUNDATION.md`.
+
+---
+
+## 26. ASURA-CHARACTER-001B: the original RAN character asset path
+
+RAN's playable characters are not described by their class configuration. The
+class file (`data/glogic/classXX.charset`) records only which items a character
+starts wearing, and the geometry is reached through three more hops. This
+section describes the boundary that was added to walk them.
+
+### 26.1 The chain, as proven against the shipped ASURA tree
+
+```
+data/glogic/class00.charset   PutOnItems [UPPER] [50, 1]
+  -> data/glogic/item.csv     row (50,1), column strWearingFileRight 0
+  -> data/skinobject/CUN0001_m.cps
+  -> data/skin/s_m_hb.X       (the mesh the piece actually draws)
+```
+
+`default.charclass` itself is a **Rijndael-encrypted text INI** and contains no
+skin, mesh, skeleton or animation reference at all. It names three schools
+(`SacredGate`, `MysticPeak`, `Phoenix`) and 48 `classXX.charset` files. The 48
+classes are the 16 `EMCHARINDEX` slots (`GLCharDefine.h:235`) per school, and
+each `.charset` carries `emClass`, `wSchool`, `wHair`, `wFace` and the starting
+`PutOnItems` / `cInventory` — no geometry.
+
+### 26.2 `ItemWearingFileReader` — the bounded CSV step
+
+`item.csv` is ~22 MB with 399 columns per row. The reader takes the ids it
+wants, makes one streaming pass, and keeps only the matched rows' wearing-file
+columns; it never builds an item model.
+
+- **Columns by name.** Every column is located through its header name
+  (`ItemCsvColumns::kMainId` and friends), because that is what the legacy
+  `gltexfile` reader does and because a hardcoded index would silently read the
+  wrong data if RAN reordered the file.
+- **Real CSV.** `SplitCsvRecord` implements RFC 4180 doubled-quote escaping,
+  quoted fields containing the delimiter, and preserved empty fields. An
+  unterminated quote is `InvalidArgument` rather than a run to end-of-file.
+- **Exact ids.** `ParseUnsigned` accepts only an unsigned decimal, so `50`
+  never matches `500`.
+- **Explicit failure.** `ItemWearingFileReport` reports rows scanned, matched,
+  malformed, duplicate ids and missing ids. An id with no row is reported; a run
+  where no requested id matched is `NotFound`.
+- **No pattern inference.** `CUN0001_m.cps` encodes class and gender, and it
+  would be easy to synthesise wearing files from a naming convention. This
+  reader never does: a value is always a literal column value from a literal
+  row.
+
+### 26.3 `SkinPieceContainer` — the `.cps` boundary
+
+Container header, from `legacy/Lib_Engine/Common/SerialFile.cpp:50`
+(`ReadFileType`) and `legacy/Lib_Engine/Common/basestream.h:17`:
+
+| Offset | Size | Field |
+| ------ | ---- | ----- |
+| 0x000 | 128 | `char[128]` file type (`"default"` + NUL padding) |
+| 0x080 | 4 | `uint32` file id |
+| 0x084 | ... | payload, little-endian |
+
+Payload for version **0x0106** (`DxSkinPieceSaveLoad.cpp:658`,
+`LoadPiece_0106`) — the version all four confirmed class00 pieces carry:
+
+```
+uint32 version, uint32 reference,
+string meshFilename, string skeletonFilename,        (u32 byte count incl. NUL)
+uint32 pieceType, uint32 weaponWhereBack,
+string meshNodeName,
+uint32 materialSlotCount, ...
+```
+
+Only 0x0106 is decoded. Any other version is `NotAllowed` — valid RAN data
+this reader does not claim to understand — which is deliberately distinct from
+the `InvalidArgument` it returns for malformed input.
+
+**The tail is not decoded.** The material record array, trace array, effect
+array and trailing flag were not confirmed against the fixtures, so everything
+from the end of `materialSlotCount` is preserved verbatim as `opaqueTail` with
+its offset and never reinterpreted. A half-parse would report invented values,
+which is worse than reporting none.
+
+All field reads go through a bounds-checked cursor: truncation, a string length
+past the end, a zero string length, and a `materialSlotCount` larger than the
+remaining bytes are all refused.
+
+### 26.4 `RanMaterialSlot` — two kinds of name in the same slot
+
+The RAN meshes and the RAN wearing files put two unrelated kinds of string where
+a texture name goes.
+
+**Real filenames.** `s_m_hb.X` declares, inside its `MeshMaterialList`
+templates: `m1_hb_body.dds`, `m2_bs_body.DDS`, `m1_khb_foot.dds`,
+`m1_hb_leg.dds`, `m1_hb_hand.dds`. All five resolve through the existing
+`TextureLoader` against `textures/char/`.
+
+**RAN-internal slots.** `IMAGE01`, `IMAGE02`, `IMAGE11`, `IMAGE12`, `IMAGE21`,
+`IMAGE22`, `BLOOD01`, `STRIKE01`, `ARROW01`, read from the four confirmed
+pieces. A scan of all 13,932 files under `textures/` for an `IMAGE*` basename
+returns zero matches: RAN resolves these through its own piece-material tables
+(`TextureManager.cpp` `EMTT_*`; the `.pie`/`.pie15` files under `data/piece/`),
+not by filename.
+
+`ClassifyRanMaterialName` sorts the two apart so a slot is reported as an
+unresolved RAN slot — naming the piece, the material and the attempt — instead
+of as a confusing missing-file error. It never invents a texture and never
+suppresses the diagnostic. The legacy `_a` / `_a1` / `_a2` alpha convention is
+deliberately absent: no selected asset needs it and its behaviour is unverified.
+
+### 26.5 `RanMeshSource` — container routing
+
+RAN ships the same DirectX `.x` content two ways: obfuscated in an `.mxf`, or as
+a plain `.X` with no container. The Male Brawler body is the plain kind
+(`s_m_hb.X` begins `xof 0303bin 0032`); the Luffy regression asset is the
+container kind.
+
+`RanMeshSource::Classify` decides from the **bytes**, not the extension: a
+payload already starting with `"xof "` passes through unchanged, anything else
+goes to `MxfMeshTransform`. Neither the transform nor `XMeshDecoder` was
+modified — this is routing only, so the two containers cannot be confused by a
+caller remembering the wrong extension.
+
+### 26.6 Application surface
+
+`ModernClientApp` gained two runtime options:
+
+```
+--mesh <path>         mesh to render, relative to the asset root
+--skin-piece <path>   RAN wearing file to take the mesh from
+                      (e.g. data/skinobject/CUN0001_m.cps); overrides --mesh
+```
+
+`--skin-piece` is the one that carries the class identity: it decodes the `.cps`
+and derives the mesh path from its mesh field, so the character is reached
+through the real item -> piece -> mesh chain instead of by naming a file by
+hand. Luffy remains the default.
+
+### 26.7 What this does not do
+
+`SkinPieceContainer` produces the mesh *name*. `XMeshDecoder` merges every
+`Mesh` container in the file into one buffer. So the rendered result is the body
+mesh file's contents — for `s_m_hb.X` that is four containers (`m2_hb_body`,
+`m2_hb_leg`, `m2_hb_foot`, `m2_hb_hand`) drawn together, unskinned, in the bind
+pose — and **not** the assembled character. Equipment assembly, bone influences,
+animation, hair/face and per-container selection are all follow-ups.
+
+The one live gap is texture binding: see
+`docs/MODERNIZATION_STATUS.md` ASURA-CHARACTER-001B. In short, RAN declares
+*unnamed* `Material` instances whose textures the decoder discards, because it
+resolves material slots by name. The binding is positional and is pinned by a
+failing-on-fix test until it is implemented.

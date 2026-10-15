@@ -59,6 +59,7 @@ formula provenance.
 | VERTICAL-026 CALCDAMAGE variant authority | [x] RESOLVED - CALCDAMAGE_20060328 | see `docs/reference/server/VERTICAL-026_CALCDAMAGE_VARIANT_AUTHORITY.md` |
 | VERTICAL-027 Modern network boundary foundation | [x] | see `docs/reference/server/VERTICAL-027_NETWORK_BOUNDARY_FOUNDATION.md` |
 
+| ASURA-CHARACTER-001B Original RAN Brawler body | [x] body mesh; texture binding is a documented gap | this commit |
 ---
 
 ## CLIENT-RENDER-002 — Render ASURA character materials and textures
@@ -989,3 +990,223 @@ and the gate are equal there, where legacy's are not. See
 VERTICAL-005, so an item whose only stats are flat recovery is skipped by the
 aggregator. Same class of bug as the `requiredSP` omission this milestone fixed,
 but not a required-SP dependency, so it is reported rather than changed.
+
+---
+
+## ASURA-CHARACTER-001B — Load the original RAN Brawler body
+
+**State: complete for the body mesh; one documented gap remains (textures).**
+
+ASURA-CHARACTER-001A established that RAN does not store a playable character's
+geometry anywhere in its class configuration. The chain is:
+
+```
+data/glogic/class00.charset   PutOnItems [UPPER] [50, 1]
+  -> data/glogic/item.csv     row (50,1), column strWearingFileRight 0
+  -> data/skinobject/CUN0001_m.cps
+  -> data/skin/s_m_hb.X       (the mesh the piece actually draws)
+```
+
+This milestone implements that chain and renders the result.
+
+### What was added
+
+| File | Purpose |
+| ---- | ------- |
+| `modern/client/assets/ItemWearingFile.h/.cpp` | Bounded `item.csv` reader: the 32 `strWearingFile*` columns for requested ids |
+| `modern/client/assets/SkinPieceContainer.h/.cpp` | `.cps` wearing-file reader (container version 0x0106) |
+| `modern/client/assets/RanMaterialSlot.h/.cpp` | Classification of a material-texture name: real filename vs RAN-internal slot |
+| `modern/client/assets/RanMeshSource.h/.cpp` | `.mxf` / plain `.X` source routing |
+| `modern/client/assets/ClientCharacterAssetTests.cpp` | 35 cases: CSV mechanics, the four confirmed pieces, material-slot classification |
+| `modern/client/assets/ClientRanMeshSourceTests.cpp` | 11 cases: container routing, the real body mesh, the pinned material gap |
+
+`ModernClientApp` gained `--mesh <path>` and `--skin-piece <path>`. Luffy stays
+the default regression asset.
+
+### Item CSV extraction behaviour
+
+`data/glogic/item.csv` is ~22 MB with 399 columns. The reader takes the ids it
+wants, makes **one** streaming pass, and keeps only the matched rows' wearing-file
+columns. It never builds an item model.
+
+- Columns are located by **header name**, never by position. The shipped header
+  carries `sNativeID wMainID`, `sNativeID wSubID`, `strWearingFileRight 0..15`
+  and `strWearingFileLeft 0..15`; a header missing any required column is refused.
+- The splitter is real CSV: RFC 4180 doubled-quote escaping, quoted fields that
+  contain the delimiter, empty fields preserved. An unterminated quote ends the
+  row as malformed rather than swallowing the file.
+- Ids compare exactly as two unsigned decimals; `50` never matches `500`.
+- `ItemWearingFileReport` carries rows scanned / matched / malformed, duplicate
+  ids and missing ids. A requested id with no row is reported; a run where *no*
+  requested id matched is `NotFound`.
+- **No filename-pattern inference.** A returned value is always a literal column
+  value from a literal row.
+
+Confirmed mappings (real `item.csv`, EMCHARINDEX 0 = `GLCI_BRAWLER_M`):
+
+| Slot | Item | `strWearingFileRight 0` |
+| ---- | ---- | ------------------------ |
+| UPPER | `[50,1]` | `CUN0001_m.cps` |
+| LOWER | `[53,1]` | `CDN0001_m.cps` |
+| FOOT  | `[56,1]` | `CFN0034_m.cps` |
+| RHAND | `[23,1]` | `BTN0011_m.cps` |
+
+### `.cps` subset and known limits
+
+Container header (`legacy/Lib_Engine/Common/SerialFile.cpp:50`,
+`basestream.h:17`): 128-byte file-type tag + 4-byte file id. Payload is
+little-endian. **Only version 0x0106 is decoded** — the version the four
+confirmed class00 pieces carry and the only one whose field boundaries were
+verified against real bytes. Any other version returns `NotAllowed`
+(valid RAN data this reader does not claim to understand), which is
+deliberately distinct from `InvalidArgument` (malformed).
+
+Decoded prefix: `version`, `reference`, `meshFilename`, `skeletonFilename`,
+`pieceType`, `weaponWhereBack`, `meshNodeName`, `materialSlotCount`.
+
+**Not decoded:** the material record array, the trace array, the effect array
+and the trailing flag. Their per-version layouts were not confirmed against the
+fixtures, and a half-parse would report invented values. Everything from the
+end of `materialSlotCount` is preserved byte-for-byte as `opaqueTail` with its
+offset, and is never reinterpreted. For CUN0001_m.cps that is 511 bytes.
+
+Every field is read through a bounds-checked cursor. Truncation, a string
+length running past the end, a zero string length, and a `materialSlotCount`
+larger than the bytes that remain are all refused.
+
+Real pieces, decoded and verified:
+
+| Piece | Mesh | Skeleton | Mesh node | Type |
+| ----- | ---- | -------- | --------- | ---- |
+| `CUN0001_m.cps` | `s_m_hb.X` | `b_m.X` | `m2_hb_body[Mesh]` | UPPER |
+| `CDN0001_m.cps`  | `s_m_hb.X` | `b_m.X` | `m2_hb_leg[Mesh]`  | LOWER |
+| `CFN0034_m.cps`  | `s_m_hb.X` | `b_m.X` | `m2_hb_foot[Mesh]` | FOOT  |
+| `BTN0011_m.cps`  | `s_m_gongyong.X` | `b_m.X` | `BTN0011[Mesh]` | RHAND |
+
+### Material-slot resolution rules
+
+The RAN body meshes and the RAN wearing files use two different kinds of string
+in the material-texture position, and conflating them produces a confusing
+"texture not found" for something that was never a filename.
+
+- **Real texture filenames** — `s_m_hb.X` declares, in its `MeshMaterialList`
+  templates: `m1_hb_body.dds`, `m2_bs_body.DDS`, `m1_khb_foot.dds`,
+  `m1_hb_leg.dds`, `m1_hb_hand.dds`. All five resolve by bare filename over the
+  ASURA texture tree (`textures/char/`) through the existing `TextureLoader`.
+  These are the textures that get drawn.
+- **RAN-internal material slots** — `IMAGE01`, `IMAGE02`, `IMAGE11`, `IMAGE12`,
+  `IMAGE21`, `IMAGE22`, `BLOOD01`, `STRIKE01`, `ARROW01`, read out of the four
+  confirmed pieces. **No file in the shipped tree (13,932 files under
+  `textures/`) is named after any of them**; a scan for an `IMAGE*` basename
+  returns zero matches. RAN's engine resolves them through its own
+  piece-material tables (`TextureManager.cpp` `EMTT_*`, the `.pie`/`.pie15`
+  files under `data/piece/`), not by filename lookup.
+
+`ClassifyRanMaterialName` reports these apart. A slot reaching the loader is
+logged as an unresolved RAN slot — naming the piece, the material and the
+attempt — and is never counted as a textured draw. The legacy `_a` / `_a1` /
+`_a2` alpha-texture convention is **not** implemented: none of the selected
+assets need it, and its behaviour is unverified, so it was left out rather than
+guessed.
+
+### Plain `.X` support
+
+`RanMeshSource::Classify` decides the container from the **bytes**, not the
+extension: a payload already starting with the DirectX magic `"xof "` passes
+through unchanged; anything else goes to `MxfMeshTransform`. Neither the
+transform nor the decoder was modified — this is routing only, so the `.mxf`
+regression path and the plain-`.X` path cannot be confused.
+
+### Run command
+
+```
+ModernClientApp.exe --asset-root "<RAN CLIENT TREE>" --skin-piece data/skinobject/CUN0001_m.cps
+```
+
+Equivalent without the piece: `--mesh data/skin/s_m_hb.X`.
+Plain `ModernClientApp.exe --asset-root "<tree>"` still renders Luffy.
+
+### Verification
+
+| Check | Result |
+| ----- | ------ |
+| Debug build (client app + all client test targets) | PASS — 0 errors, 0 new warnings |
+| `ctest -R ModernClient` | **16/17 PASS** |
+| `ModernClientGameplayTests` | **Not Run — pre-existing blocker**, see below |
+| `ModernClientCharacterAssetTests` | 35/35 |
+| `ModernClientRanMeshSourceTests` | 11/11 |
+| Real `s_m_hb.X` decode | 840 vertices, 3,114 indices, 1,038 triangles, 5 sections, sections tile `[0,3114)` exactly |
+| Real `.cps` chain | all four pieces decode; all four meshes present on disk |
+| GUI | **PASS** — see below |
+| Screenshot | `docs/reference/client/ASURA-CHARACTER-001B-brawler-body.png` |
+
+Run log for the body mesh:
+
+```
+ModernClientApp: RAN wearing piece data/skinobject/CUN0001_m.cps: version 0x0106,
+  type UPPER, mesh 's_m_hb.X', skeleton 'b_m.X', mesh node 'm2_hb_body[Mesh]',
+  3 material slot(s), 511 byte(s) of undecoded tail retained
+ModernClientApp: piece skeleton 'b_m.X' present
+ModernClientApp: rendering mesh 'data/skin/s_m_hb.X'
+ModernClientApp: mesh container is plain .X
+ModernClientApp: decoded data/skin/s_m_hb.X: 840 vertices, 3114 indices, 1038 triangles
+D3D11AssetUploader: uploaded mesh 1 (840 vertices, 3114 indices, 1038 triangles)
+ModernClientApp: mesh carries 1 materials and 5 sections
+ModernClientApp: section 0: indices [0, 864) material 0 -> none (fallback color)
+...
+ModernClientApp: camera at (0.02, -9.23, -28.21), bounding sphere radius 11.58
+```
+
+Luffy regression, unchanged: 8,868 vertices / 36,741 indices / 12,247 triangles,
+17 materials, 22 sections, 2 textures resolved and uploaded — the same numbers
+CLIENT-RENDER-002 recorded.
+
+**The screenshot shows the RAN body mesh visibly drawn** — a humanoid figure with
+outstretched arms, torso and two legs — in the magenta diagnostic fallback
+colour. That colour is not a failure of the render; it is the deliberate,
+unmistakable marker for a section drawn without a texture, and it is exactly
+what the gap below predicts.
+
+### Remaining limitations
+
+1. **`s_m_hb.X` textures are not bound (the one real gap).** The mesh decodes
+   structurally and draws, but arrives with **one unnamed, untextured material**
+   and all five sections take the fallback colour.
+
+   This is a decoder capability, not a data problem. Verified byte by byte in
+   `data/skin/s_m_hb.X`: each of the four `Mesh` containers has its own
+   `MeshMaterialList` whose first two integers are `(materialCount,
+   faceIndexCount)` — the body list is `(2, 418)` — the lists carry **no named
+   material references**, and the textures live on **unnamed** `Material`
+   instances declared *after* each list. `XMeshDecoder` resolves a list's slots
+   by material **name**, and its unnamed-list path (added for `b_3boss_01.x`,
+   which has no materials at all) maps every slot onto one shared untextured
+   material.
+
+   The correct binding is positional — list slot *i* belongs to the *i*-th
+   unnamed `Material` declared for that mesh. Implementing it means changing
+   shared material resolution inside `XMeshDecoder`, which this milestone was
+   told not to rewrite, so it is left as the next task and **pinned by a test**
+   (`RanMeshSource_RealAsuraBrawlerBodyMaterialGapIsPinned`) that asserts the
+   raw bytes still contain all five texture filenames *and* that the decoded
+   material table currently surfaces zero of them. When the decoder learns the
+   shape, that test fails and the expectation moves.
+
+   Everything downstream is already proven: all five filenames resolve through
+   the existing `TextureLoader`, and the same test asserts each one.
+
+2. **Not character assembly.** Only the body mesh is rendered. The full
+   equipment set (upper + lower + foot + weapon, four pieces on one skeleton),
+   skeleton-driven skinning, hair/face, and animation are separate follow-ups.
+   `s_m_hb.X` itself holds four containers (`m2_hb_body`, `m2_hb_leg`,
+   `m2_hb_foot`, `m2_hb_hand`) and all four are decoded, but they are merged
+   into one buffer by the decoder and drawn unskinned in the bind pose.
+3. **Per-node selection is not implemented.** The `.cps` names one container
+   (`m2_hb_body[Mesh]`); the decoder merges all of them. Selecting a single
+   container needs the decoder to expose node names.
+4. **Pre-existing, unrelated build blocker.** `modern/server/world/FieldRoleRuntime.cpp`
+   (last touched by `b5c265d`, untouched by this milestone) does not compile:
+   `ItemContributionAggregator` / `Aggregate` not found, `SkillLevelData` not a
+   member of `Modern::SkillDefinition`. `ModernServer` therefore fails to build,
+   and `ModernClientGameplayTests` — which links it — cannot be produced.
+   Nothing in `modern/server/` was modified here.
