@@ -16,14 +16,22 @@
 //   DXT1 / BC1              6,661 files   -> ImageFormat::R8G8B8A8_UNorm
 //   DXT3 / BC2              2,731 files   -> ImageFormat::R8G8B8A8_UNorm
 //   DXT5 / BC3              1,921 files   -> ImageFormat::R8G8B8A8_UNorm
+//   DXT2 / BC2pm            126 files     -> ImageFormat::R8G8B8A8_UNorm
 //   uncompressed 32-bit RGBA   390 files -> ImageFormat::R8G8B8A8_UNorm
 //   uncompressed 32-bit BGRA    53 files -> ImageFormat::B8G8R8A8_UNorm
 //
+// DXT2 decodes through the same BC2 block path as DXT3, because the two are
+// byte-identical in their blocks and differ only in alpha meaning. DXT3's
+// alpha is straight and is handed on as decoded; DXT2's is premultiplied, and
+// the decoder converts it back to straight alpha before returning the image.
+// This client's renderer sets no blend state at all, so a premultiplied texel
+// would be written straight through and every translucent region would come
+// out too dark. The conversion is only applied to DXT2, never to DXT3/DXT5.
+//
 // Refused input, each for a stated reason rather than a blanket failure:
 //
-//   DXT2, DXT4              premultiplied-alpha variants; RAN has 126 DXT2
-//                            files, and un-premultiplying invents precision
-//                            the format does not store
+//   DXT4                    premultiplied DXT5; RAN has zero DXT4 files, so
+//                            there is no asset to justify the code
 //   16-bit (RGB565/RGBA4444), 24-bit RGB, luminance, YUV, paletted
 //                            806 files; supporting them means a conversion
 //                            this milestone deliberately does not write

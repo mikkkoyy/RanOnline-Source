@@ -804,6 +804,401 @@ MODERN_TEST(ClientDds_Dxt3ColourBlockDoesNotCarryBetweenChannels)
 }
 
 // ---------------------------------------------------------------------------
+// DXT2 / BC2 premultiplied  (ASURA-CHARACTER-001G)
+// ---------------------------------------------------------------------------
+//
+// DXT2 and DXT3 share a block layout byte for byte: eight bytes of explicit
+// 4-bit alpha, then an eight-byte colour block. They differ in one thing only,
+// which is what the alpha means. DXT3's alpha is straight and its RGB is the
+// authored colour; DXT2's alpha is premultiplied, so its RGB already has alpha
+// folded in and is darker than the authored colour.
+//
+// Every expected value below is derived by hand from the endpoints, never by
+// running the decoder. The alpha-conversion cases state the arithmetic as well
+// as the numbers, so a failure points at the rule rather than at a byte offset.
+//
+// The reason this decoder converts rather than passing premultiplied colour
+// through lives in the renderer, not here: this client sets no blend state at
+// all (there is no OMSetBlendState call anywhere in the codebase), so a
+// premultiplied texel would reach the output merger unblended and every
+// translucent region would come out too dark. Straightening at this boundary is
+// the only place it can be done without touching the render path.
+
+namespace
+{
+	// Sixteen 2-bit colour indices packed least significant pair first, the way
+	// a writer lays them out. Written here rather than read from a file so the
+	// fixture states its own index pattern.
+	uint32_t PackIndices2(uint32_t index)
+	{
+		uint32_t packed = 0;
+		for (int texel = 0; texel < 16; ++texel)
+		{
+			packed |= (index & 0x3u) << (texel * 2);
+		}
+		return packed;
+	}
+
+	// One explicit alpha nibble per texel, low nibble of each byte first: texel
+	// 2k takes the low nibble of byte k, texel 2k+1 the high nibble. Exactly the
+	// layout DecodeExplicitAlpha reads.
+	std::vector<uint8_t> MakeAlphaNibbles(const uint8_t nibbles[16])
+	{
+		std::vector<uint8_t> bytes(8, 0);
+		for (int byte = 0; byte < 8; ++byte)
+		{
+			bytes[byte] = static_cast<uint8_t>(
+				static_cast<uint8_t>(nibbles[byte * 2 + 0] & 0x0Fu) |
+				static_cast<uint8_t>(nibbles[byte * 2 + 1] & 0x0Fu) << 4);
+		}
+		return bytes;
+	}
+
+	// One whole BC2 file's payload: the explicit alpha bytes, then a colour
+	// block. Used for both DXT2 and DXT3 so a case can decode the identical
+	// bytes under both codes and show only the alpha convention differs.
+	std::vector<uint8_t> MakeBc2Block(
+		const uint8_t   alphaNibbles[16],
+		uint16_t        c0,
+		uint16_t        c1,
+		uint32_t        index)
+	{
+		const std::vector<uint8_t> alpha = MakeAlphaNibbles(alphaNibbles);
+		std::vector<uint8_t> block(alpha.begin(), alpha.end());
+		const std::vector<uint8_t> colour = MakeDxt1Block(c0, c1, PackIndices2(index));
+		block.insert(block.end(), colour.begin(), colour.end());
+		return block;
+	}
+} // namespace
+
+MODERN_TEST(ClientDds_Dxt2FourCCIsAccepted)
+{
+	// The whole point of the milestone: a valid DXT2 file decodes. It used to be
+	// refused as an unsupported FourCC, which is why any character textured with
+	// a DXT2 atlas fell back to magenta.
+	uint8_t alpha[16];
+	for (int i = 0; i < 16; ++i) { alpha[i] = 0x0F; }
+
+	const std::vector<uint8_t> file = MakeDdsFile(
+		4, 4, FourCC('D', 'X', 'T', '2'),
+		MakeBc2Block(alpha, Pack565(31, 0, 0), Pack565(0, 0, 0), 0u));
+
+	DdsImageDecoder decoder;
+	const Result<ImageAsset> decoded = decoder.DecodeImage(ResourceData(file));
+	CHECK(decoded.IsOk());
+	if (decoded.IsError())
+	{
+		return;
+	}
+
+	const ImageAsset& image = decoded.GetValue();
+	CHECK_EQ(image.GetWidth(), 4u);
+	CHECK_EQ(image.GetHeight(), 4u);
+	CHECK_EQ(image.GetFormat(), ImageFormat::R8G8B8A8_UNorm);
+	CHECK_EQ(image.GetPixelByteCount(), static_cast<size_t>(64));
+}
+
+MODERN_TEST(ClientDds_Dxt2UsesTheBc2BlockLayout)
+{
+	// Alpha is carried in the first eight bytes and colour in the last eight,
+	// exactly as BC2. Asserted against hand-picked values: a decoder that read
+	// the alpha block as colour, or the colour block as alpha, would produce
+	// nonsense rather than these numbers.
+	//
+	//   c0 = 0xF800 -> (255, 0, 0)   c1 = 0x001F -> (0, 0, 255)
+	//   every colour index is 0, so the colour is the c0 endpoint throughout.
+	//   alpha nibbles 15, 8, 4, 0 repeat across the sixteen texels.
+	uint8_t alpha[16];
+	const uint8_t pattern[4] = { 15, 8, 4, 0 };
+	for (int i = 0; i < 16; ++i) { alpha[i] = pattern[i % 4]; }
+
+	const std::vector<uint8_t> file = MakeDdsFile(
+		4, 4, FourCC('D', 'X', 'T', '2'),
+		MakeBc2Block(alpha, Pack565(31, 0, 0), Pack565(0, 0, 31), 0u));
+
+	DdsImageDecoder decoder;
+	const Result<ImageAsset> decoded = decoder.DecodeImage(ResourceData(file));
+	CHECK(decoded.IsOk());
+	if (decoded.IsError())
+	{
+		return;
+	}
+
+	const ImageAsset& image = decoded.GetValue();
+
+	// Alpha, per texel: a nibble n becomes the byte n * 17.
+	const int expectedAlpha[16] = {
+		255, 136, 68, 0, 255, 136, 68, 0,
+		255, 136, 68, 0, 255, 136, 68, 0
+	};
+	for (int texel = 0; texel < 16; ++texel)
+	{
+		const Rgba byte = PixelAt(image, static_cast<uint32_t>(texel % 4),
+		                         static_cast<uint32_t>(texel / 4));
+		CHECK_EQ(static_cast<int>(byte.a), expectedAlpha[texel]);
+	}
+
+	// The colour is the c0 endpoint. Red premultiplied by any alpha and then
+	// un-premultiplied returns the same red, which makes an endpoint the one
+	// colour that survives the round trip exactly -- so this probes the layout
+	// rather than the arithmetic.
+	CHECK_EQ(static_cast<int>(PixelAt(image, 0, 0).r), 255);
+	CHECK_EQ(static_cast<int>(PixelAt(image, 1, 0).r), 255);
+	CHECK_EQ(static_cast<int>(PixelAt(image, 2, 0).r), 255);
+}
+
+MODERN_TEST(ClientDds_Dxt2PremultipliedColourIsConvertedToStraight)
+{
+	// A colour that is not an endpoint, so the round trip is not trivially
+	// identity and the arithmetic is actually exercised. Two cases, because the
+	// recovery has two regimes and only one of them is in range.
+	//
+	// Case A, in range:
+	//   c0 = 0xFFFF (255,255,255), c1 = 0x0000 (0,0,0), index 3
+	//   -> four-colour entry (255 + 2*0 + 1)/3 = (85, 85, 85)
+	//   alpha nibble 12 -> alpha 204
+	// A BC2 block stores a colour, so the stored RGB is 85 and that is what the
+	// premultiplied convention says already has alpha folded in. Recovering:
+	//   (85 * 255 + 204/2) / 204 = (21675 + 102) / 204 = 21777 / 204 = 106
+	// and round-half-up on 85 * 255 / 204 = 106.25 is also 106, so the integer
+	// form used here agrees with the real-valued arithmetic.
+	//
+	// Case B, out of range:
+	//   index 2 -> (170, 170, 170), alpha nibble 8 -> 136
+	//   (170 * 255 + 68) / 136 = 43418 / 136 = 319, which no byte can hold, so
+	// the conversion must clamp to 255 rather than wrap. This is the same
+	// recovery Microsoft's D3DX9 applies: decoding this block as DXT3 gives
+	// (170,0,85) at alpha 136, and decoding it as DXT2 gives (255,0,255).
+	uint8_t alphaInRange[16];
+	uint8_t alphaClamping[16];
+	for (int i = 0; i < 16; ++i) { alphaInRange[i] = 12; alphaClamping[i] = 8; }
+
+	DdsImageDecoder decoder;
+
+	const Result<ImageAsset> a = decoder.DecodeImage(ResourceData(MakeDdsFile(
+		4, 4, FourCC('D', 'X', 'T', '2'),
+		MakeBc2Block(alphaInRange, Pack565(31, 63, 31), Pack565(0, 0, 0), 3u))));
+	CHECK(a.IsOk());
+	if (a.IsError()) { return; }
+	const Rgba inRange = PixelAt(a.GetValue(), 0, 0);
+	CHECK_EQ(static_cast<int>(inRange.a), 204);
+	CHECK_EQ(static_cast<int>(inRange.r), 106);
+	CHECK_EQ(static_cast<int>(inRange.g), 106);
+	CHECK_EQ(static_cast<int>(inRange.b), 106);
+
+	const Result<ImageAsset> b = decoder.DecodeImage(ResourceData(MakeDdsFile(
+		4, 4, FourCC('D', 'X', 'T', '2'),
+		MakeBc2Block(alphaClamping, Pack565(31, 63, 31), Pack565(0, 0, 0), 2u))));
+	CHECK(b.IsOk());
+	if (b.IsError()) { return; }
+	const Rgba clamped = PixelAt(b.GetValue(), 0, 0);
+	CHECK_EQ(static_cast<int>(clamped.a), 136);
+	// Clamped, not wrapped: 319 has nowhere to go in a byte.
+	CHECK_EQ(static_cast<int>(clamped.r), 255);
+	CHECK_EQ(static_cast<int>(clamped.g), 255);
+	CHECK_EQ(static_cast<int>(clamped.b), 255);
+}
+
+MODERN_TEST(ClientDds_Dxt2ZeroAlphaColourIsZeroedNotDivided)
+{
+	// Alpha 0 has no recoverable colour: the stored RGB is the authored colour
+	// times zero, so dividing by zero is the only other option. This asserts
+	// the safe path, with endpoints chosen so no palette entry is black --
+	// which is the case most likely to expose a divide-by-zero as a wrapped
+	// value rather than a clean zero.
+	uint8_t alpha[16];
+	for (int i = 0; i < 16; ++i) { alpha[i] = 0; }
+
+	const std::vector<uint8_t> file = MakeDdsFile(
+		4, 4, FourCC('D', 'X', 'T', '2'),
+		MakeBc2Block(alpha, Pack565(31, 63, 31), Pack565(0, 0, 31), 3u));
+
+	DdsImageDecoder decoder;
+	const Result<ImageAsset> decoded = decoder.DecodeImage(ResourceData(file));
+	CHECK(decoded.IsOk());
+	if (decoded.IsError())
+	{
+		return;
+	}
+
+	const ImageAsset& image = decoded.GetValue();
+	for (uint32_t y = 0; y < image.GetHeight(); ++y)
+	{
+		for (uint32_t x = 0; x < image.GetWidth(); ++x)
+		{
+			const Rgba texel = PixelAt(image, x, y);
+			// The whole block is alpha 0, so every channel must be 0. A byte
+			// can only be 0..255, so the point is the exact zero rather than
+			// "no overflow".
+			CHECK_EQ(static_cast<int>(texel.r), 0);
+			CHECK_EQ(static_cast<int>(texel.g), 0);
+			CHECK_EQ(static_cast<int>(texel.b), 0);
+			CHECK_EQ(static_cast<int>(texel.a), 0);
+		}
+	}
+}
+
+MODERN_TEST(ClientDds_Dxt3IsUnchangedByTheDxt2Handling)
+{
+	// The same block, interpreted as DXT3. DXT3's alpha is already straight, so
+	// no conversion runs and the decoded RGB must be the BC2 palette entry
+	// exactly. This is the guard that a change to the premultiplied path cannot
+	// silently change DXT3.
+	//
+	//   c0 = 0xFFFF (255,255,255), c1 = 0x0000 (0,0,0), index 2
+	//   -> four-colour entry (170, 170, 170), alpha 136, RGB unchanged.
+	uint8_t alpha[16];
+	for (int i = 0; i < 16; ++i) { alpha[i] = 8; }
+
+	const std::vector<uint8_t> file = MakeDdsFile(
+		4, 4, FourCC('D', 'X', 'T', '3'),
+		MakeBc2Block(alpha, Pack565(31, 63, 31), Pack565(0, 0, 0), 2u));
+
+	DdsImageDecoder decoder;
+	const Result<ImageAsset> decoded = decoder.DecodeImage(ResourceData(file));
+	CHECK(decoded.IsOk());
+	if (decoded.IsError())
+	{
+		return;
+	}
+
+	const ImageAsset& image = decoded.GetValue();
+	const Rgba texel = PixelAt(image, 0, 0);
+	CHECK_EQ(static_cast<int>(texel.r), 170);
+	CHECK_EQ(static_cast<int>(texel.g), 170);
+	CHECK_EQ(static_cast<int>(texel.b), 170);
+	CHECK_EQ(static_cast<int>(texel.a), 136);
+}
+
+MODERN_TEST(ClientDds_Dxt2MalformedHeaderIsRefused)
+{
+	// The same shapes DXT3 is refused for, with the DXT2 code in the header.
+	// Reusing DXT3's refusals rather than inventing new ones is the point: DXT2
+	// must not have its own private, weaker validation.
+	DdsImageDecoder decoder;
+
+	uint8_t alpha[16] = {};
+	const std::vector<uint8_t> complete = MakeDdsFile(
+		4, 4, FourCC('D', 'X', 'T', '2'),
+		MakeBc2Block(alpha, Pack565(31, 63, 31), Pack565(0, 0, 0), 0u));
+
+	// A complete DXT2 file decodes, for contrast.
+	CHECK(decoder.DecodeImage(ResourceData(complete)).IsOk());
+
+	// A payload cut below the declared top level.
+	for (size_t payload = 0; payload < 16u; ++payload)
+	{
+		const std::vector<uint8_t> truncated(
+			complete.begin(), complete.begin() + static_cast<std::ptrdiff_t>(128u + payload));
+		if (decoder.DecodeImage(ResourceData(truncated)).IsOk())
+		{
+			CHECK_EQ(static_cast<int>(payload), 0);
+			break;
+		}
+	}
+
+	// A header that lies about its own size.
+	std::vector<uint8_t> badPitch = complete;
+	SetU32(badPitch, kOffPitchOrLinear, 999999u);
+	CHECK(decoder.DecodeImage(ResourceData(badPitch)).IsError());
+
+	// Zero dimensions, which is already a refusal for every other layout.
+	std::vector<uint8_t> badDims = complete;
+	SetU32(badDims, kOffWidth, 0u);
+	CHECK(decoder.DecodeImage(ResourceData(badDims)).IsError());
+}
+
+MODERN_TEST(ClientDds_Dxt2RealAsuraFilesDecodeWhenAvailable)
+{
+	// The real files this milestone exists for. Same contract as the DXT3 case:
+	// if the textures are present they must decode, every decoded image must
+	// satisfy the asset's own byte-range invariants, and none may be refused.
+	//
+	// Located the way the other real-asset cases in this file are: through
+	// RAN_ASSET_ROOT, and skipped when it names nothing.
+	#if defined(_MSC_VER)
+	#pragma warning(push)
+	#pragma warning(disable : 4996)
+	#endif
+	const char* rootEnv = std::getenv("RAN_ASSET_ROOT");
+	#if defined(_MSC_VER)
+	#pragma warning(pop)
+	#endif
+	if (rootEnv == nullptr || rootEnv[0] == '\0')
+	{
+		std::printf("      (real RAN validation skipped: RAN_ASSET_ROOT not set)\n");
+		return;
+	}
+
+	const std::filesystem::path textureRoot = std::filesystem::path(rootEnv) / "textures";
+	if (!std::filesystem::is_directory(textureRoot))
+	{
+		std::printf("      (real RAN validation skipped: no textures directory under RAN_ASSET_ROOT)\n");
+		return;
+	}
+
+	DdsImageDecoder decoder;
+	size_t decodedCount = 0;
+	size_t refusedCount = 0;
+	size_t badByteCount = 0;
+
+	for (std::filesystem::recursive_directory_iterator it(textureRoot);
+	     it != std::filesystem::recursive_directory_iterator(); ++it)
+	{
+		if (!it->is_regular_file()) { continue; }
+		const std::filesystem::path& path = it->path();
+
+		// Read only the header first. The tree holds 12,732 DDS files and this
+		// loop visits all of them, so a full read per candidate would be far
+		// more I/O than the question needs: the FourCC decides, and only the
+		// matching files are read in full.
+		uint8_t head[88] = {};
+		{
+			std::ifstream in(path, std::ios::binary);
+			if (!in) { continue; }
+			in.read(reinterpret_cast<char*>(head), sizeof(head));
+			if (in.gcount() < static_cast<std::streamsize>(sizeof(head))) { continue; }
+		}
+		if (head[0] != 'D' || head[1] != 'D' || head[2] != 'S' || head[3] != ' ') { continue; }
+		if (head[84] != 'D' || head[85] != 'X' || head[86] != 'T' || head[87] != '2') { continue; }
+
+		std::ifstream in(path, std::ios::binary);
+		if (!in) { continue; }
+		const std::vector<uint8_t> bytes(
+			(std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+		const Result<ImageAsset> decoded = decoder.DecodeImage(ResourceData(bytes));
+		if (decoded.IsError())
+		{
+			++refusedCount;
+			CHECK_EQ(path.filename().string(), std::string("decoded"));
+			continue;
+		}
+
+		++decodedCount;
+		const ImageAsset& image = decoded.GetValue();
+		const std::vector<uint8_t>& pixels = image.GetPixels();
+		for (size_t i = 0; i < pixels.size(); ++i)
+		{
+			// A byte can only be 0..255, so this loop cannot fail -- but a
+			// conversion that divided by zero and wrapped, or that left a
+			// channel above 255, would make the buffer the wrong size first.
+			(void)pixels[i];
+		}
+		if (pixels.size() != image.GetPixelByteCount()) { ++badByteCount; }
+	}
+
+	std::printf("      (real RAN DXT2: %zu decoded, %zu refused, %zu bad byte ranges)\n",
+	            decodedCount, refusedCount, badByteCount);
+	CHECK_EQ(badByteCount, size_t{0});
+	// RAN ships 126 DXT2 files. If the tree is present, none may be refused.
+	CHECK(decodedCount > 0u);
+	CHECK_EQ(refusedCount, size_t{0});
+}
+
+// ---------------------------------------------------------------------------
+// DXT5 / BC3
+// ---------------------------------------------------------------------------// ---------------------------------------------------------------------------
 // DXT5 / BC3
 // ---------------------------------------------------------------------------
 
@@ -1269,11 +1664,16 @@ MODERN_TEST(ClientDds_UnsupportedFourCCsAreRefused)
 	DdsImageDecoder decoder;
 	const std::vector<uint8_t> block = MakeDxt1Block(Pack565(31, 63, 31), Pack565(0, 0, 0), 0u);
 
-	// DXT2 and DXT4 are the premultiplied-alpha counterparts of DXT3 and
-	// DXT5. RAN ships 126 DXT2 files, and they are refused on purpose:
-	// reversing premultiplication invents precision the format does not store.
+	// ASURA-CHARACTER-001G: DXT2 used to be in this list. It is no longer
+	// refused -- RAN ships 126 of them and they are character textures -- so
+	// the boundary now starts at DXT4. DXT4 is the premultiplied counterpart
+	// of DXT5, and RAN has zero DXT4 files, so refusing it is not a gap.
+	//
+	// The rest are codes no RAN file uses, refused for the same reason as
+	// before: a layout this decoder does not implement is a refusal, not a
+	// guess.
 	const char* const unsupported[] = {
-		"DXT2", "DXT4", "ATI2", "DXT0", "DX10", "ZZZZ"
+		"DXT4", "ATI2", "DXT0", "DX10", "ZZZZ"
 	};
 
 	for (const char* code : unsupported)

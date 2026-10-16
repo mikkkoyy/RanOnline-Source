@@ -62,6 +62,7 @@ namespace
 	// bytes into one little-endian uint32, so each code below is its ASCII
 	// bytes reversed relative to how it is written in the file.
 	constexpr uint32_t kFourCcDxt1 = 0x31545844u;  // 'D','X','T','1'
+	constexpr uint32_t kFourCcDxt2 = 0x32545844u;  // 'D','X','T','2'  premultiplied BC2
 	constexpr uint32_t kFourCcDxt3 = 0x33545844u;  // 'D','X','T','3'
 	constexpr uint32_t kFourCcDxt5 = 0x35545844u;  // 'D','X','T','5'
 
@@ -102,10 +103,19 @@ namespace
 
 	// How the surface data of this file is stored. Decided once, from the
 	// header, before a single payload byte is read.
+	//
+	// ASURA-CHARACTER-001G: Dxt2 and Dxt3 decode through the same BC2 block
+	// path, so keeping them distinct is purely about alpha convention. Dxt3
+	// carries straight alpha and is handed on as decoded; Dxt2 carries
+	// premultiplied alpha, and the decoder converts it back before the image
+	// leaves here. The modern renderer has no premultiplied-alpha pipeline (it
+	// sets no blend state at all), so the conversion has to happen on this side
+	// of the boundary.
 	enum class DdsLayout : uint8_t
 	{
 		Unknown = 0,
 		Dxt1,
+		Dxt2,
 		Dxt3,
 		Dxt5,
 		Rgba32,
@@ -121,15 +131,15 @@ namespace
 		DdsLayout layout          = DdsLayout::Unknown;
 	};
 
-	// Maps the FourCC onto a layout. Anything else -- DXT2 and DXT4 among
-	// them, plus ATI2, RGTC, DX10 and every unknown code -- stays Unknown and
-	// is refused by the caller, so adding support later is a new enumerator
-	// here and nowhere else.
+	// Maps the FourCC onto a layout. Anything else -- DXT4 and every unknown
+	// code -- stays Unknown and is refused by the caller, so adding support
+	// later is a new enumerator here and nowhere else.
 	DdsLayout LayoutFromFourCC(uint32_t fourCC) noexcept
 	{
 		switch (fourCC)
 		{
 		case kFourCcDxt1: return DdsLayout::Dxt1;
+		case kFourCcDxt2: return DdsLayout::Dxt2;   // same blocks as Dxt3
 		case kFourCcDxt3: return DdsLayout::Dxt3;
 		case kFourCcDxt5: return DdsLayout::Dxt5;
 		default:          return DdsLayout::Unknown;
@@ -174,6 +184,7 @@ namespace
 		switch (layout)
 		{
 		case DdsLayout::Dxt1: return kDxt1BlockBytes;
+		case DdsLayout::Dxt2: return kDxt3BlockBytes;   // BC2 layout, as Dxt3
 		case DdsLayout::Dxt3: return kDxt3BlockBytes;
 		case DdsLayout::Dxt5: return kDxt5BlockBytes;
 		default:              return 0;
@@ -542,9 +553,12 @@ namespace
 				{
 					DecodeColorBlock(block, texels, true);
 				}
-				else if (header.layout == DdsLayout::Dxt3)
+				else if (header.layout == DdsLayout::Dxt3 || header.layout == DdsLayout::Dxt2)
 				{
 					// Eight bytes of explicit alpha, then the colour block.
+					// DXT2 and DXT3 share the BC2 block layout byte for byte;
+					// they differ only in what the alpha is understood to mean,
+					// which is resolved after the decode, in DecodeImage.
 					DecodeExplicitAlpha(block, texels);
 					DecodeColorBlock(block + 8, texels, false);
 				}
@@ -606,6 +620,54 @@ namespace
 			out[1] = in[1];
 			out[2] = in[2];
 			out[3] = in[3];
+		}
+	}
+
+	// ASURA-CHARACTER-001G: converts a decoded premultiplied-alpha image into
+	// straight alpha, in place.
+	//
+	// DXT2 (BC2 premultiplied) stores RGB already multiplied by alpha, so the
+	// colour channels of a translucent texel are deliberately darkened by its
+	// own alpha. This client's pipeline cannot present that as authored: the
+	// renderer sets no blend state at all (there is no OMSetBlendState call
+	// anywhere in the codebase), so a meshed section's texels reach the output
+	// merger unblended and the premultiplied colour would be written straight
+	// through, making every translucent region too dark. Straightening at this
+	// boundary is the smallest change that keeps every other path untouched.
+	//
+	// The recovery is `rgb_straight = round(rgb_premultiplied * 255 / alpha)`,
+	// clamped to the byte range. This is only ever exact when the authored
+	// straight colour was a multiple that survived 4-bit alpha quantisation, so
+	// precision is bounded by the format, not by this arithmetic -- no
+	// promise of pixel-perfect reconstruction is made.
+	//
+	// alpha == 0 has no recoverable colour (the product was zero no matter what
+	// the authored colour was), so RGB is written as zero rather than divided by
+	// zero.
+	void UnpremultiplyAlpha(std::vector<uint8_t>& pixels) noexcept
+	{
+		const size_t texelCount = pixels.size() / 4u;
+		for (size_t texel = 0; texel < texelCount; ++texel)
+		{
+			uint8_t* texelBytes = pixels.data() + texel * 4u;
+			const uint32_t alpha = texelBytes[3];
+			if (alpha == 0u)
+			{
+				texelBytes[0] = 0;
+				texelBytes[1] = 0;
+				texelBytes[2] = 0;
+				continue;
+			}
+
+			for (int ch = 0; ch < 3; ++ch)
+			{
+				const uint32_t channel = texelBytes[ch];
+				// (channel * 255 + alpha / 2) / alpha rounds to nearest.
+				const uint32_t recovered =
+					(channel * 255u + (alpha / 2u)) / alpha;
+				texelBytes[ch] = static_cast<uint8_t>(
+					recovered > 255u ? 255u : recovered);
+			}
 		}
 	}
 
@@ -674,6 +736,15 @@ Result<ImageAsset> DdsImageDecoder::DecodeImage(const ResourceData& data)
 	else
 	{
 		DecodeCompressed(source, header, pixels);
+
+		// ASURA-CHARACTER-001G: DXT2 is the only premultiplied layout, so this
+		// is the only place the conversion runs. DXT3 decodes through the same
+		// BC2 path and is deliberately left as decoded -- its alpha is already
+		// straight, and straightening it again would corrupt its colours.
+		if (header.layout == DdsLayout::Dxt2)
+		{
+			UnpremultiplyAlpha(pixels);
+		}
 	}
 
 	// Built through Create, so the same ceilings and the same exact-size rule
