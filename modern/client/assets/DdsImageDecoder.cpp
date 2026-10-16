@@ -357,23 +357,60 @@ namespace
 	// then call this with dxt1Alpha false, so the colour block must leave the
 	// fourth byte of each texel exactly as it found it -- overwriting it with
 	// an opaque 255 is how a transparent RAN texture silently turns solid.
+	//
+	// ASURA-CHARACTER-001E: the derived colours are computed PER CHANNEL on
+	// the decoded 8-bit values.
+	//
+	// They used to be computed on the packed 5:6:5 integers:
+	//
+	//     mid    = (c0 + c1) / 2
+	//     third0 = (2 * c0 + c1) / 3
+	//     third1 = (c0 + 2 * c1) / 3
+	//
+	// Adding two packed 5:6:5 values adds their bit fields together, so one
+	// channel can carry into the next and a colour that is nowhere in the block
+	// comes out. A single field's surplus is amplified on the way through
+	// Expand565 as well, because the 6-bit green field maps to a wider byte.
+	//
+	// The example that exposed it is the first block of the real
+	// `textures/char/m1_hb_leg.dds`, c0 = 0x1063 and c1 = 0x0882. Index 3 is
+	// `third1`, which the packed form produced as 0x0B22: green 25 instead of
+	// 3, i.e. 101 where 12 belongs, from endpoints whose green never left
+	// 12..16. Across the five Brawler atlases 93-98% of the derived colours were
+	// wrong, by up to 362 of 255, and the body rendered magenta with green legs.
+	//
+	// BC1 interpolation is defined on the decoded 8-bit channels, so each field
+	// is expanded before the arithmetic and no carry can cross a boundary. The
+	// weights, the endpoint ordering rule and the transparent-black entry are
+	// unchanged.
 	void DecodeColorBlock(const uint8_t* block, uint8_t* texels, bool dxt1Alpha) noexcept
 	{
 		const uint16_t c0 = ReadU16(block);
 		const uint16_t c1 = ReadU16(block + 2);
 		const uint32_t indices = ReadU32(block + 4);
 
+		uint8_t rgb0[3];
+		uint8_t rgb1[3];
+		Expand565(c0, rgb0);
+		Expand565(c1, rgb1);
+
 		uint8_t palette[4][4];
-		Expand565(c0, palette[0]);
+		for (int ch = 0; ch < 3; ++ch)
+		{
+			palette[0][ch] = rgb0[ch];
+			palette[1][ch] = rgb1[ch];
+		}
 		palette[0][3] = 0xFF;
-		Expand565(c1, palette[1]);
 		palette[1][3] = 0xFF;
 
 		if (dxt1Alpha && c0 <= c1)
 		{
 			// Three colours plus transparency: 2 = halfway, 3 = fully clear.
-			const uint16_t mid = static_cast<uint16_t>((c0 + c1) / 2u);
-			Expand565(mid, palette[2]);
+			for (int ch = 0; ch < 3; ++ch)
+			{
+				palette[2][ch] = static_cast<uint8_t>(
+					(static_cast<uint32_t>(rgb0[ch]) + rgb1[ch] + 1u) / 2u);
+			}
 			palette[2][3] = 0xFF;
 			palette[3][0] = 0;
 			palette[3][1] = 0;
@@ -383,13 +420,20 @@ namespace
 		else
 		{
 			// Four opaque colours at one and two thirds of the way between the
-			// endpoints. The arithmetic is on the 5:6:5 values, as the format
-			// specifies, and the result is expanded afterwards.
-			const uint16_t third0 = static_cast<uint16_t>((2u * c0 + c1) / 3u);
-			const uint16_t third1 = static_cast<uint16_t>((c0 + 2u * c1) / 3u);
-			Expand565(third0, palette[2]);
+			// endpoints. The arithmetic is per channel on the decoded 8-bit
+			// values, so the 5:6:5 fields never mix. The `+ 1` halves make the
+			// quotient round to nearest, which is what D3DX9's float-weighting
+			// path lands on; truncation would sit one LSB duller.
+			for (int ch = 0; ch < 3; ++ch)
+			{
+				palette[2][ch] = static_cast<uint8_t>(
+					(2u * static_cast<uint32_t>(rgb0[ch]) +
+					 static_cast<uint32_t>(rgb1[ch]) + 1u) / 3u);
+				palette[3][ch] = static_cast<uint8_t>(
+					(static_cast<uint32_t>(rgb0[ch]) +
+					 2u * static_cast<uint32_t>(rgb1[ch]) + 1u) / 3u);
+			}
 			palette[2][3] = 0xFF;
-			Expand565(third1, palette[3]);
 			palette[3][3] = 0xFF;
 		}
 

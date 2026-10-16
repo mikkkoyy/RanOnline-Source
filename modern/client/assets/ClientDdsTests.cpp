@@ -96,6 +96,19 @@ namespace
 		return static_cast<uint16_t>(((r & 0x1Fu) << 11) | ((g & 0x3Fu) << 5) | (b & 0x1Fu));
 	}
 
+	// The inverse of Pack565, to the 8 bytes the decoder is expected to land
+	// on: each field expanded by bit replication, which is exact for 31 and 63.
+	// Written separately from the decoder so a case can state what it expects.
+	void Unpack565(uint16_t packed, uint8_t out[3])
+	{
+		const uint32_t r = (packed >> 11) & 0x1Fu;
+		const uint32_t g = (packed >> 5) & 0x3Fu;
+		const uint32_t b = packed & 0x1Fu;
+		out[0] = static_cast<uint8_t>((r << 3) | (r >> 2));
+		out[1] = static_cast<uint8_t>((g << 2) | (g >> 4));
+		out[2] = static_cast<uint8_t>((b << 3) | (b >> 2));
+	}
+
 	// The 128-byte header, with a compressed FourCC pixel format. Everything
 	// else is left at the values a writer would use: the two structure sizes at
 	// their specified values, caps claiming a plain 2D texture, and the linear
@@ -314,17 +327,24 @@ namespace
 	//   red   0xF800 -> (255,   0,   0)
 	//
 	// The two interpolated colours between white and black, which is the
-	// four-colour DXT1 case (c0 > c1):
-	//   (2*0xFFFF + 0x0000)/3 = 0xAAAA -> (173,  85,  82)
-	//   (0xFFFF + 2*0x0000)/3 = 0x5555 -> ( 82, 170, 173)
-	// and the three-colour case's halfway point, between black and white:
-	//   (0x0000 + 0xFFFF)/2    = 0x7FFF -> (123, 255, 255)
+	// four-colour DXT1 case (c0 > c1), and the three-colour case's halfway
+	// point between black and white. Derived per channel below.
 	constexpr uint8_t kWhite[3]  = { 255, 255, 255 };
 	constexpr uint8_t kRed[3]    = { 255, 0, 0 };
 	constexpr uint8_t kBlack[3]  = { 0, 0, 0 };
-	constexpr uint8_t kThird0[3] = { 173, 85, 82 };
-	constexpr uint8_t kThird1[3] = { 82, 170, 173 };
-	constexpr uint8_t kMid[3]    = { 123, 255, 255 };
+	// ASURA-CHARACTER-001E: these were the values of the PACKED arithmetic --
+	// {173,85,82}, {82,170,173} and {123,255,255} -- in which the 5:6:5 fields
+	// carried into one another. They pinned the defect rather than the format.
+	//
+	// Each is now one channel at a time on the decoded 8-bit endpoints, rounded
+	// to nearest, which is what Microsoft's D3DX9 decoder produces for these same
+	// blocks:
+	//   third0 = (2*255 + 0 + 1)/3 = (170, 170, 170)
+	//   third1 = (255 + 2*0 + 1)/3 = ( 85,  85,  85)
+	//   mid    = (0 + 255 + 1)/2   = (128, 128, 128)
+	constexpr uint8_t kThird0[3] = { 170, 170, 170 };
+	constexpr uint8_t kThird1[3] = { 85, 85, 85 };
+	constexpr uint8_t kMid[3]    = { 128, 128, 128 };
 
 	// Fails if any texel of the image differs from the given colour.
 	void CheckAllTexels(const ImageAsset& image, const uint8_t rgb[3], uint8_t alpha)
@@ -414,16 +434,227 @@ MODERN_TEST(ClientDds_Dxt1IndicesSelectEveryPaletteEntry)
 	CHECK_EQ(static_cast<int>(second.a), 255);
 
 	const Rgba third = PixelAt(image, 0, 2);
-	CHECK_EQ(static_cast<int>(third.r), 173);
-	CHECK_EQ(static_cast<int>(third.g), 85);
-	CHECK_EQ(static_cast<int>(third.b), 82);
+	CHECK_EQ(static_cast<int>(third.r), 170);
+	CHECK_EQ(static_cast<int>(third.g), 170);
+	CHECK_EQ(static_cast<int>(third.b), 170);
 	CHECK_EQ(static_cast<int>(third.a), 255);
 
 	const Rgba fourth = PixelAt(image, 0, 3);
-	CHECK_EQ(static_cast<int>(fourth.r), 82);
-	CHECK_EQ(static_cast<int>(fourth.g), 170);
-	CHECK_EQ(static_cast<int>(fourth.b), 173);
+	CHECK_EQ(static_cast<int>(fourth.r), 85);
+	CHECK_EQ(static_cast<int>(fourth.g), 85);
+	CHECK_EQ(static_cast<int>(fourth.b), 85);
 	CHECK_EQ(static_cast<int>(fourth.a), 255);
+}
+
+// ---------------------------------------------------------------------------
+// ASURA-CHARACTER-001E: channel carry in the interpolated palette
+// ---------------------------------------------------------------------------
+//
+// The derived DXT colours were computed on the packed 5:6:5 endpoints, so the
+// fields of the sum carried into one another and colours that appear nowhere in
+// the block came out. Measured on the real ASURA atlases this corrupted 93-98%
+// of the derived colours, by up to 362 of 255.
+//
+// Every expected value below is derived by hand, channel at a time, from the
+// decoded 8-bit endpoints -- never by running the decoder. The raw D3DX
+// transcription lines record what Microsoft's D3DX9 decoder produced for the
+// identical block, so the agreement is observed rather than assumed.
+
+// The block that exposed the bug: the first block of the real
+// `textures/char/m1_hb_leg.dds`.
+//
+//   c0 = 0x1063 -> r5=2,  g6=3,  b5=3  -> (16, 12, 24)
+//   c1 = 0x0882 -> r5=1,  g6=4,  b5=2  -> ( 8, 16, 16)
+//
+// c0 > c1, so the four-colour form applies and index 3 is the entry
+// `(c0 + 2*c1) / 3`:
+//   r = (16 + 2*8 + 1)/3 = 11
+//   g = (12 + 2*16 + 1)/3 = 15
+//   b = (24 + 2*16 + 1)/3 = 19
+//
+// Summed as packed 5:6:5 integers -- the defect -- (c0 + 2*c1)/3 = 0x0B22:
+//   r5=1, g6=25, b5=2 -> (8, 101, 16)
+// green 101 where the endpoints' green never left 12..16, which is the carry:
+// the red and blue surplus spilled into the 6-bit green field and Expand565
+// widened it again on the way out.
+//
+// D3DX9 on the same block: (11, 15, 20, 255). Red and green agree exactly;
+// blue differs by one because D3DX9 expands the 5:6:5 endpoints by ceiling
+// where this decoder uses bit replication. The assertion below is the
+// spec-correct value under this decoder's expansion, and the point of the case
+// is that no channel is corrupted.
+constexpr uint16_t kCarryC0 = 0x1063;
+constexpr uint16_t kCarryC1 = 0x0882;
+
+// Derived per channel from the 8-bit endpoints (16,12,24) and (8,16,16):
+//   third1 = ((16+16+1)/3, (12+32+1)/3, (24+32+1)/3) = (11, 15, 19)
+constexpr uint8_t kCarryThird1[3] = { 11, 15, 19 };
+
+// The midpoint of the 3-colour pair (8,4,8) and (24,8,16):
+//   mid = ((8+24+1)/2, (4+8+1)/2, (8+16+1)/2) = (16, 6, 12)
+constexpr uint8_t kMidCarry[3] = { 16, 6, 12 };
+
+MODERN_TEST(ClientDds_Dxt1DerivedColourDoesNotCarryBetweenChannels)
+{
+	// All sixteen indices are 3, so every texel is the two-thirds blend and one
+	// wrong channel is visible immediately.
+	const uint32_t indices = 0xFFFFFFFFu;
+
+	const std::vector<uint8_t> file = MakeDdsFile(
+		4, 4, FourCC('D', 'X', 'T', '1'),
+		MakeDxt1Block(kCarryC0, kCarryC1, indices));
+
+	DdsImageDecoder decoder;
+	const Result<ImageAsset> decoded = decoder.DecodeImage(ResourceData(file));
+	CHECK(decoded.IsOk());
+	if (decoded.IsError())
+	{
+		return;
+	}
+
+	CheckAllTexels(decoded.GetValue(), kCarryThird1, 0xFF);
+}
+
+MODERN_TEST(ClientDds_Dxt1DerivedColourStaysInsideTheEndpointRange)
+{
+	// The same block, but checking the invariant directly rather than the
+	// expected bytes: a derived colour built from the endpoints can never lie
+	// outside the hull of the two endpoint channels. A carry crosses that
+	// boundary, so this is the property the fix restores.
+	const uint16_t c0 = kCarryC0;
+	const uint16_t c1 = kCarryC1;
+	uint8_t rgb0[3];
+	uint8_t rgb1[3];
+	Unpack565(c0, rgb0);
+	Unpack565(c1, rgb1);
+
+	const std::vector<uint8_t> file = MakeDdsFile(
+		4, 4, FourCC('D', 'X', 'T', '1'),
+		MakeDxt1Block(c0, c1, 0xFFFFFFFFu));
+
+	DdsImageDecoder decoder;
+	const Result<ImageAsset> decoded = decoder.DecodeImage(ResourceData(file));
+	CHECK(decoded.IsOk());
+	if (decoded.IsError())
+	{
+		return;
+	}
+
+	const ImageAsset& image = decoded.GetValue();
+	for (uint32_t y = 0; y < image.GetHeight(); ++y)
+	{
+		for (uint32_t x = 0; x < image.GetWidth(); ++x)
+		{
+			const Rgba texel = PixelAt(image, x, y);
+			for (int ch = 0; ch < 3; ++ch)
+			{
+				const int v = (ch == 0) ? texel.r : ((ch == 1) ? texel.g : texel.b);
+				const int lo = (ch == 0) ? rgb0[0] : ((ch == 1) ? rgb0[1] : rgb0[2]);
+				const int hi = (ch == 0) ? rgb1[0] : ((ch == 1) ? rgb1[1] : rgb1[2]);
+				const int low = lo < hi ? lo : hi;
+				const int high = lo < hi ? hi : lo;
+				CHECK(v >= low);
+				CHECK(v <= high);
+			}
+		}
+	}
+}
+
+MODERN_TEST(ClientDds_Dxt1MidpointDoesNotCarryBetweenChannels)
+{
+	// The halfway entry is the other place the packed arithmetic leaked. c0 <=
+	// c1, so the three-colour form applies and index 2 is the midpoint:
+	//
+	//   c0 = 0x0821 -> r5=1, g6=1, b5=1 -> (8, 4,  8)
+	//   c1 = 0x1842 -> r5=3, g6=2, b5=2 -> (24, 8, 16)
+	//
+	//   mid = ((8+24)/2, (4+8)/2, (8+16)/2) rounded = (16, 6, 12)
+	//
+	// Packed: (c0 + c1)/2 = 0x1031 -> r5=2, g6=1, b5=17 -> (16, 4, 140).
+	// Blue is 140 where the endpoints' blue never left 8..16.
+	//
+	// D3DX9 on the same block: (17, 7, 13, 255), its endpoint expansion again
+	// one higher than bit replication; the arithmetic here is this decoder's
+	// own expansion, and the spread between the two is one LSB, not 128.
+	const uint16_t c0 = 0x0821;
+	const uint16_t c1 = 0x1842;
+	uint32_t indices = 0u;
+	for (uint32_t texel = 0; texel < 16u; ++texel)
+	{
+		indices |= 2u << (texel * 2u);
+	}
+
+	const std::vector<uint8_t> file = MakeDdsFile(
+		4, 4, FourCC('D', 'X', 'T', '1'),
+		MakeDxt1Block(c0, c1, indices));
+
+	DdsImageDecoder decoder;
+	const Result<ImageAsset> decoded = decoder.DecodeImage(ResourceData(file));
+	CHECK(decoded.IsOk());
+	if (decoded.IsError())
+	{
+		return;
+	}
+
+	CheckAllTexels(decoded.GetValue(), kMidCarry, 0xFF);
+}
+
+MODERN_TEST(ClientDds_Dxt1DerivedColourMatchesByteArithmeticOnEveryChannel)
+{
+	// Exhaustively over a spread of endpoint pairs, the four-colour derived
+	// entries must equal the per-channel quotient. This is the tightest form of
+	// the fix: it pins the arithmetic itself, not one chosen example.
+	const uint16_t endpoints[] = {
+		0x0000, 0x1082, 0x2121, 0x4210, 0x7BEF, 0xFFFF, 0x1063, 0x0821,
+		0x1842, 0x5ADF, 0x03E0, 0xE0C3, 0x39E7, 0xC249
+	};
+
+	size_t tested = 0;
+	for (uint16_t c0 : endpoints)
+	{
+		for (uint16_t c1 : endpoints)
+		{
+			// Only the four-colour form is checked here, so skip the pairs the
+			// format would treat as the three-colour form.
+			if ((c0 & 1u) > (c1 & 1u)) { continue; }
+			if (c0 <= c1) { continue; }
+
+			uint8_t rgb0[3];
+			uint8_t rgb1[3];
+			Unpack565(c0, rgb0);
+			Unpack565(c1, rgb1);
+			uint8_t expect[3];
+			for (int ch = 0; ch < 3; ++ch)
+			{
+				expect[ch] = static_cast<uint8_t>(
+					(static_cast<uint32_t>(rgb0[ch]) +
+					 2u * static_cast<uint32_t>(rgb1[ch]) + 1u) / 3u);
+			}
+
+			const std::vector<uint8_t> file = MakeDdsFile(
+				4, 4, FourCC('D', 'X', 'T', '1'),
+				MakeDxt1Block(c0, c1, 0xFFFFFFFFu));
+
+			DdsImageDecoder decoder;
+			const Result<ImageAsset> decoded = decoder.DecodeImage(ResourceData(file));
+			if (decoded.IsError())
+			{
+				CHECK(decoded.IsOk());
+				return;
+			}
+
+			const Rgba texel = PixelAt(decoded.GetValue(), 0, 0);
+			CHECK_EQ(static_cast<int>(texel.r), static_cast<int>(expect[0]));
+			CHECK_EQ(static_cast<int>(texel.g), static_cast<int>(expect[1]));
+			CHECK_EQ(static_cast<int>(texel.b), static_cast<int>(expect[2]));
+			CHECK_EQ(static_cast<int>(texel.a), 255);
+			++tested;
+		}
+	}
+
+	// The filter above must leave a worthwhile number of pairs; if it ever
+	// selects none, the case silently proves nothing.
+	CHECK(tested > 20u);
 }
 
 MODERN_TEST(ClientDds_Dxt1ThreeColourModeYieldsTransparency)
@@ -458,9 +689,9 @@ MODERN_TEST(ClientDds_Dxt1ThreeColourModeYieldsTransparency)
 	CHECK_EQ(static_cast<int>(clear.a), 0);
 
 	const Rgba mid = PixelAt(image, 1, 0);
-	CHECK_EQ(static_cast<int>(mid.r), 123);
-	CHECK_EQ(static_cast<int>(mid.g), 255);
-	CHECK_EQ(static_cast<int>(mid.b), 255);
+	CHECK_EQ(static_cast<int>(mid.r), 128);
+	CHECK_EQ(static_cast<int>(mid.g), 128);
+	CHECK_EQ(static_cast<int>(mid.b), 128);
 	CHECK_EQ(static_cast<int>(mid.a), 255);
 
 	const Rgba black = PixelAt(image, 2, 0);
@@ -547,6 +778,30 @@ MODERN_TEST(ClientDds_Dxt3ColourBlockIgnoresTheDxt1TransparencyRule)
 	const ImageAsset& image = decoded.GetValue();
 	CheckAllTexels(image, kThird1, 255);
 }
+MODERN_TEST(ClientDds_Dxt3ColourBlockDoesNotCarryBetweenChannels)
+{
+	// The same carry block, in DXT3. The format carries alpha elsewhere, so the
+	// colour block always uses the four-colour form and index 3 is the
+	// two-thirds blend -- the entry the packed arithmetic corrupted. The alpha
+	// bytes are all 0xFF so the colour case cannot be confused with one.
+	const uint8_t alphaBytes[8] = { 0xFF, 0xFF, 0xFF, 0xFF,
+	                                0xFF, 0xFF, 0xFF, 0xFF };
+	const uint32_t indices = 0xFFFFFFFFu;
+
+	const std::vector<uint8_t> file = MakeDdsFile(
+		4, 4, FourCC('D', 'X', 'T', '3'),
+		MakeDxt3Block(alphaBytes, kCarryC0, kCarryC1, indices));
+
+	DdsImageDecoder decoder;
+	const Result<ImageAsset> decoded = decoder.DecodeImage(ResourceData(file));
+	CHECK(decoded.IsOk());
+	if (decoded.IsError())
+	{
+		return;
+	}
+
+	CheckAllTexels(decoded.GetValue(), kCarryThird1, 0xFF);
+}
 
 // ---------------------------------------------------------------------------
 // DXT5 / BC3
@@ -631,6 +886,34 @@ MODERN_TEST(ClientDds_Dxt5SixValueTableHasAFullyTransparentEntry)
 	CHECK_EQ(static_cast<int>(PixelAt(image, 1, 1).a), 212);
 	CHECK_EQ(static_cast<int>(PixelAt(image, 2, 1).a), 255);
 	CHECK_EQ(static_cast<int>(PixelAt(image, 3, 1).a), 0);
+}
+
+MODERN_TEST(ClientDds_Dxt5ColourBlockDoesNotCarryBetweenChannels)
+{
+	// The carry block, in DXT5. Alpha here is a0 = a1 = 255, so a0 > a1 is
+	// false, the six-value table applies, and index 0 yields a0 = 255: every
+	// texel is opaque. The colour channel is what this case is about, and it
+	// must come out of the shared colour block unchanged by the fact that
+	// DXT5 runs its alpha path first.
+	//
+	// Colour: the four-colour form's two-thirds blend of
+	// (16,12,24) and (8,16,16) = (11, 15, 19), as in the DXT1 and DXT3 cases.
+	const uint8_t indexBytes[6] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	const uint32_t indices = 0xFFFFFFFFu;
+
+	const std::vector<uint8_t> file = MakeDdsFile(
+		4, 4, FourCC('D', 'X', 'T', '5'),
+		MakeDxt5Block(255, 255, indexBytes, kCarryC0, kCarryC1, indices));
+
+	DdsImageDecoder decoder;
+	const Result<ImageAsset> decoded = decoder.DecodeImage(ResourceData(file));
+	CHECK(decoded.IsOk());
+	if (decoded.IsError())
+	{
+		return;
+	}
+
+	CheckAllTexels(decoded.GetValue(), kCarryThird1, 0xFF);
 }
 
 // ---------------------------------------------------------------------------
