@@ -69,6 +69,7 @@ target_link_libraries(ModernClientApp PRIVATE
     ModernClientAssetUpload
     ModernClientAssets
     ModernClientResources
+    ModernWorldStaticMesh
     d3d11
     dxgi
     d3dcompiler

@@ -60,6 +60,7 @@
 #include "assets/RanMeshSource.h"
 #include "assets/SkinPieceContainer.h"
 #include "assets/TextureCache.h"
+#include "assets/WorldTerrainMesh.h"
 #include "assets/TextureLoader.h"
 #include "assets/XMeshDecoder.h"
 #include "input/InputEvents.h"
@@ -67,6 +68,8 @@
 #include "input/platform/Win32InputSource.h"
 #include "input/platform/Win32PlatformEvents.h"
 #include "math/Vector3.h"
+#include "WorldStaticMesh.h"
+#include "rendering/CameraMatrices.h"
 #include "rendering/D3D11AssetUploader.h"
 #include "rendering/D3D11Renderer.h"
 #include "rendering/Renderer.h"
@@ -120,6 +123,10 @@ using Modern::Client::RendererConfig;
 using Modern::Client::ResourceManager;
 using Modern::Client::ResourceId;
 using Modern::Client::ResourceData;
+using Modern::Client::TerrainMeshSet;
+using Modern::Client::BuildTerrainMeshes;
+using Modern::Result;
+using Modern::Status;
 using Modern::Status;
 using Modern::Client::SkinPiece;
 using Modern::Client::SkinPieceContainer;
@@ -132,6 +139,15 @@ using Modern::Client::XMeshDecoder;
 
 namespace
 {
+
+// WORLD-PLAYABLE-001B: the matrix helpers now live in rendering/CameraMatrices.h
+// so they can be tested without a device and reused by a future Vulkan or
+// Metal backend. These bring them into this file.
+using ::Modern::Client::BuildIdentityRowMajor;
+using ::Modern::Client::BuildLookAtRowMajor;
+using ::Modern::Client::BuildPerspectiveRowMajor;
+using ::Modern::Client::FrameBox;
+using ::Modern::Client::SceneCamera;
 
 constexpr uint32_t kClientWidth  = 960;
 constexpr uint32_t kClientHeight = 540;
@@ -171,17 +187,19 @@ void PrintUsage()
 		"\n"
 		"Usage:\n"
 		"  ModernClientApp.exe [--asset-root <path>] [--mesh <path>] [--skin-piece <path>]\n"
+		"  ModernClientApp.exe --field <name> [--asset-root <path>]\n"
 		"  ModernClientApp.exe --audit-textures [--asset-root <path>] [--report <json>]\n"
-		"                       [--decode-limit <n-per-format>]\n"
 		"\n"
 		"  --asset-root <path>            RAN client tree to load data from\n"
 		"                                 (default: $RAN_ASSET_ROOT, then the current directory)\n"
 		"  --mesh <path>                  Mesh to render, relative to the asset root\n"
 		"                                 (default: data/skin/m_luffy_timeskip.mxf)\n"
+		"  --field <name>                 ASURA field to render, read from\n"
+		"                                 <root>/data/map/<name>.wld0, e.g. --field bambooforest.\n"
+		"                                 Overrides --mesh and --skin-piece when both are given.\n"
 		"  --skin-piece <path>            RAN wearing file under data/skinobject to take the\n"
 		"                                 mesh from, e.g. data/skinobject/CUN0001_m.cps.\n"
 		"                                 Overrides --mesh when both are given.\n"
-		"  --audit-textures               Headless: inventory the texture tree, report per-format\n"
 		"                                 counts, duplicate content and filename collisions, decode\n"
 		"                                 a bounded sample, and exit (no window, no GPU)\n"
 		"  --report <path>                Also write the full catalog as JSON\n"
@@ -335,46 +353,280 @@ int RunTextureAudit(const std::string& assetRoot, const std::string& reportPath,
 	return 0;
 }
 
-// Row-major left-handed look-at view matrix (the layout
-// D3D11Renderer's `#pragma pack_matrix(row_major)` shader expects).
-void BuildLookAtRowMajor(const Vector3& eye, const Vector3& target, const Vector3& up, float* out)
+
+// WORLD-PLAYABLE-001B: load one real ASURA field and draw it.
+//
+// The pipeline is the same one the character path uses, with the terrain
+// reader in place of the X decoder:
+//
+//   .wld0 file -> FileSystemResourceProvider -> WorldStaticMeshReader
+//              -> BuildTerrainMeshes -> MeshAsset -> D3D11AssetUploader
+//              -> IRenderer::DrawIndexedMesh
+//
+// No graphics call happens in the parser or in BuildTerrainMeshes; they only
+// produce the same CPU-side `MeshAsset` every other mesh in the client already
+// produces. Everything D3D-specific is here and in the renderer.
+//
+// Takes ownership of the platform and input source, exactly as the character
+// path does, and returns the process exit code.
+int RunField(const std::string& assetRoot,
+             const std::string& fieldName,
+             std::unique_ptr<Win32PlatformEvents> platform,
+             std::unique_ptr<Win32InputSource> inputSource,
+             InputSystem& inputSystem,
+             D3D11Renderer& renderer,
+             D3D11AssetUploader& uploader)
 {
-	const Vector3 zaxis = Normalize(target - eye);
-	const Vector3 xaxis = Normalize(Cross(up, zaxis));
-	const Vector3 yaxis = Cross(zaxis, xaxis);
+    namespace fs = std::filesystem;
 
-	out[0]  = xaxis.x; out[1]  = yaxis.x; out[2]  = zaxis.x; out[3]  = 0.0f;
-	out[4]  = xaxis.y; out[5]  = yaxis.y; out[6]  = zaxis.y; out[7]  = 0.0f;
-	out[8]  = xaxis.z; out[9]  = yaxis.z; out[10] = zaxis.z; out[11] = 0.0f;
-	out[12] = -Dot(xaxis, eye);
-	out[13] = -Dot(yaxis, eye);
-	out[14] = -Dot(zaxis, eye);
-	out[15] = 1.0f;
-}
+    // 1. Locate the field. RAN keeps field geometry beside the field metadata in
+    //    `data/map`, as `<name>.wld0` next to `<name>.wld`; the path is built
+    //    from the asset root so no client directory is ever compiled in.
+    std::string fieldSpec = fieldName;
+    if (fieldSpec.size() < 5 || fieldSpec.compare(fieldSpec.size() - 5, 5, ".wld0") != 0)
+    {
+        fieldSpec += ".wld0";
+    }
 
-// Row-major left-handed perspective projection matrix.
-void BuildPerspectiveRowMajor(float fovYRadians, float aspect, float nearPlane, float farPlane, float* out)
-{
-	const float cotHalfFov = 1.0f / std::tan(fovYRadians * 0.5f);
-	const float w = cotHalfFov / aspect;
-	const float h = cotHalfFov;
-	const float q = farPlane / (farPlane - nearPlane);
+    // The provider resolves a logical id against the asset root, and a logical id
+    // must be a canonical forward-slash relative path -- so the absolute path is
+    // only for the size check and for the log, and the id is the relative part.
+    const std::string fieldRelative = "data/map/" + fieldSpec;
+    const fs::path fieldPath = fs::path(assetRoot) / "data" / "map" / fieldSpec;
 
-	out[0]  = w; out[1]  = 0.0f; out[2]  = 0.0f; out[3]  = 0.0f;
-	out[4]  = 0.0f; out[5]  = h; out[6]  = 0.0f; out[7]  = 0.0f;
-	out[8]  = 0.0f; out[9]  = 0.0f; out[10] = q; out[11] = 1.0f;
-	out[12] = 0.0f; out[13] = 0.0f;
-	out[14] = -nearPlane * farPlane / (farPlane - nearPlane);
-	out[15] = 0.0f;
+    std::error_code sizeEc;
+    const uintmax_t fieldBytes = fs::file_size(fieldPath, sizeEc);
+    if (sizeEc)
+    {
+        Log("ModernClientApp: field '%s' was not found (looked at '%s')",
+            fieldSpec.c_str(), fieldPath.string().c_str());
+        Log("ModernClientApp: a field needs RAN_ASSET_ROOT or --asset-root, and a name that "
+            "exists in <root>/data/map, e.g. --field bambooforest");
+        return 1;
+    }
+
+    Log("ModernClientApp: field '%s' (%llu bytes)",
+        fieldPath.string().c_str(), static_cast<unsigned long long>(fieldBytes));
+
+    // Refuse before allocating: the reader's own ceiling is the authority, and
+    // a file larger than it is not something this client will try to hold.
+    if (fieldBytes == 0 || fieldBytes > ::Modern::Legacy::WorldStaticMeshReader::kMaxInputBytes)
+    {
+        Log("ModernClientApp: field is %llu bytes, outside the reader's supported range",
+            static_cast<unsigned long long>(fieldBytes));
+        return 1;
+    }
+
+    // 2. Read through the existing resource provider, not a bespoke file read,
+    //    so field loading goes through the same path every other asset uses.
+    FileSystemResourceProvider resourceProvider(assetRoot);
+    if (resourceProvider.Initialize().IsError())
+    {
+        Log("ModernClientApp: asset root '%s' is not a readable directory", assetRoot.c_str());
+        return 1;
+    }
+
+    const ::Modern::Result<::Modern::Client::ResourceId> fieldId = ::Modern::Client::ResourceId::Create(fieldRelative);
+    if (fieldId.IsError())
+    {
+        Log("ModernClientApp: field path '%s' is not a usable resource name (%s)",
+            fieldRelative.c_str(), fieldId.GetMessage());
+        return 1;
+    }
+
+    const ::Modern::Result<::Modern::Client::ResourceData> resource = resourceProvider.Load(fieldId.GetValue());
+    if (resource.IsError())
+    {
+        Log("ModernClientApp: could not read field '%s' (%s)",
+            fieldPath.string().c_str(), resource.GetMessage());
+        return 1;
+    }
+    const std::vector<uint8_t>& fieldData = resource.GetValue().GetBytes();
+    if (fieldData.size() != fieldBytes)
+    {
+        Log("ModernClientApp: read %zu bytes but the file is %llu bytes",
+            fieldData.size(), static_cast<unsigned long long>(fieldBytes));
+        return 1;
+    }
+
+    // 3. Parse, then convert to renderable meshes.
+    Result<::Modern::Legacy::WorldStaticMeshAsset> field =
+        ::Modern::Legacy::WorldStaticMeshReader().Decode(fieldData);
+    if (field.IsError())
+    {
+        Log("ModernClientApp: field '%s' was refused by the terrain reader (%s)",
+            fieldSpec.c_str(), field.GetMessage());
+        Log("ModernClientApp: an encrypted ('Default_Crypt') or truncated .wld0 cannot be "
+            "read by this client");
+        return 1;
+    }
+
+    const ::Modern::Legacy::WorldStaticMeshAsset& parsed = field.GetValue();
+    Log("ModernClientApp: parsed %zu mesh(es), %zu leaf record(s), %zu vertices, %zu indices",
+        parsed.totalMeshes(), parsed.totalChunks(),
+        parsed.totalVertices(), parsed.totalIndices());
+    Log("ModernClientApp: tile bounds max=(%.1f, %.1f, %.1f) min=(%.1f, %.1f, %.1f)",
+        parsed.tileBoundsMax[0], parsed.tileBoundsMax[1], parsed.tileBoundsMax[2],
+        parsed.tileBoundsMin[0], parsed.tileBoundsMin[1], parsed.tileBoundsMin[2]);
+    if (parsed.unsupportedFvfCount() != 0)
+    {
+        for (const ::Modern::Legacy::WorldStaticMeshAsset::UnsupportedFvfEntry& entry : parsed.unsupportedFvfs())
+        {
+            Log("ModernClientApp: WARNING FVF 0x%03x on %zu leaf/leaves was not modelled",
+                entry.fvf, entry.leaves);
+        }
+    }
+
+    Result<::Modern::Client::TerrainMeshSet> built = BuildTerrainMeshes(parsed);
+    if (built.IsError())
+    {
+        Log("ModernClientApp: field '%s' produced no renderable geometry (%s)",
+            fieldSpec.c_str(), built.GetMessage());
+        return 1;
+    }
+
+    const TerrainMeshSet& terrain = built.GetValue();
+    Log("ModernClientApp: %zu renderable mesh(es), %zu vertices, %zu indices",
+        terrain.meshes.size(), terrain.totalVertices, terrain.totalIndices);
+    Log("ModernClientApp: geometry bounds min=(%.1f, %.1f, %.1f) max=(%.1f, %.1f, %.1f)",
+        terrain.boundsMin.x, terrain.boundsMin.y, terrain.boundsMin.z,
+        terrain.boundsMax.x, terrain.boundsMax.y, terrain.boundsMax.z);
+    for (const TerrainMeshSet::SkipReason& reason : terrain.skipReasons)
+    {
+        Log("ModernClientApp: %zu leaf/leaves skipped (%s)", reason.count, reason.reason);
+    }
+
+    // 4. Upload every leaf. A failed upload is reported and skipped; the field
+    //    still renders with whatever reached the GPU, and the exit code says so.
+    std::vector<::Modern::Client::MeshResourceHandle> uploaded;
+    uploaded.reserve(terrain.meshes.size());
+    size_t uploadFailures = 0;
+    for (const MeshAsset& mesh : terrain.meshes)
+    {
+        Result<::Modern::Client::MeshResourceHandle> handle = uploader.UploadMesh(mesh);
+        if (handle.IsError() || !handle.GetValue().IsValid())
+        {
+            ++uploadFailures;
+            continue;
+        }
+        uploaded.push_back(handle.GetValue());
+    }
+
+    if (uploaded.empty())
+    {
+        Log("ModernClientApp: no leaf of '%s' could be uploaded to the GPU", fieldSpec.c_str());
+        return 1;
+    }
+    Log("ModernClientApp: uploaded %zu mesh(es) to the GPU, %zu upload(s) failed",
+        uploaded.size(), uploadFailures);
+
+    // 5. A camera that frames the geometry we actually kept.
+    //
+    //    Terrain reads best from a raised three-quarter angle, so the view
+    //    direction is up and back rather than straight on. FrameBox derives the
+    //    distance from the bounding sphere so the whole field fits, and the
+    //    near/far planes are pushed outside it.
+    const SceneCamera camera = FrameBox(terrain.boundsMin, terrain.boundsMax,
+                                        Vector3(0.30f, 0.62f, 1.0f));
+
+    float world[16];
+    float view[16];
+    float projection[16];
+    BuildIdentityRowMajor(world);
+    BuildLookAtRowMajor(camera.eye, camera.target, camera.up, view);
+    BuildPerspectiveRowMajor(camera.fovYRadians,
+                             static_cast<float>(kClientWidth) / static_cast<float>(kClientHeight),
+                             camera.nearPlane, camera.farPlane, projection);
+
+    Log("ModernClientApp: camera eye=(%.2f, %.2f, %.2f) target=(%.2f, %.2f, %.2f) near=%.2f far=%.2f",
+        camera.eye.x, camera.eye.y, camera.eye.z,
+        camera.target.x, camera.target.y, camera.target.z,
+        camera.nearPlane, camera.farPlane);
+
+    // 6. A single directional light so slopes and facing read as terrain rather
+    //    than as flat colour. Terrain has no baked light in this milestone, so
+    //    the direction is a constant, not something read from the file.
+    const float lightDirection[3] = { -0.45f, -0.80f, -0.40f };
+    const float lightColor[3]     = { 1.00f, 0.96f, 0.86f };
+    const RenderColor terrainColor(0.42f, 0.52f, 0.33f, 1.0f);
+    const RenderColor skyColor(0.55f, 0.72f, 0.92f, 1.0f);
+
+    // 7. The frame loop: same Application, same platform pump, one draw per leaf.
+    Application application(std::move(platform));
+    application.SetRenderer(&renderer);
+    application.SetInputSystem(&inputSystem);
+    application.SetInputSource(std::move(inputSource));
+
+    application.SubscribeInput([&application](const InputEvent& event) {
+        if (event.type == InputEventType::Key)
+        {
+            const KeyEvent& key = std::get<KeyEvent>(event.payload);
+            if (key.code == KeyCode::Escape && key.pressed)
+            {
+                application.RequestStop();
+            }
+        }
+    });
+
+    application.SetRenderCallback([&renderer, &uploaded, world, view, projection,
+                                  lightDirection, lightColor,
+                                  terrainColor, skyColor](uint64_t frameIndex) {
+        (void)frameIndex;
+        renderer.Clear(skyColor);
+        for (const ::Modern::Client::MeshResourceHandle handle : uploaded)
+        {
+            MeshDrawCommand command;
+            command.mesh             = handle;
+            command.texture          = ImageResourceHandle::MakeInvalid();
+            command.worldMatrix      = world;
+            command.viewMatrix       = view;
+            command.projectionMatrix = projection;
+            command.fallbackColor    = terrainColor;
+            command.indexOffset      = 0;
+            command.indexCount       = 0;
+            command.lightingAmount   = 0.75f;
+            for (int i = 0; i < 3; ++i)
+            {
+                command.lightDirection[i] = lightDirection[i];
+                command.lightColor[i]     = lightColor[i];
+            }
+            renderer.DrawIndexedMesh(command);
+        }
+    });
+
+    if (application.Initialize().IsError())
+    {
+        Log("ModernClientApp: application initialization failed");
+        for (const ::Modern::Client::MeshResourceHandle handle : uploaded) { uploader.ReleaseMesh(handle); }
+        return 1;
+    }
+
+    const Status runStatus = application.Run();
+
+    // 8. Teardown in real dependency order: leaf buffers before the device.
+    for (const ::Modern::Client::MeshResourceHandle handle : uploaded) { uploader.ReleaseMesh(handle); }
+    renderer.Shutdown();
+
+    Log("ModernClientApp: field stopped after %llu frames",
+        static_cast<unsigned long long>(application.GetFrameCount()));
+
+    const bool success = runStatus.IsOk() && uploadFailures == 0;
+    if (!success)
+    {
+        Log("ModernClientApp: field run did not complete cleanly");
+    }
+    return success ? 0 : 1;
 }
 
 } // namespace
+
 
 int main(int argc, char** argv)
 {
 	std::string assetRoot;
 	std::string meshPath;
 	std::string skinPiecePath;
+	std::string fieldName;
 	bool        auditTextures = false;
 	std::string reportPath;
 	size_t      decodeLimit = 300;
@@ -404,6 +656,14 @@ int main(int argc, char** argv)
 		else if (argument.rfind("--skin-piece=", 0) == 0)
 		{
 			skinPiecePath = argument.substr(std::strlen("--skin-piece="));
+		}
+		else if (argument == "--field" && i + 1 < argc)
+		{
+			fieldName = argv[++i];
+		}
+		else if (argument.rfind("--field=", 0) == 0)
+		{
+			fieldName = argument.substr(std::strlen("--field="));
 		}
 		else if (argument == "--audit-textures")
 		{
@@ -499,6 +759,15 @@ int main(int argc, char** argv)
 	// 4. Asset uploader wired to the renderer's device and context.
 	D3D11AssetUploader uploader(&renderer);
 	renderer.SetAssetUploader(&uploader);
+
+	// WORLD-PLAYABLE-001B: a field replaces the character. It runs the same window,
+	// input, renderer and uploader -- only the asset and the draw list differ --
+	// so this hands the already-created ones straight over.
+	if (!fieldName.empty())
+	{
+		return RunField(assetRoot, fieldName, std::move(platform),
+		             std::move(inputSource), inputSystem, renderer, uploader);
+	}
 
 	// 5. The character asset through the real pipeline:
 	//    file -> ResourceManager -> container -> X decoder -> MeshAsset.
@@ -632,7 +901,7 @@ int main(int argc, char** argv)
 	    mesh.GetTriangleCount());
 
 	// 6. Upload the mesh to real GPU buffers.
-	const Modern::Result<MeshResourceHandle> meshHandle = uploader.UploadMesh(mesh);
+	const Modern::Result<::Modern::Client::MeshResourceHandle> meshHandle = uploader.UploadMesh(mesh);
 	if (meshHandle.IsError())
 	{
 		Log("ModernClientApp: GPU upload of the character mesh failed (%s)",

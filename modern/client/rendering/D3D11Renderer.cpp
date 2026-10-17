@@ -22,6 +22,7 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <cmath>
 #include <cstring>
 
 namespace Modern::Client
@@ -56,8 +57,15 @@ void SafeRelease(T*& ptr) noexcept
 
 // The per-frame constant buffer: three row-major matrices, the fallback
 // color used when no texture is bound, and the flag choosing between the
-// two pixel-shader paths. Size is a multiple of 16 (224 = 14 * 16), which
+// two pixel-shader paths. Size is a multiple of 16 (256 = 16 * 16), which
 // D3D11 requires of constant buffers.
+//
+// WORLD-PLAYABLE-001B added the trailing lighting block. It is written by every
+// draw, but `lightingAmount` defaults to 0, and the pixel shader multiplies by
+// exactly 1.0 in that case -- so a draw that does not ask for lighting produces
+// byte-identical output to the shader before this field existed. The three
+// matrices, `fallbackColor` and `useTexture` keep their original offsets, so
+// this is additive rather than a re-layout.
 struct MeshConstants
 {
 	float world[16];
@@ -65,12 +73,17 @@ struct MeshConstants
 	float projection[16];
 	float fallbackColor[4];
 	bool  useTexture;
-	float padding[3];
+	float lightingAmount;      // was padding[0]; 0 disables shading entirely
+	float padding[2];
+	float lightDirection[4];   // xyz, direction the light travels *towards* (w unused)
+	float lightColor[4];       // rgb tint, a = unused
 };
 
-static_assert(sizeof(MeshConstants) == 224, "constant buffer must be 224 bytes (14 * 16)");
+static_assert(sizeof(MeshConstants) == 256, "constant buffer must be 256 bytes (16 * 16)");
 static_assert(offsetof(MeshConstants, fallbackColor) == 192, "fallbackColor must follow the three matrices");
 static_assert(offsetof(MeshConstants, useTexture) == 208, "useTexture must follow fallbackColor");
+static_assert(offsetof(MeshConstants, lightDirection) == 224, "lightDirection follows the original block");
+static_assert(offsetof(MeshConstants, lightColor) == 240, "lightColor follows lightDirection");
 
 // The vertex declaration must agree with MeshVertex byte for byte: the
 // asset layer static_asserts MeshVertex == kMeshVertexBytes; this is the
@@ -101,6 +114,10 @@ cbuffer MeshConstants : register(b0)
     float4x4 projection;
     float4 fallbackColor;
     bool useTexture;
+    float lightingAmount;
+    float2 padA;
+    float4 lightDirection;
+    float4 lightColor;
 };
 
 Texture2D g_texture : register(t0);
@@ -117,6 +134,7 @@ struct VSOutput
 {
     float4 position : SV_POSITION;
     float2 uv       : TEXCOORD0;
+    float3 normal   : TEXCOORD1;
 };
 
 VSOutput VSMain(VSInput input)
@@ -126,16 +144,29 @@ VSOutput VSMain(VSInput input)
     float4 viewPosition = mul(worldPosition, view);
     output.position = mul(viewPosition, projection);
     output.uv = input.uv;
+    // World-space normal: transform as a direction (w = 0). Terrain draws with an
+    // identity world matrix, so this is the file's own normal; a future moving or
+    // scaled object gets the right answer for free.
+    output.normal = mul(float4(input.normal, 0.0f), world).xyz;
     return output;
 }
 
 float4 PSMain(VSOutput input) : SV_TARGET
 {
-    if (useTexture)
+    float4 base = useTexture ? g_texture.Sample(g_sampler, input.uv) : fallbackColor;
+
+    // WORLD-PLAYABLE-001B: optional directional shading, needed for terrain to read
+    // as terrain. With lightingAmount == 0 the shade factor is exactly 1.0, so
+    // every pre-existing draw is unaffected.
+    if (lightingAmount > 0.0f)
     {
-        return g_texture.Sample(g_sampler, input.uv);
+        float3 n = normalize(input.normal);
+        float3 l = normalize(lightDirection.xyz);
+        float ndl = saturate(dot(n, l));
+        float shade = lightingAmount * ndl + (1.0f - lightingAmount);
+        return float4(base.rgb * shade * lightColor.rgb, base.a);
     }
-    return fallbackColor;
+    return base;
 }
 )";
 
@@ -434,6 +465,38 @@ Status D3D11Renderer::DrawIndexedMesh(const MeshDrawCommand& command)
 		constants->fallbackColor[2] = command.fallbackColor.b;
 		constants->fallbackColor[3] = command.fallbackColor.a;
 		constants->useTexture = hasTexture;
+
+		// WORLD-PLAYABLE-001B: shading is per-draw and defaults off, so the character
+		// path is untouched. A zero or non-finite amount is normalised to "off"
+		// rather than propagated, so a caller that leaves it unset cannot corrupt
+		// the whole frame's constants.
+		float lightingAmount = command.lightingAmount;
+		if (!std::isfinite(lightingAmount) || lightingAmount <= 0.0f)
+		{
+			lightingAmount = 0.0f;
+		}
+		else if (lightingAmount > 1.0f)
+		{
+			lightingAmount = 1.0f;
+		}
+		constants->lightingAmount = lightingAmount;
+
+		float direction[4] = { 0.0f, 1.0f, 0.0f, 0.0f };
+		for (int i = 0; i < 3; ++i)
+		{
+			const float value = command.lightDirection[i];
+			direction[i] = std::isfinite(value) ? value : 0.0f;
+		}
+		std::memcpy(constants->lightDirection, direction, sizeof(direction));
+
+		float colour[4] = { 1.0f, 1.0f, 1.0f, 0.0f };
+		for (int i = 0; i < 3; ++i)
+		{
+			const float value = command.lightColor[i];
+			colour[i] = std::isfinite(value) ? value : 1.0f;
+		}
+		std::memcpy(constants->lightColor, colour, sizeof(colour));
+
 		m_context->Unmap(m_constantBuffer, 0);
 	}
 	else

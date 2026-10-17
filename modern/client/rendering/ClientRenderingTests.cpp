@@ -18,6 +18,7 @@
 #include "rendering/NullRenderer.h"
 #include "rendering/Renderer.h"
 #include "rendering/RenderingTypes.h"
+#include "rendering/CameraMatrices.h"
 
 #include <cstdint>
 #include <memory>
@@ -337,6 +338,102 @@ MODERN_TEST(ClientRendering_ApplicationWithoutRendererStillRuns)
 	CHECK_EQ(frames, 2u);
 	CHECK_EQ(app.GetRenderer(), nullptr);
 }
+// ---------------------------------------------------------------------------
+// Camera matrices (WORLD-PLAYABLE-001B): renderer-independent camera maths.
+// These are tested without a device because a future Vulkan or Metal backend
+// reuses the same row-major layout.
+// ---------------------------------------------------------------------------
+
+MODERN_TEST(CameraMatrices_BuildIdentityRowMajor)
+{
+	float out[16] = {};
+	BuildIdentityRowMajor(out);
+
+	CHECK_EQ(out[0], 1.0f); CHECK_EQ(out[5], 1.0f);
+	CHECK_EQ(out[10], 1.0f); CHECK_EQ(out[15], 1.0f);
+	for (int i = 0; i < 16; ++i)
+	{
+		if (i == 0 || i == 5 || i == 10 || i == 15) { continue; }
+		CHECK_EQ(out[i], 0.0f);
+	}
+}
+
+MODERN_TEST(CameraMatrices_BuildLookAtRowMajor)
+{
+	float out[16] = {};
+	BuildLookAtRowMajor(Vector3(0.0f, 0.0f, -5.0f), Vector3::Zero, Vector3::Up, out);
+
+	// Looking straight at the origin from -Z: right = +X, up = +Y, forward = +Z.
+	CHECK_EQ(out[0], 1.0f); CHECK_EQ(out[5], 1.0f); CHECK_EQ(out[10], 1.0f); CHECK_EQ(out[15], 1.0f);
+	CHECK_EQ(out[12], 0.0f); CHECK_EQ(out[13], 0.0f); CHECK_EQ(out[14], 5.0f);
+	for (int i = 0; i < 16; ++i)
+	{
+		if (i == 0 || i == 5 || i == 10 || i == 15 || i == 14) { continue; }
+		CHECK_EQ(out[i], 0.0f);
+	}
+}
+
+MODERN_TEST(CameraMatrices_BuildPerspectiveRowMajor)
+{
+	float out[16] = {};
+	const float fovY = 1.0471975512f; // 60 degrees
+	const float aspect = 960.0f / 540.0f;
+	BuildPerspectiveRowMajor(fovY, aspect, 0.1f, 1000.0f, out);
+
+	// Non-degenerate projection: nonzero diagonal, depth range mapped.
+	CHECK(out[0] > 0.0f);
+	CHECK(out[5] > 0.0f);
+	CHECK_EQ(out[11], 1.0f);
+	CHECK(out[14] < 0.0f);
+}
+
+MODERN_TEST(CameraMatrices_BuildPerspectiveRowMajorDegenerateIsZero)
+{
+	float out[16] = {};
+	for (int i = 0; i < 16; ++i) { out[i] = 1.0f; }
+
+	// Bad aspect yields a zero matrix, not infinities.
+	BuildPerspectiveRowMajor(1.0471975512f, 0.0f, 0.1f, 1000.0f, out);
+	for (int i = 0; i < 16; ++i) { CHECK_EQ(out[i], 0.0f); }
+
+	// Near >= far yields a zero matrix.
+	for (int i = 0; i < 16; ++i) { out[i] = 1.0f; }
+	BuildPerspectiveRowMajor(1.0471975512f, 16.0f / 9.0f, 10.0f, 1.0f, out);
+	for (int i = 0; i < 16; ++i) { CHECK_EQ(out[i], 0.0f); }
+}
+
+MODERN_TEST(CameraMatrices_TanHalfFovY)
+{
+	// tan(pi / 6) = 1 / sqrt(3) ~= 0.5773502692
+	const float value = TanHalfFovY(1.0471975512f);
+	CHECK(std::fabs(value - 0.5773502692f) < 0.00001f);
+
+	// Out of range yields 0.
+	CHECK_EQ(TanHalfFovY(0.0f), 0.0f);
+	CHECK_EQ(TanHalfFovY(3.14159265f), 0.0f);
+}
+
+MODERN_TEST(CameraMatrices_FrameBoxFramesTheBox)
+{
+	// A small cube at the origin, viewed from +Z looking back.
+	SceneCamera camera = FrameBox(Vector3(-1, -1, -1), Vector3(1, 1, 1), Vector3::Forward);
+
+	// The eye sits back from the centre along the view direction.
+	CHECK(camera.eye.z > 0.0f);
+	CHECK(camera.eye.x == 0.0f);
+	CHECK(camera.eye.y == 0.0f);
+
+	// Looks at the centre.
+	CHECK_EQ(camera.target.x, 0.0f);
+	CHECK_EQ(camera.target.y, 0.0f);
+	CHECK_EQ(camera.target.z, 0.0f);
+
+	// Planes enclose the unit cube: radius = sqrt(3) ~= 1.732.
+	CHECK(camera.nearPlane > 0.0f);
+	CHECK(camera.farPlane > camera.nearPlane);
+	CHECK(camera.farPlane > 5.0f);
+}
+
 // ---------------------------------------------------------------------------
 // Main Test Runner
 // ---------------------------------------------------------------------------

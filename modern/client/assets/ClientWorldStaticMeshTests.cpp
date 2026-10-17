@@ -16,6 +16,8 @@
 #include "TestHarness.h"
 
 #include "WorldStaticMesh.h"
+#include "WorldTerrainMesh.h"
+#include "math/Vector3.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1256,8 +1258,7 @@ MODERN_TEST(WorldStaticMesh_RealAsuraWld0ParsesWhenAvailable)
 	std::filesystem::path mapRoot;
 	if (!FindMapRoot(mapRoot))
 	{
-		std::printf("      (real ASURA validation skipped: RAN_ASSET_ROOT not set "
-		            "or has no data/map)\n");
+		std::printf("      (real ASURA validation skipped: RAN_ASSET_ROOT not set or has no data/map)\n");
 		return;
 	}
 
@@ -1277,8 +1278,7 @@ MODERN_TEST(WorldStaticMesh_RealAsuraWld0ParsesWhenAvailable)
 	}
 	if (candidates.empty())
 	{
-		std::printf("      (real ASURA validation skipped: no .wld/.wld0 pair under %s)\n",
-		            mapRoot.string().c_str());
+		std::printf("      (real ASURA validation skipped: no .wld/.wld0 pair under %s)\n", mapRoot.string().c_str());
 		return;
 	}
 	std::sort(candidates.begin(), candidates.end(),
@@ -1290,9 +1290,7 @@ MODERN_TEST(WorldStaticMesh_RealAsuraWld0ParsesWhenAvailable)
 	{
 		if (candidate.second > maxBytes) { ++overBudget; }
 	}
-	std::printf("      %zu real .wld0 file(s) under %s; parsing those up to %zu bytes "
-	            "(%zu over budget, reported but not parsed)\n",
-	            candidates.size(), mapRoot.string().c_str(), maxBytes, overBudget);
+	std::printf("      %zu real .wld0 file(s) under %s; parsing up to %zu bytes (%zu over budget, not parsed)\n", candidates.size(), mapRoot.string().c_str(), maxBytes, overBudget);
 
 	std::size_t parsedOk = 0;
 	std::size_t refused = 0;
@@ -1309,71 +1307,201 @@ MODERN_TEST(WorldStaticMesh_RealAsuraWld0ParsesWhenAvailable)
 		const std::filesystem::path& path = candidate.first;
 		if (candidate.second > maxBytes)
 		{
-			std::printf("      %-28s %11zu bytes  NOT PARSED (over the %zu-byte budget)\n",
-			            path.filename().string().c_str(), candidate.second, maxBytes);
+			std::printf("      %-28s %11zu bytes  NOT PARSED (over the %zu-byte budget)\n", path.filename().string().c_str(), candidate.second, maxBytes);
 			continue;
 		}
-
 		std::ifstream in(path, std::ios::binary);
 		if (!in) { continue; }
-		const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
-		                                 std::istreambuf_iterator<char>());
+		const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
 		const Result<WorldStaticMeshAsset> decoded = Decode(bytes);
 		if (decoded.IsError())
 		{
 			++refused;
-			std::printf("      %-28s %11zu bytes  REFUSED: %s\n",
-			            path.filename().string().c_str(), bytes.size(), decoded.GetMessage());
+			std::printf("      %-28s %11zu bytes  REFUSED: %s\n", path.filename().string().c_str(), bytes.size(), decoded.GetMessage());
 			continue;
 		}
 
 		const WorldStaticMeshAsset& asset = decoded.GetValue();
 		++parsedOk;
-		totalChunks    += asset.totalChunks();
-		totalVertices  += asset.totalVertices();
-		totalIndices   += asset.totalIndices();
+		totalChunks += asset.totalChunks();
+		totalVertices += asset.totalVertices();
+		totalIndices += asset.totalIndices();
 		totalDecodedBytes += asset.decodedBytes();
 		totalUnsupportedFvf += asset.unsupportedFvfCount();
-		totalSkipped   += asset.skippedRecordCount();
+		totalSkipped += asset.skippedRecordCount();
 		if (asset.decodedBytes() > peakDecodedBytes) { peakDecodedBytes = asset.decodedBytes(); }
-
-		std::printf("      %-28s %11zu bytes  meshes=%zu chunks=%zu verts=%zu idx=%zu "
-		            "decoded=%.2f MiB\n",
-		            path.filename().string().c_str(), bytes.size(),
-		            asset.totalMeshes(), asset.totalChunks(),
-		            asset.totalVertices(), asset.totalIndices(),
-		            static_cast<double>(asset.decodedBytes()) / (1024.0 * 1024.0));
-		std::printf("        bounds max=(%.1f,%.1f,%.1f) min=(%.1f,%.1f,%.1f)\n",
-		            asset.tileBoundsMax[0], asset.tileBoundsMax[1], asset.tileBoundsMax[2],
-		            asset.tileBoundsMin[0], asset.tileBoundsMin[1], asset.tileBoundsMin[2]);
-
+		std::printf("      %-28s %11zu bytes  meshes=%zu chunks=%zu verts=%zu idx=%zu decoded=%.2f MiB\n", path.filename().string().c_str(), bytes.size(), asset.totalMeshes(), asset.totalChunks(), asset.totalVertices(), asset.totalIndices(), static_cast<double>(asset.decodedBytes()) / (1024.0 * 1024.0));
 		for (const WorldStaticMeshAsset::UnsupportedFvfEntry& entry : asset.unsupportedFvfs())
 		{
-			std::printf("        refused FVF 0x%03x on %zu leaf/leaves\n",
-			            entry.fvf, entry.leaves);
+			std::printf("        refused FVF 0x%03x on %zu leaf/leaves\n", entry.fvf, entry.leaves);
 		}
 		if (asset.skippedRecordCount() != 0u)
 		{
-			std::printf("        %zu record(s) recognised but not decoded\n",
-			            asset.skippedRecordCount());
+			std::printf("        %zu record(s) recognised but not decoded\n", asset.skippedRecordCount());
 		}
 	}
 
-	std::printf("      totals over %zu parsed file(s): %zu chunks, %zu vertices, %zu indices,\n"
-	            "              %.2f MiB decoded (peak %.2f MiB in one field),\n"
-	            "              %zu unsupported-FVF leaf/leaves, %zu record(s) skipped, "
-	            "%zu refused.\n",
-	            parsedOk, totalChunks, totalVertices, totalIndices,
-	            static_cast<double>(totalDecodedBytes) / (1024.0 * 1024.0),
-	            static_cast<double>(peakDecodedBytes) / (1024.0 * 1024.0),
-	            totalUnsupportedFvf, totalSkipped, refused);
+	std::printf("      totals over %zu parsed file(s): %zu chunks, %zu vertices, %zu indices, %.2f MiB decoded (peak %.2f MiB), %zu unsupported-FVF leaves, %zu skipped, %zu refused.\n", parsedOk, totalChunks, totalVertices, totalIndices, static_cast<double>(totalDecodedBytes) / (1024.0 * 1024.0), static_cast<double>(peakDecodedBytes) / (1024.0 * 1024.0), totalUnsupportedFvf, totalSkipped, refused);
 
 	// A run that found files and decoded none of them is a failure, not a skip.
 	CHECK(candidates.size() > 0u);
 	CHECK(parsedOk > 0u);
 	CHECK_EQ(totalUnsupportedFvf, size_t{0});
 }
+
+// WORLD-PLAYABLE-001B: terrain mesh conversion tests (BuildTerrainMeshes).
+//
+// Validates that parsed `.wld0` leaves convert into renderable MeshAsset
+// values, that invalid input is rejected safely, and that oversized leaves
+// are skipped without failing the whole field.
+
+MODERN_TEST(WorldTerrainMesh_EmptyFieldIsRefused)
+{
+	WorldStaticMeshAsset empty;
+	Result<::Modern::Client::TerrainMeshSet> built = ::Modern::Client::BuildTerrainMeshes(empty);
+	CHECK(built.IsError());
+}
+
+MODERN_TEST(WorldTerrainMesh_ValidLeafProducesMesh)
+{
+	WorldStaticMeshAsset asset;
+	WorldTerrainBucket bucket;
+	bucket.name = "test";
+
+	WorldTerrainChunk chunk;
+	chunk.hasNormals = true;
+	chunk.hasUvs = true;
+	chunk.positions = { 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
+	chunk.normals =   { 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f };
+	chunk.uvs =       { 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f };
+	chunk.indices =   { 0, 1, 2 };
+	bucket.chunks.push_back(chunk);
+	asset.buckets[0].push_back(bucket);
+
+	Result<::Modern::Client::TerrainMeshSet> built = ::Modern::Client::BuildTerrainMeshes(asset);
+	CHECK(built.IsOk());
+	const ::Modern::Client::TerrainMeshSet& set = built.GetValue();
+
+	CHECK_EQ(set.meshes.size(), size_t{1});
+	CHECK_EQ(set.totalVertices, size_t{3});
+	CHECK_EQ(set.totalIndices, size_t{3});
+	CHECK_EQ(set.skippedLeaves, size_t{0});
+}
+
+MODERN_TEST(WorldTerrainMesh_LeafWithoutNormalsGetsFallback)
+{
+	WorldStaticMeshAsset asset;
+	WorldTerrainBucket bucket;
+	bucket.name = "test";
+
+	WorldTerrainChunk chunk;
+	chunk.hasNormals = false;
+	chunk.hasUvs = false;
+	chunk.positions = { 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
+	chunk.indices =   { 0, 1, 2 };
+	bucket.chunks.push_back(chunk);
+	asset.buckets[0].push_back(bucket);
+
+	Result<::Modern::Client::TerrainMeshSet> built = ::Modern::Client::BuildTerrainMeshes(asset);
+	CHECK(built.IsOk());
+	const ::Modern::Client::TerrainMeshSet& set = built.GetValue();
+
+	CHECK_EQ(set.meshes.size(), size_t{1});
+	CHECK_EQ(set.totalVertices, size_t{3});
+	CHECK_EQ(set.skippedLeaves, size_t{0});
+}
+
+MODERN_TEST(WorldTerrainMesh_LeafWithoutUvsGetsZeroUv)
+{
+	WorldStaticMeshAsset asset;
+	WorldTerrainBucket bucket;
+	bucket.name = "test";
+
+	WorldTerrainChunk chunk;
+	chunk.hasNormals = true;
+	chunk.hasUvs = false;
+	chunk.positions = { 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
+	chunk.normals =   { 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f };
+	chunk.indices =   { 0, 1, 2 };
+	bucket.chunks.push_back(chunk);
+	asset.buckets[0].push_back(bucket);
+
+	Result<::Modern::Client::TerrainMeshSet> built = ::Modern::Client::BuildTerrainMeshes(asset);
+	CHECK(built.IsOk());
+	const ::Modern::Client::TerrainMeshSet& set = built.GetValue();
+
+	CHECK_EQ(set.meshes.size(), size_t{1});
+	CHECK_EQ(set.totalVertices, size_t{3});
+}
+
+MODERN_TEST(WorldTerrainMesh_LeafWithNoGeometryIsSkipped)
+{
+	WorldStaticMeshAsset asset;
+	WorldTerrainBucket bucket;
+	bucket.name = "test";
+
+	WorldTerrainChunk emptyChunk;  // no positions, no indices
+	bucket.chunks.push_back(emptyChunk);
+	asset.buckets[0].push_back(bucket);
+
+	Result<::Modern::Client::TerrainMeshSet> built = ::Modern::Client::BuildTerrainMeshes(asset);
+	CHECK(built.IsError());  // no renderable geometry at all
+}
+
+MODERN_TEST(WorldTerrainMesh_LeafWithOutOfRangeIndexIsRejected)
+{
+	WorldStaticMeshAsset asset;
+	WorldTerrainBucket bucket;
+	bucket.name = "test";
+
+	WorldTerrainChunk chunk;
+	chunk.hasNormals = true;
+	chunk.hasUvs = true;
+	chunk.positions = { 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
+	chunk.normals =   { 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f };
+	chunk.uvs =       { 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f };
+	chunk.indices =   { 0, 1, 9 };  // index 9 references a nonexistent vertex
+	bucket.chunks.push_back(chunk);
+	asset.buckets[0].push_back(bucket);
+
+	Result<::Modern::Client::TerrainMeshSet> built = ::Modern::Client::BuildTerrainMeshes(asset);
+	CHECK(built.IsError());  // MeshAsset validation rejects
+}
+
+MODERN_TEST(WorldTerrainMesh_MultipleLeavesAllRendered)
+{
+	WorldStaticMeshAsset asset;
+
+	for (int b = 0; b < 3; ++b)
+	{
+		WorldTerrainBucket bucket;
+		bucket.name = "bucket" + std::to_string(b);
+
+		WorldTerrainChunk chunk;
+		chunk.hasNormals = true;
+		chunk.hasUvs = true;
+		chunk.positions = { 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
+		chunk.normals =   { 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f };
+		chunk.uvs =       { 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f };
+		chunk.indices =   { 0, 1, 2 };
+		bucket.chunks.push_back(chunk);
+
+		asset.buckets[b].push_back(bucket);
+	}
+
+	Result<::Modern::Client::TerrainMeshSet> built = ::Modern::Client::BuildTerrainMeshes(asset);
+	CHECK(built.IsOk());
+	const ::Modern::Client::TerrainMeshSet& set = built.GetValue();
+
+	CHECK_EQ(set.meshes.size(), size_t{3});
+	CHECK_EQ(set.totalVertices, size_t{9});
+	CHECK_EQ(set.totalIndices, size_t{9});
+}
+
+// ---------------------------------------------------------------------------
+// Main Test Runner
+// ---------------------------------------------------------------------------
 
 int main()
 {

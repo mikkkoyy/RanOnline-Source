@@ -14,6 +14,7 @@ add_library(ModernClientRendering STATIC
     RenderingTypes.cpp
     NullRenderer.cpp
     D3D11Renderer.cpp
+    CameraMatrices.cpp
 )
 
 target_include_directories(ModernClientRendering PUBLIC

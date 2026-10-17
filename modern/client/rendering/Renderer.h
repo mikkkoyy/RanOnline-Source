@@ -51,6 +51,21 @@ struct MeshDrawCommand
 	// non-zero requires count % 3 == 0 and offset + count <= index count.
 	uint32_t indexOffset = 0;
 	uint32_t indexCount  = 0;
+
+	// WORLD-PLAYABLE-001B: optional directional shading, needed for terrain to
+	// read as terrain. `lightingAmount` is how far the shading goes: 0 leaves the
+	// colour exactly as `fallbackColor`/the texture produced, 1 is full N.L,
+	// and anything between is that fraction of the way. It defaults to 0, so
+	// every existing construction site is unchanged and every existing draw is
+	// unaffected.
+	//
+	// `lightDirection` is the direction the light travels *towards* in world
+	// space; it is normalised in the shader, so only direction matters. Both
+	// vectors are plain numbers, so the same fields mean the same thing to a
+	// future Vulkan or Metal backend.
+	float lightingAmount = 0.0f;
+	float lightDirection[3] = { 0.0f, 1.0f, 0.0f };
+	float lightColor[3] = { 1.0f, 1.0f, 1.0f };
 };
 
 class IRenderer

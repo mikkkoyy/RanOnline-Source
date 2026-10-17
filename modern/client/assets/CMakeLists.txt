@@ -19,6 +19,7 @@ add_library(ModernClientAssets STATIC
     BmpImageDecoder.cpp
     TgaImageDecoder.cpp
     MeshAsset.cpp
+    WorldTerrainMesh.cpp
     TestMeshDecoder.cpp
     MtfTextureTransform.cpp
     MxfMeshTransform.cpp
@@ -40,6 +41,7 @@ add_library(ModernClientAssets STATIC
 
 target_include_directories(ModernClientAssets PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_SOURCE_DIR}/modern/compatibility/legacy
 )
 
 target_link_libraries(ModernClientAssets PUBLIC Modern ModernClientResources)
@@ -317,7 +319,7 @@ target_include_directories(ModernClientWorldStaticMeshTests PRIVATE
 )
 
 target_link_libraries(ModernClientWorldStaticMeshTests PRIVATE
-    ModernWorldStaticMesh ModernClientResources
+    ModernClientAssets ModernWorldStaticMesh ModernClientResources
 )
 
 target_compile_features(ModernClientWorldStaticMeshTests PRIVATE cxx_std_17)
