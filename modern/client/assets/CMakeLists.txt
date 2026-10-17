@@ -297,3 +297,33 @@ if(MSVC)
 endif()
 
 add_test(NAME ModernClientRanMeshSourceTests COMMAND ModernClientRanMeshSourceTests)
+
+# WORLD-PLAYABLE-001A: the ASURA .wld0 static-mesh terrain parser. An eleventh
+# executable, same reason: each suite owns its own main() so they stay
+# independent translation units registered with CTest. It links the legacy
+# adapter, which is the sanctioned place the legacy RAN *formats* are
+# understood; no renderer, no graphics API, no legacy library link. The fixtures
+# are assembled byte by byte from the layout the legacy readers publish, so
+# nothing proprietary is committed; the optional real-asset case walks a client
+# tree only when RAN_ASSET_ROOT names one.
+add_executable(ModernClientWorldStaticMeshTests
+    ClientWorldStaticMeshTests.cpp
+)
+
+target_include_directories(ModernClientWorldStaticMeshTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_SOURCE_DIR}/modern/tests
+    ${CMAKE_SOURCE_DIR}/modern/compatibility/legacy
+)
+
+target_link_libraries(ModernClientWorldStaticMeshTests PRIVATE
+    ModernWorldStaticMesh ModernClientResources
+)
+
+target_compile_features(ModernClientWorldStaticMeshTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernClientWorldStaticMeshTests PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+add_test(NAME ModernClientWorldStaticMeshTests COMMAND ModernClientWorldStaticMeshTests)

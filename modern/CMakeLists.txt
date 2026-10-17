@@ -10,6 +10,9 @@
 add_subdirectory(core)
 add_subdirectory(network)
 add_subdirectory(server)
+# compatibility/legacy sits above core and is only ever linked by the client
+# targets that ask for it; nothing in core may depend on it.
+add_subdirectory(compatibility)
 add_subdirectory(client)
 add_subdirectory(tools)
 add_subdirectory(tests)
