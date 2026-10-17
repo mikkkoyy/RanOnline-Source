@@ -28,10 +28,26 @@
 #include "types/Result.h"
 
 #include <cstddef>
+#include <optional>
 #include <vector>
 
 namespace Modern::Client
 {
+	// One triangle of terrain, stored for ground-height queries.
+	// Vertices are in file order; face normal follows the file's winding.
+	struct GroundTriangle
+	{
+		Vector3 a, b, c;
+	};
+
+	// One decoded leaf's triangle data, with XZ bounds for query culling.
+	struct GroundMesh
+	{
+		std::vector<GroundTriangle> triangles;
+		Vector3                     boundsMin = Vector3::Zero;
+		Vector3                     boundsMax = Vector3::Zero;
+	};
+
 	// Every renderable leaf of one field, plus the scene bounds and the counts a
 	// caller needs to log what it got and to release what it uploaded.
 	struct TerrainMeshSet
@@ -60,7 +76,22 @@ namespace Modern::Client
 			size_t      count  = 0;
 		};
 		std::vector<SkipReason> skipReasons;
+
+		// Per-mesh triangle data for ground-height queries. One GroundMesh per
+		// MeshAsset, in the same order as `meshes`. Empty when no ground data
+		// could be built (e.g. every leaf was skipped).
+		std::vector<GroundMesh> groundMeshes;
 	};
+
+	// Queries terrain height at (x, z) by casting a ray straight down from
+	// above and returning the Y of the closest triangle hit. Returns nullopt
+	// when no triangle is below the point (character is outside the field or
+	// above open sky).
+	//
+	// Only triangles whose XZ bounds contain (x, z) are tested, so the cost is
+	// proportional to the local triangle density, not the whole field.
+	std::optional<float> QueryGroundHeight(const TerrainMeshSet& set, float x,
+	                                       float z) noexcept;
 
 	// Build renderable meshes from a parsed field.
 	//

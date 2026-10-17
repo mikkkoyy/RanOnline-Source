@@ -68,6 +68,7 @@ target_link_libraries(ModernClientApp PRIVATE
     ModernClientApplication
     ModernClientAssetUpload
     ModernClientAssets
+    ModernClientGameplay
     ModernClientResources
     ModernWorldStaticMesh
     d3d11

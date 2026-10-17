@@ -63,6 +63,7 @@
 #include "assets/WorldTerrainMesh.h"
 #include "assets/TextureLoader.h"
 #include "assets/XMeshDecoder.h"
+#include "gameplay/ClientCharacterController.h"
 #include "input/InputEvents.h"
 #include "input/InputSystem.h"
 #include "input/platform/Win32InputSource.h"
@@ -136,6 +137,7 @@ using Modern::Client::TextureLoader;
 using Modern::Client::Win32InputSource;
 using Modern::Client::Win32PlatformEvents;
 using Modern::Client::XMeshDecoder;
+using Modern::Client::Gameplay::ClientCharacterController;
 
 namespace
 {
@@ -155,6 +157,20 @@ constexpr uint32_t kClientHeight = 540;
 // The CLIENT-RENDER-002 regression mesh. Still the default so that a plain
 // run of the client keeps proving the MXF path works.
 constexpr const char* kSkinMeshPath = "data/skin/m_luffy_timeskip.mxf";
+
+// WORLD-PLAYABLE-001C: default character when `--field` is given without
+// `--character`. The Luffy regression mesh is a proven, loadable ASURA
+// character and doubles as the field-walking avatar.
+constexpr const char* kDefaultCharacterMesh = "data/skin/m_luffy_timeskip.mxf";
+
+// WORLD-PLAYABLE-001C: movement speed in world units per second, tuned so a
+// brisk walk crosses a reasonable portion of the field in a few seconds.
+constexpr float kCharacterMoveSpeed = 250.0f;
+
+// WORLD-PLAYABLE-001C: camera follows the character from this offset, looking
+// down at a shallow angle so both the character and the terrain ahead are
+// visible.
+constexpr Vector3 kCameraFollowOffset(0.0f, 120.0f, -260.0f);
 
 // ASURA-CHARACTER-001B: the directories a RAN wearing file and the mesh it
 // names are relative to. Kept as constants so no absolute client path is
@@ -618,6 +634,515 @@ int RunField(const std::string& assetRoot,
     return success ? 0 : 1;
 }
 
+// WORLD-PLAYABLE-001C: field + character + movement.
+//
+// Loads a real ASURA field through the WORLD-PLAYABLE-001B pipeline, loads a
+// character mesh through the existing character pipeline, places the character
+// at the field centre snapped to ground, and runs a frame loop where WASD moves
+// the character and the camera follows. Both field and character are rendered
+// each frame through real D3D11 draw calls.
+//
+// The function takes ownership of platform and inputSource, exactly as
+// RunField does, and returns the process exit code.
+int RunFieldWithCharacter(const std::string& assetRoot,
+                          const std::string& fieldName,
+                          const std::string& characterMeshPath,
+                          std::unique_ptr<Win32PlatformEvents> platform,
+                          std::unique_ptr<Win32InputSource> inputSource,
+                          InputSystem& inputSystem,
+                          D3D11Renderer& renderer,
+                          D3D11AssetUploader& uploader)
+{
+    namespace fs = std::filesystem;
+
+    // ------------------------------------------------------------------
+    // 1. Load and parse the field (same pipeline as RunField).
+    // ------------------------------------------------------------------
+    std::string fieldSpec = fieldName;
+    if (fieldSpec.size() < 5 || fieldSpec.compare(fieldSpec.size() - 5, 5, ".wld0") != 0)
+    {
+        fieldSpec += ".wld0";
+    }
+
+    const std::string fieldRelative = "data/map/" + fieldSpec;
+    const fs::path fieldPath = fs::path(assetRoot) / "data" / "map" / fieldSpec;
+
+    std::error_code sizeEc;
+    const uintmax_t fieldBytes = fs::file_size(fieldPath, sizeEc);
+    if (sizeEc)
+    {
+        Log("ModernClientApp: field '%s' was not found (looked at '%s')",
+            fieldSpec.c_str(), fieldPath.string().c_str());
+        Log("ModernClientApp: a field needs RAN_ASSET_ROOT or --asset-root, and a name that "
+            "exists in <root>/data/map, e.g. --field bambooforest");
+        return 1;
+    }
+
+    Log("ModernClientApp: field '%s' (%llu bytes)",
+        fieldPath.string().c_str(), static_cast<unsigned long long>(fieldBytes));
+
+    if (fieldBytes == 0 || fieldBytes > ::Modern::Legacy::WorldStaticMeshReader::kMaxInputBytes)
+    {
+        Log("ModernClientApp: field is %llu bytes, outside the reader's supported range",
+            static_cast<unsigned long long>(fieldBytes));
+        return 1;
+    }
+
+    FileSystemResourceProvider resourceProvider(assetRoot);
+    if (resourceProvider.Initialize().IsError())
+    {
+        Log("ModernClientApp: asset root '%s' is not a readable directory", assetRoot.c_str());
+        return 1;
+    }
+
+    const ::Modern::Result<::Modern::Client::ResourceId> fieldId =
+        ::Modern::Client::ResourceId::Create(fieldRelative);
+    if (fieldId.IsError())
+    {
+        Log("ModernClientApp: field path '%s' is not a usable resource name (%s)",
+            fieldRelative.c_str(), fieldId.GetMessage());
+        return 1;
+    }
+
+    const ::Modern::Result<::Modern::Client::ResourceData> resource =
+        resourceProvider.Load(fieldId.GetValue());
+    if (resource.IsError())
+    {
+        Log("ModernClientApp: could not read field '%s' (%s)",
+            fieldPath.string().c_str(), resource.GetMessage());
+        return 1;
+    }
+    const std::vector<uint8_t>& fieldData = resource.GetValue().GetBytes();
+    if (fieldData.size() != fieldBytes)
+    {
+        Log("ModernClientApp: read %zu bytes but the file is %llu bytes",
+            fieldData.size(), static_cast<unsigned long long>(fieldBytes));
+        return 1;
+    }
+
+    Result<::Modern::Legacy::WorldStaticMeshAsset> field =
+        ::Modern::Legacy::WorldStaticMeshReader().Decode(fieldData);
+    if (field.IsError())
+    {
+        Log("ModernClientApp: field '%s' was refused by the terrain reader (%s)",
+            fieldSpec.c_str(), field.GetMessage());
+        Log("ModernClientApp: an encrypted ('Default_Crypt') or truncated .wld0 cannot be "
+            "read by this client");
+        return 1;
+    }
+
+    const ::Modern::Legacy::WorldStaticMeshAsset& parsed = field.GetValue();
+    Log("ModernClientApp: parsed %zu mesh(es), %zu leaf record(s), %zu vertices, %zu indices",
+        parsed.totalMeshes(), parsed.totalChunks(),
+        parsed.totalVertices(), parsed.totalIndices());
+
+    Result<::Modern::Client::TerrainMeshSet> built = BuildTerrainMeshes(parsed);
+    if (built.IsError())
+    {
+        Log("ModernClientApp: field '%s' produced no renderable geometry (%s)",
+            fieldSpec.c_str(), built.GetMessage());
+        return 1;
+    }
+
+    const TerrainMeshSet& terrain = built.GetValue();
+    Log("ModernClientApp: %zu renderable mesh(es), %zu vertices, %zu indices",
+        terrain.meshes.size(), terrain.totalVertices, terrain.totalIndices);
+    Log("ModernClientApp: geometry bounds min=(%.1f, %.1f, %.1f) max=(%.1f, %.1f, %.1f)",
+        terrain.boundsMin.x, terrain.boundsMin.y, terrain.boundsMin.z,
+        terrain.boundsMax.x, terrain.boundsMax.y, terrain.boundsMax.z);
+    for (const TerrainMeshSet::SkipReason& reason : terrain.skipReasons)
+    {
+        Log("ModernClientApp: %zu leaf/leaves skipped (%s)", reason.count, reason.reason);
+    }
+
+    // ------------------------------------------------------------------
+    // 2. Upload field meshes to GPU.
+    // ------------------------------------------------------------------
+    std::vector<::Modern::Client::MeshResourceHandle> fieldHandles;
+    fieldHandles.reserve(terrain.meshes.size());
+    size_t fieldUploadFailures = 0;
+    for (const MeshAsset& mesh : terrain.meshes)
+    {
+        Result<::Modern::Client::MeshResourceHandle> handle = uploader.UploadMesh(mesh);
+        if (handle.IsError() || !handle.GetValue().IsValid())
+        {
+            ++fieldUploadFailures;
+            continue;
+        }
+        fieldHandles.push_back(handle.GetValue());
+    }
+
+    if (fieldHandles.empty())
+    {
+        Log("ModernClientApp: no leaf of '%s' could be uploaded to the GPU", fieldSpec.c_str());
+        return 1;
+    }
+    Log("ModernClientApp: uploaded %zu field mesh(es) to the GPU, %zu upload(s) failed",
+        fieldHandles.size(), fieldUploadFailures);
+
+    // ------------------------------------------------------------------
+    // 3. Load character mesh through the existing character pipeline.
+    // ------------------------------------------------------------------
+    Log("ModernClientApp: rendering character mesh '%s'", characterMeshPath.c_str());
+
+    const Modern::Result<ResourceId> charMeshId = ResourceId::Create(characterMeshPath);
+    if (charMeshId.IsError())
+    {
+        Log("ModernClientApp: bad resource id '%s' (%s)", characterMeshPath.c_str(),
+            charMeshId.GetMessage());
+        return 1;
+    }
+
+    const Modern::Result<ResourceData> charFileData = resourceProvider.Load(charMeshId.GetValue());
+    if (charFileData.IsError())
+    {
+        Log("ModernClientApp: failed to load '%s' (%s) -- is the asset root a RAN client tree?",
+            characterMeshPath.c_str(), charFileData.GetMessage());
+        return 1;
+    }
+
+    const Modern::Result<RanMeshContainer> container = RanMeshSource::Classify(charFileData.GetValue());
+    if (container.IsError())
+    {
+        Log("ModernClientApp: '%s' is neither a plain .X nor a readable .mxf (%s)",
+            characterMeshPath.c_str(), container.GetMessage());
+        return 1;
+    }
+    Log("ModernClientApp: character mesh container is %s", ToString(container.GetValue()));
+
+    const Modern::Result<ResourceData> xFileData = RanMeshSource::ToPlainX(charFileData.GetValue());
+    if (xFileData.IsError())
+    {
+        Log("ModernClientApp: container transform of '%s' failed (%s)",
+            characterMeshPath.c_str(), xFileData.GetMessage());
+        return 1;
+    }
+
+    XMeshDecoder xMeshDecoder;
+    const Modern::Result<MeshAsset> charMesh = xMeshDecoder.DecodeMesh(xFileData.GetValue());
+    if (charMesh.IsError())
+    {
+        Log("ModernClientApp: X mesh decode of '%s' failed (%s)",
+            characterMeshPath.c_str(), charMesh.GetMessage());
+        return 1;
+    }
+
+    const MeshAsset& characterMeshAsset = charMesh.GetValue();
+    Log("ModernClientApp: decoded %s: %zu vertices, %zu indices, %zu triangles",
+        characterMeshPath.c_str(), characterMeshAsset.GetVertexCount(),
+        characterMeshAsset.GetIndexCount(), characterMeshAsset.GetTriangleCount());
+
+    const Modern::Result<::Modern::Client::MeshResourceHandle> charHandle =
+        uploader.UploadMesh(characterMeshAsset);
+    if (charHandle.IsError())
+    {
+        Log("ModernClientApp: GPU upload of character mesh failed (%s)",
+            charHandle.GetMessage());
+        return 1;
+    }
+    const MeshResourceHandle characterMesh = charHandle.GetValue();
+
+    // Character materials and textures.
+    const std::vector<MeshMaterial>& charMaterials = characterMeshAsset.GetMaterials();
+    const std::vector<MeshSection>&   charSections  = characterMeshAsset.GetSections();
+
+    std::vector<ImageResourceHandle> charMaterialTextures(charMaterials.size(),
+                                                          ImageResourceHandle::MakeInvalid());
+    std::vector<ImageResourceHandle> uploadedCharTextures;
+    bool charTexturesAllLoaded = true;
+
+    Log("ModernClientApp: character mesh carries %zu materials and %zu sections",
+        charMaterials.size(), charSections.size());
+
+    if (characterMeshAsset.HasSections())
+    {
+        const std::filesystem::path textureRoot = std::filesystem::path(assetRoot) / kTexturesDir;
+        TextureLoader textureLoader;
+        const Status textureInit = textureLoader.Initialize(textureRoot);
+        if (textureInit.IsError())
+        {
+            Log("ModernClientApp: texture tree '%s' could not be indexed (%s)",
+                textureRoot.string().c_str(), textureInit.GetMessage());
+            charTexturesAllLoaded = false;
+        }
+        else
+        {
+            TextureCache textureCache;
+            std::unordered_map<std::string, ImageResourceHandle> textureUploadCache;
+
+            for (size_t m = 0; m < charMaterials.size(); ++m)
+            {
+                const MeshMaterial& material = charMaterials[m];
+                if (material.textureFilename.empty())
+                {
+                    Log("ModernClientApp: material '%s' declares no texture; it draws the fallback color by design",
+                        material.name.c_str());
+                    continue;
+                }
+
+                const RanMaterialNameKind nameKind =
+                    Modern::Client::ClassifyRanMaterialName(material.textureFilename);
+                if (nameKind == RanMaterialNameKind::RanMaterialSlot)
+                {
+                    Log("ModernClientApp: %s",
+                        DescribeRanMaterialResolution(std::string(), material.textureFilename,
+                                                     "").c_str());
+                    charTexturesAllLoaded = false;
+                    continue;
+                }
+
+                const std::filesystem::path resolved = textureLoader.Find(material.textureFilename);
+                if (resolved.empty())
+                {
+                    Log("ModernClientApp: %s (searched tree '%s')",
+                        DescribeRanMaterialResolution(std::string(), material.textureFilename,
+                                                     "").c_str(),
+                        textureRoot.string().c_str());
+                    charTexturesAllLoaded = false;
+                    continue;
+                }
+
+                const std::string key = resolved.lexically_normal().string();
+                const auto alreadyUploaded = textureUploadCache.find(key);
+                if (alreadyUploaded != textureUploadCache.end())
+                {
+                    charMaterialTextures[m] = alreadyUploaded->second;
+                    continue;
+                }
+
+                const Modern::Result<const ImageAsset*> image = textureCache.Acquire(resolved);
+                if (image.IsError())
+                {
+                    Log("ModernClientApp: material '%s' texture '%s' (%s) failed to decode (%s)",
+                        material.name.c_str(), material.textureFilename.c_str(),
+                        resolved.string().c_str(), image.GetMessage());
+                    charTexturesAllLoaded = false;
+                    continue;
+                }
+
+                const Modern::Result<ImageResourceHandle> uploaded =
+                    uploader.UploadImage(*image.GetValue());
+                if (uploaded.IsError())
+                {
+                    Log("ModernClientApp: material '%s' texture '%s' (%s) failed to upload (%s)",
+                        material.name.c_str(), material.textureFilename.c_str(),
+                        resolved.string().c_str(), uploaded.GetMessage());
+                    charTexturesAllLoaded = false;
+                    continue;
+                }
+
+                charMaterialTextures[m] = uploaded.GetValue();
+                textureUploadCache.emplace(key, uploaded.GetValue());
+                uploadedCharTextures.push_back(uploaded.GetValue());
+                Log("ModernClientApp: material '%s' texture '%s' -> '%s' uploaded as image %llu "
+                    "(%u x %u, %s)",
+                    material.name.c_str(), material.textureFilename.c_str(),
+                    resolved.string().c_str(),
+                    static_cast<unsigned long long>(uploaded.GetValue().Get()),
+                    image.GetValue()->GetWidth(), image.GetValue()->GetHeight(),
+                    ToString(image.GetValue()->GetFormat()));
+            }
+
+            Log("ModernClientApp: character texture cache holds %zu decoded image(s); %zu uploaded to the GPU",
+                textureCache.GetCachedCount(), textureUploadCache.size());
+        }
+
+        for (size_t s = 0; s < charSections.size(); ++s)
+        {
+            const MeshSection& section = charSections[s];
+            const bool textured = section.materialIndex < charMaterialTextures.size() &&
+                                  charMaterialTextures[section.materialIndex].IsValid();
+            const char* binding = "none (fallback color)";
+            if (textured)
+            {
+                binding = std::to_string(charMaterialTextures[section.materialIndex].Get()).c_str();
+            }
+            Log("ModernClientApp: character section %zu: indices [%u, %u) material %zu texture -> %s",
+                s, section.indexOffset, section.indexOffset + section.indexCount,
+                section.materialIndex, binding);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 4. Place character at field centre, snapped to ground.
+    // ------------------------------------------------------------------
+    ClientCharacterController controller;
+    controller.moveSpeed = kCharacterMoveSpeed;
+
+    const Vector3 fieldCentre = (terrain.boundsMin + terrain.boundsMax) * 0.5f;
+    const std::optional<float> spawnGroundY = QueryGroundHeight(terrain, fieldCentre.x, fieldCentre.z);
+    float spawnY = spawnGroundY.has_value() ? *spawnGroundY + controller.groundOffset
+                                            : (terrain.boundsMin.y + terrain.boundsMax.y) * 0.5f;
+    controller.position = Vector3(fieldCentre.x, spawnY, fieldCentre.z);
+
+    Log("ModernClientApp: character spawn at (%.2f, %.2f, %.2f), groundY=%s",
+        controller.position.x, controller.position.y, controller.position.z,
+        spawnGroundY.has_value() ? std::to_string(*spawnGroundY).c_str() : "none (fallback)");
+
+    // ------------------------------------------------------------------
+    // 5. Camera follows character from behind and above.
+    // ------------------------------------------------------------------
+    float world[16] = {};
+    float view[16] = {};
+    float projection[16] = {};
+    BuildIdentityRowMajor(world);
+
+    constexpr float kFovY = 60.0f * 3.14159265358979323846f / 180.0f;
+    const float aspect = static_cast<float>(kClientWidth) / static_cast<float>(kClientHeight);
+    const float nearPlane = 0.1f;
+    const float farPlane = 2000.0f;
+    BuildPerspectiveRowMajor(kFovY, aspect, nearPlane, farPlane, projection);
+
+    const float lightDirection[3] = { -0.45f, -0.80f, -0.40f };
+    const float lightColor[3]     = { 1.00f, 0.96f, 0.86f };
+    const RenderColor terrainColor(0.42f, 0.52f, 0.33f, 1.0f);
+    const RenderColor skyColor(0.55f, 0.72f, 0.92f, 1.0f);
+    const RenderColor characterFallbackColor(0.85f, 0.05f, 0.55f, 1.0f);
+
+    // ------------------------------------------------------------------
+    // 6. Frame loop: input → movement → draw field + character.
+    // ------------------------------------------------------------------
+    Application application(std::move(platform));
+    application.SetRenderer(&renderer);
+    application.SetInputSystem(&inputSystem);
+    application.SetInputSource(std::move(inputSource));
+
+    // WASD movement + Escape to quit.
+    bool keyW = false, keyA = false, keyS = false, keyD = false;
+    application.SubscribeInput([&application, &keyW, &keyA, &keyS, &keyD, &controller]
+                               (const InputEvent& event) {
+        if (event.type != InputEventType::Key) { return; }
+        const KeyEvent& key = std::get<KeyEvent>(event.payload);
+        bool* target = nullptr;
+        switch (key.code)
+        {
+            case KeyCode::W:    target = &keyW;    break;
+            case KeyCode::A:    target = &keyA;    break;
+            case KeyCode::S:    target = &keyS;    break;
+            case KeyCode::D:    target = &keyD;    break;
+            case KeyCode::Escape: application.RequestStop(); return;
+            default: return;
+        }
+        *target = key.pressed;
+    });
+
+    application.SetRenderCallback([&renderer, &fieldHandles, &terrain, &controller,
+                                   &characterMesh, &charSections, &charMaterialTextures,
+                                   &uploadedCharTextures,
+                                   &world, &view, &projection,
+                                   lightDirection, lightColor,
+                                   terrainColor, skyColor, characterFallbackColor,
+                                   &keyW, &keyA, &keyS, &keyD](uint64_t frameIndex) {
+        (void)frameIndex;
+
+        // --- Input → movement direction (XZ plane) ---
+        Vector3 moveDir = Vector3::Zero;
+        if (keyW) moveDir.z += 1.0f;
+        if (keyS) moveDir.z -= 1.0f;
+        if (keyD) moveDir.x += 1.0f;
+        if (keyA) moveDir.x -= 1.0f;
+        controller.SetMoveDirection(moveDir);
+
+        // --- Update character (dt = elapsed seconds, not frame count) ---
+        // The Application loop calls the render callback once per frame; we
+        // assume roughly constant dt for movement. A future milestone can wire
+        // a real timer here.
+        constexpr float kDt = 1.0f / 60.0f;
+        controller.Update(kDt,
+            [&terrain](float x, float z) { return QueryGroundHeight(terrain, x, z); },
+            terrain.boundsMin, terrain.boundsMax);
+
+        // --- Camera follows character ---
+        const Vector3 camEye = controller.position + kCameraFollowOffset;
+        BuildLookAtRowMajor(camEye, controller.position, Vector3::Up, view);
+
+        renderer.Clear(skyColor);
+
+        // Draw field meshes (one draw per leaf, no texture, terrain colour).
+        for (const ::Modern::Client::MeshResourceHandle handle : fieldHandles)
+        {
+            MeshDrawCommand command;
+            command.mesh             = handle;
+            command.texture          = ImageResourceHandle::MakeInvalid();
+            command.worldMatrix      = world;
+            command.viewMatrix       = view;
+            command.projectionMatrix = projection;
+            command.fallbackColor    = terrainColor;
+            command.indexOffset      = 0;
+            command.indexCount       = 0;
+            command.lightingAmount   = 0.75f;
+            for (int i = 0; i < 3; ++i)
+            {
+                command.lightDirection[i] = lightDirection[i];
+                command.lightColor[i]     = lightColor[i];
+            }
+            renderer.DrawIndexedMesh(command);
+        }
+
+        // Draw character: one indexed draw per section, each with its own texture.
+        float charWorld[16] = {};
+        // Translation matrix: move character to its world position.
+        charWorld[0] = charWorld[5] = charWorld[10] = charWorld[15] = 1.0f;
+        charWorld[12] = controller.position.x;
+        charWorld[13] = controller.position.y;
+        charWorld[14] = controller.position.z;
+
+        for (const MeshSection& section : charSections)
+        {
+            const bool hasTexture = section.materialIndex < charMaterialTextures.size() &&
+                                    charMaterialTextures[section.materialIndex].IsValid();
+
+            MeshDrawCommand command;
+            command.mesh             = characterMesh;
+            command.texture          = hasTexture
+                ? charMaterialTextures[section.materialIndex]
+                : ImageResourceHandle::MakeInvalid();
+            command.worldMatrix      = charWorld;
+            command.viewMatrix       = view;
+            command.projectionMatrix = projection;
+            command.indexOffset      = section.indexOffset;
+            command.indexCount       = section.indexCount;
+            command.fallbackColor    = hasTexture ? RenderColor::White : characterFallbackColor;
+            command.lightingAmount   = 0.75f;
+            for (int i = 0; i < 3; ++i)
+            {
+                command.lightDirection[i] = lightDirection[i];
+                command.lightColor[i]     = lightColor[i];
+            }
+            renderer.DrawIndexedMesh(command);
+        }
+    });
+
+    if (application.Initialize().IsError())
+    {
+        Log("ModernClientApp: application initialization failed");
+        for (const ::Modern::Client::MeshResourceHandle handle : fieldHandles) { uploader.ReleaseMesh(handle); }
+        uploader.ReleaseMesh(characterMesh);
+        return 1;
+    }
+
+    const Status runStatus = application.Run();
+
+    // Teardown in real dependency order.
+    for (const ImageResourceHandle texture : uploadedCharTextures)
+    {
+        uploader.ReleaseImage(texture);
+    }
+    uploader.ReleaseMesh(characterMesh);
+    for (const ::Modern::Client::MeshResourceHandle handle : fieldHandles) { uploader.ReleaseMesh(handle); }
+    renderer.Shutdown();
+
+    Log("ModernClientApp: field+character stopped after %llu frames",
+        static_cast<unsigned long long>(application.GetFrameCount()));
+
+    const bool success = runStatus.IsOk() && fieldUploadFailures == 0;
+    if (!success)
+    {
+        Log("ModernClientApp: field+character run did not complete cleanly");
+    }
+    return success ? 0 : 1;
+}
+
 } // namespace
 
 
@@ -626,6 +1151,7 @@ int main(int argc, char** argv)
 	std::string assetRoot;
 	std::string meshPath;
 	std::string skinPiecePath;
+	std::string characterMeshPath;
 	std::string fieldName;
 	bool        auditTextures = false;
 	std::string reportPath;
@@ -656,6 +1182,14 @@ int main(int argc, char** argv)
 		else if (argument.rfind("--skin-piece=", 0) == 0)
 		{
 			skinPiecePath = argument.substr(std::strlen("--skin-piece="));
+		}
+		else if (argument == "--character" && i + 1 < argc)
+		{
+			characterMeshPath = argv[++i];
+		}
+		else if (argument.rfind("--character=", 0) == 0)
+		{
+			characterMeshPath = argument.substr(std::strlen("--character="));
 		}
 		else if (argument == "--field" && i + 1 < argc)
 		{
@@ -760,13 +1294,17 @@ int main(int argc, char** argv)
 	D3D11AssetUploader uploader(&renderer);
 	renderer.SetAssetUploader(&uploader);
 
-	// WORLD-PLAYABLE-001B: a field replaces the character. It runs the same window,
-	// input, renderer and uploader -- only the asset and the draw list differ --
-	// so this hands the already-created ones straight over.
+	// WORLD-PLAYABLE-001C: a field with a character. When `--field` and
+	// `--character` (or just `--field` with the default character) are both
+	// given, run the combined field + character + movement loop. Otherwise
+	// fall through to the original field-only behaviour.
 	if (!fieldName.empty())
 	{
-		return RunField(assetRoot, fieldName, std::move(platform),
-		             std::move(inputSource), inputSystem, renderer, uploader);
+		const std::string characterPath =
+		    characterMeshPath.empty() ? std::string(kDefaultCharacterMesh) : characterMeshPath;
+		return RunFieldWithCharacter(assetRoot, fieldName, characterPath,
+		                             std::move(platform), std::move(inputSource),
+		                             inputSystem, renderer, uploader);
 	}
 
 	// 5. The character asset through the real pipeline:

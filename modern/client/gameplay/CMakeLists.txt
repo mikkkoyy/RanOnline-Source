@@ -10,6 +10,7 @@
 # server published.
 
 add_library(ModernClientGameplay STATIC
+    ClientCharacterController.cpp
     ClientCharacterState.cpp
 )
 

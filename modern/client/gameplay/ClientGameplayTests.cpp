@@ -16,6 +16,7 @@
 #include "character/CharacterClassTable.h"
 #include "equipment/EquipmentState.h"
 #include "equipment/ItemDefinitionProvider.h"
+#include "gameplay/ClientCharacterController.h"
 #include "gameplay/ClientCharacterState.h"
 #include "gameplay/CharacterSnapshot.h"
 #include "item/ItemDefinition.h"
@@ -1126,6 +1127,164 @@ MODERN_TEST(Gameplay_ApplyResourceUpdate_DoesNotMutateDerivedStats)
 	client.ApplyResourceUpdate(1, 2, 3);
 
 	CHECK(client.GetDerivedStats() == originalDerived);
+}
+
+// WORLD-PLAYABLE-001C: client character controller tests.
+// These are pure logic tests: no server, no renderer, no platform.
+// Ground height is injected via a lambda so the controller never touches
+// terrain data directly.
+
+MODERN_TEST(CharacterController_MovesForwardOnGround)
+{
+	ClientCharacterController c;
+	c.position = Vector3(0.0f, 10.0f, 0.0f);
+	c.moveSpeed = 100.0f;
+	c.groundOffset = 0.0f;
+
+	// Flat ground at Y=0.
+	auto ground = [](float, float) { return std::optional<float>(0.0f); };
+
+	c.SetMoveDirection(Vector3(0.0f, 0.0f, 1.0f));  // move +Z
+	c.Update(0.1f, ground, Vector3(-1000, -1000, -1000), Vector3(1000, 1000, 1000));
+
+	CHECK(c.position.z > 0.0f);
+	CHECK(std::fabs(c.position.z - 10.0f) < 0.001f);  // 100 * 0.1 = 10
+	CHECK(std::fabs(c.position.y - 0.0f) < 0.001f);    // snapped to ground
+	CHECK(c.onGround == true);
+}
+
+MODERN_TEST(CharacterController_MovementIsFramerateIndependent)
+{
+	ClientCharacterController c1, c2;
+	c1.position = Vector3(0.0f, 10.0f, 0.0f);
+	c2.position = Vector3(0.0f, 10.0f, 0.0f);
+	c1.moveSpeed = 100.0f;
+	c2.moveSpeed = 100.0f;
+	c1.groundOffset = 0.0f;
+	c2.groundOffset = 0.0f;
+
+	auto ground = [](float, float) { return std::optional<float>(0.0f); };
+
+	c1.SetMoveDirection(Vector3(0.0f, 0.0f, 1.0f));
+	c2.SetMoveDirection(Vector3(0.0f, 0.0f, 1.0f));
+
+	// One big step vs ten small steps should land at the same place.
+	c1.Update(1.0f, ground, Vector3(-1000, -1000, -1000), Vector3(1000, 1000, 1000));
+	for (int i = 0; i < 10; ++i) { c2.Update(0.1f, ground, Vector3(-1000, -1000, -1000), Vector3(1000, 1000, 1000)); }
+
+	CHECK(std::fabs(c1.position.z - c2.position.z) < 0.001f);
+}
+
+MODERN_TEST(CharacterController_NoGroundMeansFalling)
+{
+	ClientCharacterController c;
+	c.position = Vector3(0.0f, 100.0f, 0.0f);
+	c.moveSpeed = 0.0f;
+	c.gravity = 1200.0f;
+	c.maxFallSpeed = -600.0f;
+	c.groundOffset = 0.0f;
+
+	// No ground anywhere.
+	auto ground = [](float, float) { return std::optional<float>(); };
+
+	c.SetMoveDirection(Vector3::Zero);
+	c.Update(0.1f, ground, Vector3(-1000, -1000, -1000), Vector3(1000, 1000, 1000));
+
+	CHECK(c.onGround == false);
+	CHECK(c.position.y < 100.0f);  // fell
+	CHECK(c.verticalVelocity < 0.0f);  // downward velocity
+}
+
+MODERN_TEST(CharacterController_ZeroDtNoMovement)
+{
+	ClientCharacterController c;
+	c.position = Vector3(5.0f, 10.0f, 7.0f);
+	c.moveSpeed = 100.0f;
+	c.groundOffset = 0.0f;
+
+	auto ground = [](float, float) { return std::optional<float>(0.0f); };
+
+	c.SetMoveDirection(Vector3(0.0f, 0.0f, 1.0f));
+	c.Update(0.0f, ground, Vector3(-1000, -1000, -1000), Vector3(1000, 1000, 1000));
+
+	CHECK(c.position == Vector3(5.0f, 10.0f, 7.0f));
+}
+
+MODERN_TEST(CharacterController_ClampsToFieldBounds)
+{
+	ClientCharacterController c;
+	c.position = Vector3(0.0f, 10.0f, 0.0f);
+	c.moveSpeed = 1000.0f;  // very fast, will try to go far
+	c.groundOffset = 0.0f;
+
+	auto ground = [](float, float) { return std::optional<float>(0.0f); };
+
+	c.SetMoveDirection(Vector3(1.0f, 0.0f, 0.0f));  // move +X fast
+	c.Update(1.0f, ground, Vector3(-10.0f, -1000, -1000), Vector3(10.0f, 1000, 1000));
+
+	CHECK(c.position.x <= 10.0f);  // clamped to field max X
+	CHECK(c.position.x >= -10.0f);  // not below field min X
+}
+
+MODERN_TEST(CharacterController_DiagonalMovementNotFaster)
+{
+	ClientCharacterController c;
+	c.position = Vector3(0.0f, 10.0f, 0.0f);
+	c.moveSpeed = 100.0f;
+	c.groundOffset = 0.0f;
+
+	auto ground = [](float, float) { return std::optional<float>(0.0f); };
+
+	c.SetMoveDirection(Vector3(1.0f, 0.0f, 1.0f));  // diagonal, not normalised by caller
+	c.Update(0.1f, ground, Vector3(-1000, -1000, -1000), Vector3(1000, 1000, 1000));
+
+	// Controller normalises, so diagonal move distance = 100 * 0.1 = 10, not 10*sqrt(2).
+	const float expected = 10.0f / std::sqrt(2.0f);
+	CHECK(std::fabs(c.position.x - expected) < 0.001f);
+	CHECK(std::fabs(c.position.z - expected) < 0.001f);
+	CHECK(std::fabs(c.position.y - 0.0f) < 0.001f);
+}
+
+MODERN_TEST(CharacterController_GroundSnapWithOffset)
+{
+	ClientCharacterController c;
+	c.position = Vector3(0.0f, 50.0f, 0.0f);
+	c.moveSpeed = 0.0f;
+	c.groundOffset = 5.0f;
+
+	// Ground at Y=10, character starts at Y=50, should snap to Y=15.
+	auto ground = [](float, float) { return std::optional<float>(10.0f); };
+
+	c.SetMoveDirection(Vector3::Zero);
+	c.Update(0.1f, ground, Vector3(-1000, -1000, -1000), Vector3(1000, 1000, 1000));
+
+	CHECK(std::fabs(c.position.y - 15.0f) < 0.001f);
+	CHECK(c.onGround == true);
+}
+
+MODERN_TEST(CharacterController_FallsUntilGround)
+{
+	ClientCharacterController c;
+	c.position = Vector3(0.0f, 100.0f, 0.0f);
+	c.moveSpeed = 0.0f;
+	c.gravity = 1200.0f;
+	c.maxFallSpeed = -600.0f;
+	c.groundOffset = 0.0f;
+
+	// Ground at Y=0, character starts at Y=100.
+	int fallFrames = 0;
+	auto ground = [](float, float) { return std::optional<float>(0.0f); };
+
+	c.SetMoveDirection(Vector3::Zero);
+	while (c.position.y > 0.1f && fallFrames < 1000)
+	{
+		c.Update(0.016f, ground, Vector3(-1000, -1000, -1000), Vector3(1000, 1000, 1000));
+		++fallFrames;
+	}
+
+	CHECK(c.position.y <= 0.1f + 0.01f);  // reached ground
+	CHECK(fallFrames < 1000);  // didn't fall forever
+	CHECK(c.onGround == true);
 }
 
 
