@@ -129,7 +129,27 @@ add_test(NAME ModernTcpTransportTests COMMAND ModernTcpTransportTests)
 
 # enable_testing() is called by the top-level CMakeLists.txt, which is where
 # CTest needs it in order to reach this directory.
-add_test(NAME ModernCoreTests COMMAND ModernCoreTests)
+# TOOLS-002: headless message queue tests. Separate executable because it links
+# ModernMessageQueue (which links Modern) -- ModernCoreTests deliberately links
+# Modern alone and must stay free of the tools layer.
+add_executable(ModernMessageQueueTests
+    MessageQueueTests.cpp
+)
+
+target_link_libraries(ModernMessageQueueTests PRIVATE Modern ModernMessageQueue)
+
+target_include_directories(ModernMessageQueueTests PRIVATE
+    ${CMAKE_SOURCE_DIR}/modern/tests
+    ${CMAKE_SOURCE_DIR}/modern/tools/emulator
+)
+
+target_compile_features(ModernMessageQueueTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernMessageQueueTests PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+add_test(NAME ModernMessageQueueTests COMMAND ModernMessageQueueTests)
 
 # ---------------------------------------------------------------------------
 # TEST STALL WATCHDOG - self-test.
