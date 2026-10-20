@@ -24,3 +24,12 @@ add_subdirectory(emulator)
 # watched, which is a different purpose and needs a different dependency set: it
 # links the server and, through it, the real Winsock transport.
 add_subdirectory(login_server)
+
+# MODERN-FIELD-SERVER-001: the runnable Field/World Server.
+#
+# The process that makes the login-to-field path drivable by hand: it seeds a
+# world, starts WorldServerRuntime's two listeners (Agent + Field), prints both
+# bound endpoints, and serves the Agent role until interrupted. Before this
+# there was no way to see the modern login -> world-entry -> field path talk to
+# anything outside the test binary.
+add_subdirectory(field_server)

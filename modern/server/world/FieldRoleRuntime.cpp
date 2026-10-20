@@ -1,4 +1,7 @@
-#include "world/FieldRoleRuntime.h"`r`n#include "SkillProtocol.h"`r`n#include "ResourceSyncService.h"`r`n#include "ActiveSkill.h"`r`n#include "ItemContributionAggregator.h"
+#include "world/FieldRoleRuntime.h"
+
+#include "equipment/ItemContributionAggregator.h"
+#include "skills/ActiveSkill.h"
 
 #include "FieldFrameNormalization.h"
 #include "NetworkCodec.h"
@@ -910,7 +913,7 @@ Emit(FieldEvent::MoveStateSent, "", change.gaeaId);
 		}
 
 		// Build the authoritative resource cost from the skill definition.
-		const SkillDefinition::SkillLevelData& levelData = definition->GetLevelData(learnedLevel);
+		const SkillLevelData& levelData = definition->GetLevelData(learnedLevel);
 		ResourceSyncService::ResourceCost cost;
 		cost.hp = levelData.useHp;
 		cost.mp = levelData.useMp;

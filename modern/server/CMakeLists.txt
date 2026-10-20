@@ -231,3 +231,38 @@ if(MSVC)
 endif()
 
 add_test(NAME ModernWorldEntryTcpTests COMMAND ModernWorldEntryTcpTests)
+
+# MODERN-FIELD-SERVER-001: the login-to-field path against the REAL
+# ModernFieldServer.exe process.
+#
+# WorldEntryTcpTests proves the path over two real sockets, but it builds its
+# server IN-PROCESS. This binary closes the last gap: it LAUNCHES the shipped
+# executable as a child process, reads the endpoints it prints, and drives a
+# genuine client against it. A server that only works when a test assembles its
+# internals is not a server.
+#
+# It links ModernServer (through which Modern and ModernNetwork) and
+# ModernClientLogin, because the milestone is the EXCHANGE between the two. It
+# also needs the path at runtime, which is why the executable target is a
+# dependency: the test cannot launch what has not been built.
+add_executable(ModernFieldServerTcpTests
+    FieldServerTcpTests.cpp
+)
+
+target_include_directories(ModernFieldServerTcpTests PRIVATE
+    ${CMAKE_SOURCE_DIR}/modern/tests
+)
+
+target_link_libraries(ModernFieldServerTcpTests PRIVATE ModernServer ModernClientLogin ws2_32)
+
+# The server executable must exist before the test runs. A test that launched a
+# missing binary would fail at CreateProcess with a path, not a result.
+add_dependencies(ModernFieldServerTcpTests ModernFieldServer)
+
+target_compile_features(ModernFieldServerTcpTests PRIVATE cxx_std_17)
+
+if(MSVC)
+    target_compile_options(ModernFieldServerTcpTests PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+add_test(NAME ModernFieldServerTcpTests COMMAND ModernFieldServerTcpTests)
